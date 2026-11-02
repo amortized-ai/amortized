@@ -586,7 +586,7 @@ async function discoverOpenAICompatModels(baseURL, apiKey) {
   // stalls mid-body must still be bounded, or ensureSandbox can hang past the 10s budget.
   const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: ctrl.signal });
+    const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, redirect: 'error', signal: ctrl.signal });
     if (!res.ok) return [];
     const body = await res.json();
     const data = Array.isArray(body?.data) ? body.data : [];
@@ -609,6 +609,9 @@ async function discoverAnthropicModels(baseURL, apiKey) {
   try {
     const res = await fetch(`${base}/models`, {
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      // redirect:'error': never forward the key to a redirect target. A cross-origin redirect
+      // strips Authorization but NOT a custom x-api-key; a failed fetch is treated as empty below.
+      redirect: 'error',
       signal: ctrl.signal,
     });
     if (!res.ok) return [];
