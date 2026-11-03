@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react"
-import { getBaseUrl } from "@/lib/api-client"
+import { getBaseUrl, type EvalMetricMetadata } from "@/lib/api-client"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import {
@@ -68,7 +68,7 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
 
   if (!open) return null
 
-  const canCancel = job ? ["queued", "provisioning", "running"].includes(job.status) : false
+  const canCancel = job ? ["queued", "provisioning", "running"].includes(job.status) && !job.cancel_requested : false
   const canDelete = job ? ["succeeded", "failed", "cancelled"].includes(job.status) : false
   // Retry/rerun is available for every job type that can be mirrored forward
   // (SDG, training, eval — not serve), always behind a confirmation step.
@@ -119,6 +119,9 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
             <div className="flex items-center gap-2 shrink-0">
               <JobTypeBadge type={job.type} />
               <StatusBadge status={job.status} />
+              {job.cancel_requested && ["queued", "provisioning", "running"].includes(job.status) && (
+                <span className="text-xs text-muted-foreground">Cancellation requested</span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -247,6 +250,7 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
               fill the remaining height without a double scrollbar.
               Non-logs tabs use overflow-y-auto for their own scrolling. */}
           <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
+            {job.execution_sync_error && <p className="text-sm text-muted-foreground mb-3">{job.execution_sync_error}</p>}
             <OverviewTab job={job} onClose={() => onOpenChange(false)} />
           </TabsContent>
 
@@ -590,11 +594,18 @@ function formatMetric(value: number | null | undefined): string {
   return `${(value * 100).toFixed(1)}%`
 }
 
+function formatEvalScore(value: number | null | undefined, metadata?: EvalMetricMetadata): string {
+  if (value == null) return "—"
+  if (!metadata || metadata.unit === "fraction") return formatMetric(value)
+  const unit = metadata.unit === "value" ? "" : ` ${metadata.unit}`
+  return `${Number(value.toPrecision(6))}${unit}`
+}
+
 function EvalResultsTab({ job }: { job: Job }) {
-  const isDone = job.status === "succeeded"
+  const isDone = job.status === "succeeded" || (job.execution_owner === "evalhub" && ["failed", "cancelled"].includes(job.status))
   const { data: results, isLoading } = useEvalResults(job.id, isDone)
 
-  if (job.status !== "succeeded") {
+  if (!isDone) {
     return (
       <div className="pt-4 text-sm text-muted-foreground text-center">
         Results are available once the eval job succeeds (current status: {job.status}).
@@ -647,7 +658,7 @@ function EvalResultsTab({ job }: { job: Job }) {
           ...(wantMetric("empty_rate") ? [{ label: "Empty rate", value: formatMetric(results.model.empty_rate) }] : []),
         ]
     const scoreEntries = Object.entries(results.scores ?? {}).filter(
-      ([name]) => rubricNames.size === 0 || rubricNames.has(name),
+      ([name]) => results.metric_metadata !== undefined || rubricNames.size === 0 || rubricNames.has(name),
     )
     // A succeeded eval can still yield nothing usable (judge errored on every
     // sample, empty output, etc.). Say so plainly rather than render a blank
@@ -655,7 +666,7 @@ function EvalResultsTab({ job }: { job: Job }) {
     const hasUsableScore = scoreEntries.some(([, s]) => s !== null && s !== undefined)
     // A classification eval reports accuracy/macro_f1/confusion instead of per-rubric scores
     // (rendered separately below), so the score-specific "no scores" notice doesn't apply.
-    const noScores = !isClassification && (results.num_scored === 0 || !hasUsableScore)
+    const noScores = !isClassification && !hasUsableScore
     return (
       <div className="space-y-4 pt-2">
         {modelName ? (
@@ -666,9 +677,9 @@ function EvalResultsTab({ job }: { job: Job }) {
 
         {noScores && (
           <NoScoresCard
-            detail={`This eval succeeded but produced no usable scores${
+            detail={`This evaluation ${job.status} but produced no usable scores${
               results.num_scored === 0 ? " (0 samples scored)" : ""
-            }. The judge returned no results for the scored samples — check the job logs for the cause.`}
+            }. Check invalid-output counts and job logs for the cause.`}
           />
         )}
 
@@ -680,17 +691,28 @@ function EvalResultsTab({ job }: { job: Job }) {
                   <th className="px-4 py-2.5 text-left font-medium">Criterion</th>
                   <th className="px-4 py-2.5 text-right font-medium">Score</th>
                   <th className="px-4 py-2.5 text-right font-medium">Scored</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Invalid</th>
                 </tr>
               </thead>
               <tbody>
                 {scoreEntries.map(([name, score]) => (
                   <tr key={name} className="border-b last:border-0 border-border/40">
-                    <td className="px-4 py-2.5 font-mono text-xs">{name}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {name}
+                      {results.metric_metadata?.[name]?.direction && (
+                        <span className="block text-muted-foreground">
+                          {results.metric_metadata[name]!.direction} is better
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-right font-mono text-xs">
-                      {score === null || score === undefined ? "—" : `${(score * 100).toFixed(1)}%`}
+                      {formatEvalScore(score, results.metric_metadata?.[name])}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-xs">
                       {results.scores_n?.[name] ?? "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">
+                      {results.metric_metadata?.[name]?.num_invalid ?? "—"}
                     </td>
                   </tr>
                 ))}
@@ -728,7 +750,7 @@ function EvalResultsTab({ job }: { job: Job }) {
         )}
 
         <p className="text-xs text-muted-foreground">
-          {results.num_records} records ({results.num_skipped} skipped)
+          {results.num_records == null ? "Sample count unavailable" : `${results.num_records} records (${results.num_skipped ?? 0} skipped)`}
           {results.num_scored !== undefined ? `, ${results.num_scored} scored` : ""}. Per-sample
           outputs are in the MLflow run under eval_results/.
         </p>

@@ -1,0 +1,92 @@
+{{- if .Values.evalhub.operator.createInstance }}
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: EvalHub
+metadata:
+  name: {{ .Values.evalhub.operator.name }}
+  namespace: {{ required "evalhub.operator.namespace is required" .Values.evalhub.operator.namespace }}
+spec:
+  replicas: 1
+  database:
+    type: postgresql
+    secret: {{ required "evalhub.operator.databaseSecret with db-url is required" .Values.evalhub.operator.databaseSecret }}
+  providers:
+    - amortized
+    - amortized-lighteval
+  env:
+    - name: MLFLOW_TRACKING_URI
+      value: {{ include "amortized.mlflowTrackingUri" . | quote }}
+    {{- if .Values.mlflow.enterprise.enabled }}
+    - name: MLFLOW_TOKEN_PATH
+      value: /var/run/secrets/kubernetes.io/serviceaccount/token
+    - name: MLFLOW_WORKSPACE
+      value: {{ .Values.jobsNamespace | quote }}
+    {{- end }}
+{{- end }}
+{{- if .Values.evalhub.operator.createProviders }}
+{{- $operatorNamespace := required "evalhub.operator.namespaceForProviders is required" .Values.evalhub.operator.namespaceForProviders }}
+{{- $taskImage := required "Pin evalhub.operator.taskAdapterImage to a built image digest" .Values.evalhub.operator.taskAdapterImage }}
+{{- if not (contains "@sha256:" $taskImage) }}
+{{- fail "evalhub.operator.taskAdapterImage must use an immutable digest" }}
+{{- end }}
+{{- if not (contains "@sha256:" .Values.evalhub.operator.lightEvalImage) }}
+{{- fail "evalhub.operator.lightEvalImage must use an immutable digest" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-evalhub-task-provider
+  namespace: {{ $operatorNamespace }}
+  labels:
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: amortized
+data:
+  amortized.yaml: |
+    id: amortized
+    name: Amortized task evaluation v1
+    description: Versioned deterministic, rubric and anchor/query task scoring
+    runtime:
+      k8s:
+        image: {{ $taskImage | quote }}
+        image_pull_policy: ifnotpresent
+        entrypoint: [python, -m, amortized.evaluation.adapter]
+        cpu_request: 1000m
+        cpu_limit: 4000m
+        memory_request: 2Gi
+        memory_limit: 8Gi
+    benchmarks:
+      - id: task
+        name: User-approved task recipe
+        description: Dataset snapshot, scorer versions and optional approved-rubric judge
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-evalhub-lighteval-provider
+  namespace: {{ $operatorNamespace }}
+  labels:
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: amortized-lighteval
+data:
+  amortized-lighteval.yaml: |
+    id: amortized-lighteval
+    name: Amortized LightEval endpoint evaluation
+    description: CPU-only generation benchmark; framework owns data and scoring
+    runtime:
+      k8s:
+        image: {{ .Values.evalhub.operator.lightEvalImage | quote }}
+        image_pull_policy: ifnotpresent
+        entrypoint: [python, main.py]
+        cpu_request: 500m
+        cpu_limit: 4000m
+        memory_request: 4Gi
+        memory_limit: 8Gi
+    benchmarks:
+      - id: gsm8k
+        name: GSM8K
+        description: Grade-school math word problems using LightEval's built-in protocol
+        metrics: [exact_match]
+        primary_score:
+          metric: exact_match
+          lower_is_better: false
+{{- end }}

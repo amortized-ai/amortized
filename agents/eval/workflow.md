@@ -81,16 +81,24 @@ always `"eval"`.
 
 ## What an Eval Job Does
 
-An eval job takes an **eval dataset** and **one** OpenAI-compatible
-model endpoint, and measures how well that model performs the task by
-scoring its answers against the reference answers:
+An eval job evaluates **one model** using one user-approved recipe. Call
+`list_evaluation_providers` to discover whether the Eval Hub engine and its
+configured benchmarks are available. Never call Hub submission APIs directly.
 
-- The model generates an answer for every eval prompt (temperature 0)
-- An **LLM judge** scores each output against the reference on custom
-  **rubric criteria**, each on a 0-1 scale (absolute, not a
-  comparison), averaged over the dataset. The criteria are NOT fixed —
-  the user decides what to measure, and you design judge criteria for
-  it (see Step 3). Every eval needs at least one criterion.
+- **Task dataset:** generate each answer once, then apply implemented
+  deterministic scorers and/or an explicitly selected rubric judge to that
+  same answer. A deterministic-only task requires no judge. Supported scorer
+  IDs and versions come from the capability response; never invent or generate
+  executable scorer code from the user's prose.
+- **Embedding classifier:** retain the existing anchor/query workflow and
+  its accuracy/F1 semantics; no chat endpoint or judge is needed.
+- **Benchmark:** the configured framework owns its dataset, prompts and
+  scoring protocol. Select an enabled provider/benchmark ID. Do not generate
+  an unrelated SDG dataset or require an unrelated task rubric/judge.
+
+All requirement gathering, warning decisions, validation and confirmation
+remain here. Only after the user clicks Confirm does the accepted job run
+through Eval Hub. Existing native evaluations remain readable during migration.
 
 One eval job evaluates one model. To compare models (e.g. tuned vs
 base), run a SEPARATE eval for each — ONE AT A TIME: finish one model's
@@ -128,16 +136,26 @@ Two legitimate entries:
 The model does NOT have to come from training. Any HF model or
 OpenAI-compatible endpoint can be evaluated (e.g. a gateway model).
 
-**Once the subject is settled, your next step is the eval dataset
-(Step 1).** If no eval dataset exists in this conversation, you cannot
+**Once the subject is settled, establish task versus benchmark intent.**
+For a requested benchmark, call `list_evaluation_providers`, ask the user to
+choose an enabled benchmark, and set `evaluation.kind="benchmark"`, its
+`provider_id` and `benchmark_id`. Then go to Step 1.5 for sample count and
+Step 2 for the model. Skip Step 1 and the custom-rubric branch of Step 3.
+Use only the exposed framework parameters; the first supported benchmark is
+generation-only GSM8K. Other protocols require an enabled capability contract.
+
+For a task, your next step is the eval dataset (Step 1).
+If no eval dataset exists in this conversation, you cannot
 generate one yourself — you are a leaf and do not delegate. Your move is to
 CALL `request_orchestrator_help`; do NOT describe handing off in prose.
 (Full dataset logic — reuse, split, or hand back — is in Step 1.)
 
 ### Step 1 — Confirm the eval dataset <!--signal:eval-dataset owed:present_options-->
 
-The eval dataset needs a `messages` column. The trailing assistant
-message is used as the reference answer.
+The default task dataset uses a `messages` column; the trailing assistant
+message is removed before target inference and used as the reference answer.
+Explicit task definitions may map another input/reference column. Confirm
+those mappings with the user. Benchmark-owned datasets skip this section.
 
 **For a tuned model, FIRST offer reusing an existing eval set — do not
 jump to generating a fresh one.** Scoring a model on a set another model
@@ -330,6 +348,21 @@ can relay that error to the user when it happens.
 
 ### Step 3 — Design the metrics (approval loop) <!--signal:metrics-->
 
+**Choose the scoring mechanism before the rubric branch below.** For a
+benchmark, explain its framework-owned metric and proceed to validation.
+For an embedding task, retain the existing anchor/query metrics. For a
+deterministic task, set `evaluation={kind:"task",version:"1",scorers:[...]}`
+using implemented IDs (`exact_match`, `json_schema`, `numeric_mae`,
+`numeric_tolerance`), each with a unique name and version "1". Confirm the
+input/reference columns, JSON field extraction, schema/tolerance and invalid
+output policy. Numeric MAE is lower-is-better in reference units; do not call
+it an accuracy percentage. A different algorithm needs implementation, not
+an invented scorer ID. No judge is required unless rubric criteria are also
+selected. For a hybrid, obtain rubric approval using the remaining instructions
+and keep deterministic and rubric metric names distinct.
+
+The following rubric branch applies when rubric scoring is requested:
+
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
 field (`{rubric: [{name, description}]}`) when any
@@ -449,6 +482,13 @@ gpt-oss · judge samples: all (default)`
 After the user clicks Confirm on the platform card, the job is
 submitted and you'll be notified when it completes. Never claim the job
 was submitted — check the job's existence first if in doubt.
+
+For a benchmark or deterministic-only task, summarize the selected protocol,
+scorers and sample limits instead of an invented judge. Use Amortized job IDs
+for monitoring, logs, results and Cancel. A cancellation request remains pending
+until the execution engine reports its outcome; a timeout or stale observation
+is not evidence that the evaluation failed. Preserve raw metric units/direction,
+invalid-output counts and any partial benchmark errors when reporting results.
 
 ### Step 5 — Report results <!--signal:report owed:present_options-->
 

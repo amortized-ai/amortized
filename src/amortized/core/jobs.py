@@ -105,9 +105,7 @@ async def create_job(
     # stored ref-form (small, clone-safe); refs are expanded only at build time.
     prompt_refs = find_prompt_refs(config)
     if prompt_refs:
-        missing = [
-            ref for ref in prompt_refs if await repo.get_prompt_content(ref) is None
-        ]
+        missing = [ref for ref in prompt_refs if await repo.get_prompt_content(ref) is None]
         if missing:
             raise InvalidJobStateError(
                 "config references prompt(s) with no stored text: "
@@ -143,17 +141,40 @@ async def create_job(
     if "parent_job_id" in stored_config:
         stored_config.pop("parent_job_id")
 
-    row = await repo.create_job(
-        job_id=job_id,
-        job_type=job_type,
-        config=stored_config,
-        created_at=now,
-        recipe=recipe,
-        parent_job_id=parent_job_id,
-        user_id=user_id,
-        k8s_namespace=_settings.compute_namespace,
-        retry_of=retry_of,
-    )
+    import amortized.config as config_mod
+
+    hub_owned = job_type == JobType.eval and bool(config_mod.settings.evalhub_url)
+
+    # The immutable request and outbox appear together, only after create-time
+    # application checks. No remote submission occurs on the HTTP/card path.
+    async def persist() -> dict[str, Any]:
+        result = await repo.create_job(
+            job_id=job_id,
+            job_type=job_type,
+            config=stored_config,
+            created_at=now,
+            recipe=recipe,
+            parent_job_id=parent_job_id,
+            user_id=user_id,
+            k8s_namespace=_settings.compute_namespace,
+            retry_of=retry_of,
+            execution_owner="evalhub" if hub_owned else "native",
+        )
+        if hub_owned:
+            from amortized.db.evalhub import EvalHubRepository
+
+            await EvalHubRepository(repo).create(
+                job_id,
+                config_mod.settings.evalhub_tenant or config_mod.settings.compute_namespace,
+                config_mod.settings.evalhub_url,
+            )
+        return result
+
+    if hub_owned:
+        async with repo.conn.transaction():
+            row = await persist()
+    else:
+        row = await persist()
 
     logger.info("Created %s job %s", job_type.value, job_id)
     return row
@@ -171,7 +192,9 @@ async def list_jobs(
     k8s_namespace: str = "",
 ) -> list[dict[str, Any]]:
     return await repo.list_jobs(
-        status=status, job_type=job_type, k8s_namespace=k8s_namespace,
+        status=status,
+        job_type=job_type,
+        k8s_namespace=k8s_namespace,
     )
 
 
@@ -185,6 +208,11 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
         raise InvalidJobStateError(f"Cannot cancel job with status '{current_status}'")
     if current_status == JobStatus.cancelled.value:
         return row
+
+    if row.get("execution_owner") == "evalhub":
+        from amortized.integrations.evalhub.lifecycle import request_cancel
+
+        return await request_cancel(repo, row)
 
     now = datetime.now(UTC)
 
@@ -260,5 +288,11 @@ async def delete_job(repo: Repository, job_id: str) -> None:
         raise InvalidJobStateError(
             f"Cannot delete job in state '{row['status']}' — cancel it first"
         )
+    if row.get("execution_owner") == "evalhub":
+        from amortized.db.evalhub import EvalHubRepository
+
+        execution = await EvalHubRepository(repo).get(job_id)
+        if execution and execution["state"] != "finished":
+            raise InvalidJobStateError("Evaluation dependency cleanup is still pending")
     await repo.delete_job(job_id)
     logger.info("Deleted job %s", job_id)

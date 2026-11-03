@@ -30,6 +30,33 @@ logger = logging.getLogger("amortized.api.evals")
 router = APIRouter(prefix="/api/v1/evaluations", tags=["evaluations"])
 
 
+@router.get("/providers", operation_id="list_evaluation_providers")
+async def list_evaluation_providers() -> dict[str, Any]:
+    """Read enabled task/benchmark capabilities before assembling an approval card."""
+    from amortized.integrations.evalhub.client import client
+
+    settings = config_mod.settings
+    if not settings.evalhub_url:
+        return {"enabled": False, "task_scoring": ["rubric", "embedding_anchor_query"]}
+    providers = []
+    async with client() as sdk:
+        for name in [settings.evalhub_task_provider, *settings.evalhub_providers]:
+            provider = await sdk.providers.get(name)
+            enabled = settings.evalhub_benchmarks.get(name, ["task"])
+            data = provider.model_dump(mode="json", exclude_none=True)
+            data["benchmarks"] = [b for b in data.get("benchmarks", []) if b["id"] in enabled]
+            providers.append(data)
+    return {
+        "enabled": True,
+        "providers": providers,
+        "task_scoring": [
+            "rubric", "exact_match@1", "json_schema@1", "numeric_mae@1",
+            "numeric_tolerance@1", "embedding_anchor_query@1",
+        ],
+        "benchmark_contract": "endpoint-only; selected provider owns dataset and scoring",
+    }
+
+
 def _tags(run: dict[str, Any]) -> dict[str, str]:
     return {t["key"]: t["value"] for t in run.get("data", {}).get("tags", [])}
 
@@ -156,7 +183,7 @@ def _entry_from_job(
         for key, value in tags.items():
             if key.startswith("eval_score_"):
                 with _Suppress():
-                    scores[key[len("eval_score_"):]] = float(value)
+                    scores[key[len("eval_score_") :]] = float(value)
         if tags.get("num_samples"):
             with _Suppress():
                 num_samples = int(tags["num_samples"])
@@ -209,6 +236,12 @@ async def list_evaluations(
     eval_jobs = await repo.list_jobs(
         job_type=JobType.eval, k8s_namespace=config_mod.settings.compute_namespace
     )
+    from amortized.integrations.evalhub.results import comparison_groups
+
+    hub_groups = await comparison_groups(
+        repo, [j for j in eval_jobs if j.get("execution_owner") == "evalhub"]
+    )
+    eval_jobs = [j for j in eval_jobs if j.get("execution_owner") != "evalhub"]
 
     run_tags = await _eval_runs_by_id()
 
@@ -309,22 +342,22 @@ async def list_evaluations(
         # timestamp — later, older jobs must not clobber it. Prefer
         # completed_at: the eval finished then, not when it was queued.
         if group["latest_created_at"] is None:
-            group["latest_created_at"] = (
-                job.get("completed_at") or job.get("created_at")
-            )
+            group["latest_created_at"] = job.get("completed_at") or job.get("created_at")
 
     # Only datasets that actually have evaluation results — a dataset whose
     # eval jobs all failed or predate the tag schema (no scores) is not
     # "evaluated" and should not appear as a comparison row.
-    scored_groups = [
-        g for g in groups.values() if any(e["scores"] for e in g["evals"])
-    ]
+    scored_groups = [g for g in groups.values() if any(e["scores"] for e in g["evals"])]
     result = sorted(
         scored_groups,
         key=lambda g: g.get("latest_created_at") or "",
         reverse=True,
     )
-    return {"groups": result}
+    return {
+        "groups": sorted(
+            [*result, *hub_groups], key=lambda g: g.get("latest_created_at") or "", reverse=True
+        )
+    }
 
 
 async def _training_recipe_signature(
@@ -401,6 +434,13 @@ async def list_reusable_eval_sets(
         if job.get("status") != JobStatus.succeeded.value:
             continue
         entry = _entry_from_job(job, run_tags)
+        if job.get("execution_owner") == "evalhub":
+            from amortized.db.evalhub import EvalHubRepository
+            from amortized.integrations.evalhub.results import present
+
+            execution = await EvalHubRepository(repo).get(job["id"])
+            view = present(execution) if execution else None
+            entry["scores"] = (view or {}).get("scores") or {}
         # Only sets with real scores are reusable comparison baselines.
         if not entry["scores"]:
             continue
@@ -439,6 +479,9 @@ async def list_reusable_eval_sets(
         if model and model != "(unknown)" and model not in grp["models_scored"]:
             grp["models_scored"].append(model)
         for name in _signature_names(_metric_set_signature(cfg)):
+            if name not in grp["metric_names"]:
+                grp["metric_names"].append(name)
+        for name in entry["scores"]:
             if name not in grp["metric_names"]:
                 grp["metric_names"].append(name)
         if grp["latest_created_at"] is None:

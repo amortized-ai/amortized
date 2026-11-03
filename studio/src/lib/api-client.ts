@@ -248,12 +248,13 @@ export interface EvalJudgeMetrics {
 }
 
 export interface EvalResults {
-  num_records: number
-  num_skipped: number
+  num_records: number | null
+  num_skipped: number | null
   // New single-model schema (one model per eval job, absolute scores):
-  model?: EvalModelMetrics
+  model?: Partial<EvalModelMetrics>
   scores?: Record<string, number | null>
   scores_n?: Record<string, number>
+  metric_metadata?: Record<string, EvalMetricMetadata>
   num_scored?: number
   // Classification eval (eval_mode="classification"):
   eval_mode?: string
@@ -301,8 +302,17 @@ export interface EvaluationGroup {
   id: string
   dataset: { run_id: string; name: string }
   metric_names: string[]
+  metric_metadata?: Record<string, EvalMetricMetadata>
   evals: EvaluationEntry[]
   latest_created_at: string | null
+}
+
+export interface EvalMetricMetadata {
+  unit: string
+  direction: "higher" | "lower" | null
+  range?: [number, number] | null
+  num_samples?: number
+  num_invalid?: number
 }
 
 export async function getEvaluations(): Promise<EvaluationGroup[]> {

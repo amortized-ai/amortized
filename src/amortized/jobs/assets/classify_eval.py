@@ -50,10 +50,17 @@ MIN_QUERIES_PER_CLASS = 5
 
 def _load_rows(path: str, text_column: str, label_column: str) -> list[dict]:
     """Load a labeled dataset (jsonl/json/parquet/csv file, dir, or HF id)."""
-    from training_hub.utils import load_training_dataset
+    try:
+        from training_hub.utils import load_training_dataset
+    except ImportError:
+        # The task-adapter image needs the scorer, not the training stack.
+        from amortized.evaluation.generation import load_records
 
-    ds = load_training_dataset(path)
-    cols = ds.column_names
+        ds = load_records(path)
+        cols = list(ds[0]) if ds else []
+    else:
+        ds = load_training_dataset(path)
+        cols = ds.column_names
     if text_column not in cols:
         raise ValueError(
             f"text column {text_column!r} not found in dataset columns {cols}"
@@ -91,11 +98,21 @@ def _macro_f1(confusion: dict, labels: list) -> tuple[float, dict]:
     return macro, per_class
 
 
+def run(cfg: dict) -> dict:
+    """Shared anchor/query algorithm; callable by the native CLI and Hub adapter."""
+    return _run(cfg)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     with open(ap.parse_args().config) as _cfg_f:
         cfg = json.load(_cfg_f)
+
+    run(cfg)
+
+
+def _run(cfg: dict) -> dict:
 
     text_col = cfg.get("text_column", "text")
     label_col = cfg.get("label_column", "label")
@@ -278,6 +295,8 @@ def main() -> None:
             f"NOTE: {len(skipped_classes)} single-example class(es) had no queries "
             f"and were excluded from macro-F1: {[name(i) for i in skipped_classes]}"
         )
+
+    return metrics
 
 
 if __name__ == "__main__":

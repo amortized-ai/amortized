@@ -1655,6 +1655,30 @@
         }
       }
     },
+    "/api/v1/evaluations/providers": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "List Evaluation Providers",
+        "description": "Read enabled task/benchmark capabilities before assembling an approval card.",
+        "operationId": "list_evaluation_providers",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Evaluation Providers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/evaluations": {
       "get": {
         "tags": [
@@ -2474,6 +2498,56 @@
         "type": "object",
         "title": "BaseModel"
       },
+      "BenchmarkEvaluation": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "benchmark",
+            "title": "Kind"
+          },
+          "provider_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Provider Id"
+          },
+          "benchmark_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Benchmark Id"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "dataset_revision": {
+            "type": "string",
+            "const": "",
+            "title": "Dataset Revision",
+            "default": ""
+          },
+          "test_data_ref": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Data Ref"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "provider_id",
+          "benchmark_id"
+        ],
+        "title": "BenchmarkEvaluation"
+      },
       "BernoulliMixtureSamplerParams": {
         "properties": {
           "p": {
@@ -3196,6 +3270,67 @@
         ],
         "title": "DelegateResponse"
       },
+      "DeterministicScorer": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "exact_match",
+              "json_schema",
+              "numeric_mae",
+              "numeric_tolerance"
+            ],
+            "title": "Id"
+          },
+          "version": {
+            "type": "string",
+            "const": "1",
+            "title": "Version",
+            "default": "1"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+            "title": "Name"
+          },
+          "response_field": {
+            "type": "string",
+            "title": "Response Field",
+            "default": ""
+          },
+          "reference_field": {
+            "type": "string",
+            "title": "Reference Field",
+            "default": ""
+          },
+          "tolerance": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Tolerance",
+            "default": 0.0
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DeterministicScorer"
+      },
       "DistributionType": {
         "type": "string",
         "enum": [
@@ -3622,6 +3757,31 @@
             ],
             "title": "Config Json",
             "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
+          },
+          "evaluation": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TaskEvaluation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BenchmarkEvaluation"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "benchmark": "#/components/schemas/BenchmarkEvaluation",
+                    "task": "#/components/schemas/TaskEvaluation"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation"
           },
           "rubric": {
             "items": {
@@ -4295,6 +4455,37 @@
           "retry_of": {
             "type": "string",
             "title": "Retry Of",
+            "default": ""
+          },
+          "execution_owner": {
+            "type": "string",
+            "title": "Execution Owner",
+            "default": "native"
+          },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested",
+            "default": false
+          },
+          "execution_sync_error": {
+            "type": "string",
+            "title": "Execution Sync Error",
+            "default": ""
+          },
+          "execution_observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Observed At"
+          },
+          "execution_phase": {
+            "type": "string",
+            "title": "Execution Phase",
             "default": ""
           }
         },
@@ -6546,6 +6737,43 @@
         ],
         "title": "SubcategorySamplerParams",
         "description": "Parameters for subcategory sampling conditioned on a parent category column.\n\nSamples subcategory values based on the value of a parent category column. Each parent\ncategory value maps to its own list of possible subcategory values, enabling hierarchical\nor conditional sampling patterns.\n\nAttributes:\n    category (required): Name of the parent category column that this subcategory depends on.\n        The parent column must be generated before this subcategory column.\n    values (required): Mapping from each parent category value to a list of possible subcategory values.\n        Each key must correspond to a value that appears in the parent category column."
+      },
+      "TaskEvaluation": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "task",
+            "title": "Kind",
+            "default": "task"
+          },
+          "version": {
+            "type": "string",
+            "const": "1",
+            "title": "Version",
+            "default": "1"
+          },
+          "scorers": {
+            "items": {
+              "$ref": "#/components/schemas/DeterministicScorer"
+            },
+            "type": "array",
+            "title": "Scorers"
+          },
+          "input_column": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Input Column",
+            "default": "messages"
+          },
+          "reference_column": {
+            "type": "string",
+            "title": "Reference Column",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskEvaluation"
       },
       "TimeDeltaSamplerParams": {
         "properties": {

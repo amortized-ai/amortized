@@ -51,31 +51,15 @@ export function useCancelJob() {
 
   return useMutation({
     mutationFn: (jobId: string) => cancelJob(jobId),
-    onMutate: async (jobId) => {
-      await queryClient.cancelQueries({ queryKey: ["jobs"] })
-
-      const previousJobs = queryClient.getQueryData<Job[]>(["jobs"])
-
-      queryClient.setQueryData<Job[]>(
-        ["jobs"],
-        (old) =>
-          Array.isArray(old)
-            ? old.map((j) =>
-                j.id === jobId ? { ...j, status: "cancelled" as const } : j,
-              )
-            : old,
-      )
-
-      return { previousJobs }
-    },
-    onSuccess: (_data, jobId) => {
-      toast.success(`Job ${jobId.slice(0, 8)} cancelled successfully`)
-    },
-    onError: (err, _jobId, context) => {
-      toast.error(`Failed to cancel job: ${err instanceof Error ? err.message : "Unknown error"}`)
-      if (context?.previousJobs) {
-        queryClient.setQueryData<Job[]>(["jobs"], context.previousJobs)
+    onSuccess: (job, jobId) => {
+      if (job.status === "cancelled") {
+        toast.success(`Job ${jobId.slice(0, 8)} cancelled successfully`)
+      } else {
+        toast.info(`Cancellation requested for job ${jobId.slice(0, 8)}`)
       }
+    },
+    onError: (err) => {
+      toast.error(`Failed to cancel job: ${err instanceof Error ? err.message : "Unknown error"}`)
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] })

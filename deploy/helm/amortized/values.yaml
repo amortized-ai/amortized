@@ -71,6 +71,36 @@ server:
   extraVolumeMounts: []
   hostAliases: []
 
+evalhub:
+  # Empty URL retains the native migration path for new jobs. Historical owners
+  # never change. Connect to the authenticated HTTPS service, not its internal port.
+  url: ""
+  tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+  caConfigMap: ""
+  caKey: service-ca.crt
+  stagingBucket: ""
+  s3Secret: amortized-s3
+  pollInterval: 3
+  preparationTimeout: 1800
+  providers: [lighteval]
+  benchmarks: {lighteval: [gsm8k]}
+  taskProvider: amortized
+  experiment: amortized/evaluation
+  # Installed operator owns the Go server, TLS/auth proxy, and runtime helpers.
+  # These optional resources register a dedicated instance and pinned providers.
+  operator:
+    createInstance: false
+    name: evalhub
+    namespace: ""
+    databaseSecret: "" # Secret with db-url in instance namespace; separate Hub DB
+    createProviders: false
+    namespaceForProviders: "" # installed TrustyAI operator namespace
+    taskAdapterImage: "" # required immutable ghcr.io/amortized-ai/evalhub-adapter@sha256:...
+    lightEvalImage: quay.io/evalhub/community-lighteval@sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc
+    # Existing operator tenant API Role; set empty only when auth is handled elsewhere.
+    apiRole: evalhub-user
+    jobServiceAccount: "" # actual operator-created adapter/sidecar SA for MLflow
+
 studio:
   # Deploy the bundled Studio (Deployment + Service). Set false when a front-end
   # (e.g. the RHOAI studio-gateway) serves Studio itself and only needs the server.
