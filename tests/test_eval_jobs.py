@@ -453,6 +453,24 @@ class TestEvalBuilder:
 
         runner = json.loads(result.config_files["config.json"])
         assert "judge" not in runner["endpoints"]
+        assert not any("--check-judge" in c for c in result.pre_commands)
+
+    @pytest.mark.asyncio
+    async def test_judge_preflight_is_first_pod_step_for_external_endpoint(self) -> None:
+        # The judge is called only at the end of an eval; checking it first means a dead judge
+        # fails the pod in seconds instead of as null scores several minutes later.
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, {**EVAL_BODY}, {})
+        first = result.pre_commands[0]
+        assert "EVAL-STAGE: checking-judge" in first
+        assert "python3 /app/run_eval.py --config /amortized/config.json --check-judge" in first
+
+    @pytest.mark.asyncio
+    async def test_judge_preflight_runs_before_serving_setup(self) -> None:
+        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B", "judge": JUDGE}
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+        assert "--check-judge" in result.pre_commands[0]
+        assert any("check_gpu_memory.py" in c for c in result.pre_commands[1:])
 
     @pytest.mark.asyncio
     async def test_build_embeds_serving_for_lora_training_job(self, monkeypatch) -> None:
@@ -1201,6 +1219,174 @@ class TestEndpointRetries:
         assert "temperature" not in seen[-1]
         assert "max_tokens" not in seen[-1]
         assert seen[-1].get("max_completion_tokens") == 64
+
+
+# A judge endpoint as the builder resolves it into the runner's config.json.
+RUNNER_JUDGE_EP = {
+    "base_url": "http://gateway:5000/v1",
+    "model": "gpt-oss",
+    "api_key_env": "EVAL_JUDGE_API_KEY",
+    "provider_type": "openai",
+}
+RUNNER_CONFIG = {"endpoints": {"judge": RUNNER_JUDGE_EP}}
+
+
+class TestJudgePreflight:
+    """`run_eval.py --check-judge`: one request through the runner's own call_model, run as the
+    pod's first step; on failure it explains itself via the K8s termination log."""
+
+    @pytest.fixture
+    def runner(self, monkeypatch: pytest.MonkeyPatch):
+        import asyncio as _asyncio
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent.parent / "containers" / "eval" / "run_eval.py"
+        spec = importlib.util.spec_from_file_location("run_eval", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        async def _no_backoff(_seconds: float) -> None:
+            return None
+
+        monkeypatch.setattr(_asyncio, "sleep", _no_backoff)
+        return module
+
+    def _route(self, monkeypatch: pytest.MonkeyPatch, handler) -> list[httpx.Request]:
+        seen: list[httpx.Request] = []
+        real_client = httpx.AsyncClient
+
+        def _handle(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return handler(request)
+
+        monkeypatch.setattr(
+            httpx,
+            "AsyncClient",
+            lambda **kw: real_client(transport=httpx.MockTransport(_handle), **kw),
+        )
+        return seen
+
+    @pytest.mark.asyncio
+    async def test_reachable_judge(self, runner, monkeypatch: pytest.MonkeyPatch) -> None:
+        import json as _json
+
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "sk-judge")
+        seen = self._route(
+            monkeypatch,
+            lambda _r: httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]}),
+        )
+        assert await runner.check_endpoint(RUNNER_CONFIG, "judge") is None
+        (req,) = seen
+        assert str(req.url) == "http://gateway:5000/v1/chat/completions"
+        assert req.headers["Authorization"] == "Bearer sk-judge"
+        assert _json.loads(req.content)["max_tokens"] == 16
+
+    @pytest.mark.asyncio
+    async def test_reasoning_judge_param_adapted(
+        self, runner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import json as _json
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "max_tokens" in _json.loads(request.content):
+                return httpx.Response(400, text="use 'max_completion_tokens' instead")
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+        self._route(monkeypatch, handler)
+        assert await runner.check_endpoint(RUNNER_CONFIG, "judge") is None
+
+    @pytest.mark.asyncio
+    async def test_wrong_model_name_fails(self, runner, monkeypatch: pytest.MonkeyPatch) -> None:
+        # #547: the gateway routes by endpoint name, so the underlying model_name 404s.
+        self._route(monkeypatch, lambda _r: httpx.Response(404, text="endpoint not found"))
+        error = await runner.check_endpoint(RUNNER_CONFIG, "judge")
+        assert error is not None and "404" in error
+
+    @pytest.mark.asyncio
+    async def test_unreachable_host_fails(self, runner, monkeypatch: pytest.MonkeyPatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        seen = self._route(monkeypatch, handler)
+        error = await runner.check_endpoint(RUNNER_CONFIG, "judge")
+        assert error is not None and "refused" in error
+        assert len(seen) == runner.MAX_RETRIES  # the runner's transient retries apply
+
+    @pytest.mark.asyncio
+    async def test_anthropic_judge_uses_messages_api(
+        self, runner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen = self._route(
+            monkeypatch,
+            lambda _r: httpx.Response(200, json={"content": [{"type": "text", "text": "ok"}]}),
+        )
+        ep = {
+            **RUNNER_JUDGE_EP,
+            "base_url": "https://api.anthropic.com/v1",
+            "provider_type": "anthropic",
+        }
+        assert await runner.check_endpoint({"endpoints": {"judge": ep}}, "judge") is None
+        assert str(seen[0].url) == "https://api.anthropic.com/v1/messages"
+
+    def _main(self, runner, monkeypatch, tmp_path, handler, config=RUNNER_CONFIG):
+        import json as _json
+        import sys
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text(_json.dumps(config))
+        term = tmp_path / "termination-log"
+        monkeypatch.setenv("TERMINATION_LOG", str(term))
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "sk-secret-123")
+        monkeypatch.setattr(sys, "argv", ["run_eval.py", "--config", str(cfg), "--check-judge"])
+        self._route(monkeypatch, handler)
+        return term
+
+    def test_main_check_judge_failure_writes_termination_message(
+        self, runner, monkeypatch: pytest.MonkeyPatch, tmp_path, capsys
+    ) -> None:
+        term = self._main(
+            runner, monkeypatch, tmp_path, lambda _r: httpx.Response(404, text="not found")
+        )
+        with pytest.raises(SystemExit) as exc:
+            runner.main()
+        assert exc.value.code == 1
+        message = term.read_text()
+        assert "judge model 'gpt-oss'" in message
+        assert "did not answer a test request" in message
+        assert "sk-secret-123" not in message
+        assert "=== EVAL-STAGE: judge-unreachable ===" in capsys.readouterr().out
+
+    def test_main_check_judge_success_exits_cleanly(
+        self, runner, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        term = self._main(
+            runner,
+            monkeypatch,
+            tmp_path,
+            lambda _r: httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]}),
+        )
+        runner.main()  # no SystemExit: preflight passed, normal eval not run
+        assert not term.exists()
+
+    def test_main_check_judge_without_judge_fails_loudly(
+        self, runner, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        # The builder only adds --check-judge with a judge; reaching this is a builder bug and
+        # must fail, not silently pass a config that can't score.
+        seen: list[httpx.Request] = []
+        term = self._main(
+            runner,
+            monkeypatch,
+            tmp_path,
+            lambda r: seen.append(r) or httpx.Response(200),
+            config={"endpoints": {}},
+        )
+        with pytest.raises(SystemExit) as exc:
+            runner.main()
+        assert exc.value.code == 1
+        assert term.read_text() == "--check-judge was given but the config has no judge endpoint"
+        assert seen == []
 
 
 class TestJobImageTag:

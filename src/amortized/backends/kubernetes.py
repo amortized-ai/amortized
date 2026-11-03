@@ -618,6 +618,12 @@ class KubernetesBackend:
                     if cs.state and cs.state.terminated:
                         exit_code = cs.state.terminated.exit_code
                         reason = cs.state.terminated.reason or ""
+                        # A job that writes /dev/termination-log (e.g. the eval judge
+                        # preflight) explains its own failure — prefer that over the
+                        # generic exit-code text.
+                        message = (cs.state.terminated.message or "").strip()
+                        if exit_code != 0 and message:
+                            return f"{message[:500]} (exit code {exit_code})"
                         if exit_code != 0:
                             return (
                                 f"Job exited with code {exit_code}"

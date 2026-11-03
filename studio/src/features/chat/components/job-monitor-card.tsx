@@ -35,6 +35,10 @@ function statusToProgress(status: JobStatus, elapsed: number): number {
 function runningStageLabel(jobType: string, stageMarker: string | null): string {
   if (jobType === "EVAL") {
     switch (stageMarker) {
+      case "checking-judge":
+        return "Checking the judge model is reachable (Stage 3/4)"
+      case "judge-unreachable":
+        return "The judge model is unreachable — stopping"
       case "serving":
         return "Serving the model inside the eval job (Stage 3/4)"
       case "waiting-for-endpoint":

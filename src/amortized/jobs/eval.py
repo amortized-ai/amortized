@@ -403,6 +403,14 @@ async def build(
         endpoints["judge"] = _endpoint_spec(
             {"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY", env
         )
+        # First step in the pod, ahead of adapter download / serving / generation: the judge is
+        # only called at the very end, so a dead one otherwise surfaces several minutes in as null
+        # scores. Runs in the pod so it sees the real network and injected key.
+        pre_commands.insert(
+            0,
+            'echo "=== EVAL-STAGE: checking-judge ==="'
+            " && python3 /app/run_eval.py --config /amortized/config.json --check-judge",
+        )
 
     eval_data_path = config.get("eval_data_path", "")
     eval_data_run_id = config.get("eval_data_run_id", "")
