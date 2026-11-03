@@ -84,7 +84,29 @@ export function useAddModelProvider() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: addModelProvider,
-    onSuccess: () => invalidateProviderQueries(queryClient),
+    onSuccess: (_data, { provider, key }) => {
+      // Optimistically reflect the saved endpoint in the cache so the settings card's "Change" seeds
+      // the current base URL even before the status refetch lands. Without this, clicking Change inside
+      // the refetch window snapshots a stale/empty base URL and saving a key would revert to native.
+      queryClient.setQueryData<ModelProviderStatus>(["gateway", "model-provider"], (prev) => {
+        if (!prev) return prev
+        const baseUrls = { ...prev.baseUrls }
+        let baseURL = ""
+        try {
+          const parsed = JSON.parse(key) as { baseURL?: unknown }
+          if (typeof parsed?.baseURL === "string") baseURL = parsed.baseURL.trim().replace(/\/+$/, "")
+        } catch {
+          /* a plain key string is native — no base URL */
+        }
+        if (baseURL) baseUrls[provider] = baseURL
+        else delete baseUrls[provider]
+        const configured = prev.configured.includes(provider)
+          ? prev.configured
+          : [...prev.configured, provider]
+        return { ...prev, configured, baseUrls }
+      })
+      invalidateProviderQueries(queryClient)
+    },
   })
 }
 
