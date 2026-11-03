@@ -137,7 +137,7 @@ const PROVIDERS = {
   // it ALSO powers the server catalog + SDG teacher + eval judge: ensureServerKeySecret writes
   // MAAS_API_KEY + MAAS_BASE_URL into the server env (model_catalog reads both). In the sandbox
   // it is injected as an opencode `provider.maas` block (via a baked @ai-sdk/openai shim that routes
-  // every model to Responses except gemini -> chat; see containers/morty) whose models are discovered
+  // every model through model-aware chat-completions; see containers/morty) whose models are discovered
   // from the endpoint's /models at create time (see ensureSandbox).
   maas: {
     kind: 'openai-compat',
@@ -689,8 +689,8 @@ async function ensureSandbox(ns, providers) {
   // `provider.maas` block with the per-user base URL and the discovered models, so opencode reports
   // maas in /provider (connected) and resolves `maas/<model>` turns. The npm is a baked shim
   // (/opt/maas-openai-chat; see containers/morty) that routes every model through @ai-sdk/openai's
-  // Responses API EXCEPT gemini (no /v1/responses on EnMaaS -> chat-completions). Responses sidesteps
-  // the max_tokens-vs-max_completion_tokens issue that breaks gpt-5/6 on @ai-sdk/openai-compatible.
+  // model-aware chat-completions (max_completion_tokens for gpt-5/6, max_tokens otherwise) — the
+  // universal dialect, which also fixes the gpt-5/6 max_tokens break on @ai-sdk/openai-compatible.
   const rewrite =
     'const fs=require("fs"),f="opencode.json",c=JSON.parse(fs.readFileSync(f));' +
     'if(process.env.MORTY_MODEL){c.model=process.env.MORTY_MODEL;}' +
@@ -740,7 +740,7 @@ async function ensureSandbox(ns, providers) {
         );
       } else if (p.kind === 'openai-compat') {
         // MaaS: the key + base URL + discovered models (base64 JSON) feed the opencode.json rewrite
-        // above, which writes them into the provider.maas block (@ai-sdk/openai-compatible).
+        // above, which writes them into the provider.maas block (a baked @ai-sdk/openai chat shim).
         const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
         credEnv.push(
           '--env', `${p.credentialKey}=${apiKey}`,
