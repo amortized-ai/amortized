@@ -191,14 +191,28 @@ describe("ActionCard", () => {
     dataRecordCount: 150,
   }
 
-  it("shows the judge model and eval record count on an eval card", () => {
+  it("shows the judge model and eval dataset size on an eval card", () => {
     render(<ActionCard action={evalAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
       wrapper: Wrapper,
     })
     expect(screen.getByText("Judge model")).toBeInTheDocument()
     expect(screen.getByText("gpt-oss")).toBeInTheDocument()
-    expect(screen.getByText("Eval records")).toBeInTheDocument()
+    expect(screen.getByText("Eval dataset size")).toBeInTheDocument()
     expect(screen.getByText("150")).toBeInTheDocument()
+  })
+
+  it("shows max_samples alongside the dataset size when it caps the eval", () => {
+    render(
+      <ActionCard
+        action={{ ...evalAction, config: { ...evalAction.config, max_samples: 10 } }}
+        onConfirm={vi.fn()}
+        onReject={vi.fn()}
+      />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText("Eval dataset size")).toBeInTheDocument()
+    expect(screen.getByText("Max samples")).toBeInTheDocument()
+    expect(screen.getByText("10")).toBeInTheDocument()
   })
 
   it("omits the judge model row when the eval config has no judge", () => {

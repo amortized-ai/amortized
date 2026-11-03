@@ -166,12 +166,13 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
     ? extractConfigSummary(action.jobType, action.config, action.outputPrompt, action.prompts)
     : []
   // The dataset's record count is resolved by the backend (not in the config), so
-  // the user always sees how many records they're about to train or evaluate on.
+  // the user always sees how much data the job reads. Eval labels it as the dataset
+  // size because max_samples (its own row) can cap how many records are evaluated.
   const recordsLabel =
     action.jobType === "training"
       ? "Training records"
       : action.jobType === "eval"
-        ? "Eval records"
+        ? "Eval dataset size"
         : null
   if (recordsLabel && typeof action.dataRecordCount === "number") {
     summary.push([recordsLabel, action.dataRecordCount.toLocaleString()])
