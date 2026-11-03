@@ -103,6 +103,10 @@ def _anthropic_provider_def() -> dict[str, str] | None:
     if base_url and not base_url.lower().startswith("https://"):
         logger.warning("ignoring non-HTTPS ANTHROPIC_BASE_URL (key would cross plaintext)")
         return None
+    # The Messages API lives under /v1; append it when omitted so a base URL entered without it
+    # (e.g. https://gateway.example.com) still resolves /v1/models + /v1/messages consistently.
+    if base_url and not base_url.endswith("/v1"):
+        base_url = f"{base_url}/v1"
     return {
         "name": "anthropic",
         "endpoint": base_url or "https://api.anthropic.com/v1",
