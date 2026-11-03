@@ -48,7 +48,7 @@ data:
     runtime:
       k8s:
         image: {{ $taskImage | quote }}
-        image_pull_policy: ifnotpresent
+        image_pull_policy: if_not_present
         entrypoint: [python, -m, amortized.evaluation.adapter]
         cpu_request: 1000m
         cpu_limit: 4000m
@@ -75,7 +75,7 @@ data:
     runtime:
       k8s:
         image: {{ .Values.evalhub.operator.lightEvalImage | quote }}
-        image_pull_policy: ifnotpresent
+        image_pull_policy: if_not_present
         entrypoint: [python, main.py]
         cpu_request: 500m
         cpu_limit: 4000m
