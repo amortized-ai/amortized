@@ -1343,10 +1343,17 @@ async def validate_eval_job(
             ],
         )
 
+    # Same precedence as the worker: the parent's output first, else eval_data_run_id.
+    data_run = await _resolve_data_run(
+        Repository(db), parent_job_id, str(config.get("eval_data_run_id") or "")
+    )
+    record_count = await _dataset_record_count(data_run)
+
     return ValidatedJobConfig(
         job_type=JobType.eval,
         config=config,
         parent_job_id=parent_job_id,
+        data_record_count=record_count,
         warnings=warnings,
     )
 

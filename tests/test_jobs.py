@@ -263,6 +263,37 @@ class TestUpstreamDependencyPrecondition:
         assert "succeeded" in str(resp.json()).lower()
 
 
+class TestEvalConfirmCardFacts:
+    @pytest.mark.asyncio
+    async def test_validate_eval_returns_record_count(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Like training, the eval card shows the dataset's record count, resolved by the
+        # backend from the run the job will score.
+        import amortized.api.jobs as jobs_mod
+
+        seen: list[str] = []
+
+        async def _count(run_id: str) -> int:
+            seen.append(run_id)
+            return 150
+
+        monkeypatch.setattr(jobs_mod, "_dataset_record_count", _count)
+        run_id = "d" * 32
+        body = {
+            "model_name_or_path": "Qwen/Qwen3.5-0.8B",
+            "judge": {"base_url": "http://x/v1", "model": "gpt-oss"},
+            "rubric": [{"name": "acc", "description": "Is the answer correct?"}],
+            "eval_data_run_id": run_id,
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["data_record_count"] == 150
+        assert seen == [run_id]
+        assert "data_record_count" not in data["config"]
+
+
 class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_empty(self, client: httpx.AsyncClient) -> None:
