@@ -131,7 +131,10 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             provider = await sdk.providers.get(provider_id)
         if benchmark_id not in {b.id for b in provider.benchmarks}:
             return [f"benchmark {benchmark_id!r} is not in provider {provider_id!r}"]
-        image = ((provider.runtime or {}).get("k8s") or {}).get("image", "")
+        runtime = (provider.runtime or {}).get("k8s") or {}
+        # Hub 1.0.3 serializes this Go struct field as "Image" in JSON,
+        # although provider YAML uses "image". Accept both wire formats.
+        image = runtime.get("Image") or runtime.get("image", "")
         if "@sha256:" not in image:
             return [f"provider {provider_id!r} must use a pinned adapter image digest"]
     except Exception:

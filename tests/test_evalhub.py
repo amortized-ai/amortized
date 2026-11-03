@@ -556,9 +556,13 @@ def test_json_schema_round_trips_through_accepted_request_and_invalid_schema_is_
             )
 
 
+@pytest.mark.parametrize("image_field", ["Image", "image"])
 async def test_preconfirmation_checks_catalog_and_routability_without_creating_resources(
     monkeypatch,
+    image_field,
 ):
+    from evalhub.models import Provider
+
     import amortized.config as config_mod
 
     settings = config_mod.Settings(
@@ -569,8 +573,11 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
         mlflow_tracking_uri="http://mlflow",
     )
     monkeypatch.setattr(config_mod, "settings", settings)
-    provider = MagicMock(
-        benchmarks=[MagicMock(id="gsm8k")], runtime={"k8s": {"image": "adapter@sha256:pinned"}}
+    provider = Provider(
+        resource={"id": "lighteval"},
+        name="LightEval",
+        benchmarks=[{"id": "gsm8k", "name": "GSM8K", "category": ""}],
+        runtime={"k8s": {image_field: "adapter@sha256:pinned"}},
     )
     sdk = MagicMock()
     sdk.providers.get = AsyncMock(return_value=provider)
@@ -585,6 +592,9 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
         "evaluation": {"kind": "benchmark", "provider_id": "lighteval", "benchmark_id": "gsm8k"},
     }
     assert await client.validate_definition(config) == []
+    provider.runtime = {"k8s": {image_field: "adapter:latest"}}
+    assert "pinned adapter image" in (await client.validate_definition(config))[0]
+    provider.runtime = {"k8s": {image_field: "adapter@sha256:pinned"}}
     assert (
         "capability contract"
         in (
