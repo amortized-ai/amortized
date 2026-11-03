@@ -142,6 +142,15 @@ class TestProviderInjection:
         assert d["endpoint"] == "https://gw.example.com/v1"  # trailing slash trimmed
         assert d["provider_type"] == "anthropic"
 
+    def test_anthropic_def_appends_v1_when_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A base URL without the /v1 version path still resolves /v1/models + /v1/messages: the
+        # Messages API lives under /v1, so it is appended when the user omits it.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gw.example.com")
+        d = model_catalog._anthropic_provider_def()
+        assert d is not None
+        assert d["endpoint"] == "https://gw.example.com/v1"
+
     def test_anthropic_def_absent_when_base_url_not_https(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

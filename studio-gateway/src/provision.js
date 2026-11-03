@@ -951,7 +951,11 @@ function validateCredential(provider, credential) {
       if (apiKey.length < 8) {
         throw new Error('Anthropic API key looks too short');
       }
-      const baseURL = `${url.origin}${url.pathname}`.replace(/\/$/, '');
+      // Anthropic's Messages API lives under /v1; append it when the user omits it so discovery
+      // (/v1/models), the opencode provider.anthropic block, and the server catalog all resolve
+      // consistently (a base URL like https://gateway.example.com would otherwise hit /models).
+      let baseURL = `${url.origin}${url.pathname}`.replace(/\/$/, '');
+      if (!/\/v1$/.test(baseURL)) baseURL += '/v1';
       return JSON.stringify({ baseURL, apiKey });
     }
     if (cred.length < 8) {
@@ -1101,7 +1105,16 @@ async function removeUserProvider(user, provider) {
 async function getProviderStatus(user) {
   const ns = nsForUser(user);
   const providers = await readUserProviders(ns);
-  return { ns, supported: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
+  // Non-secret base URLs for configured BYOK endpoint providers (anthropic/maas), so the settings
+  // card can pre-fill them when editing and NOT silently revert a custom endpoint to native on key
+  // rotation. The API key is never included.
+  const baseUrls = {};
+  for (const [name, cred] of Object.entries(providers)) {
+    const parsed = isOpenAICompatProvider(name) ? parseOpenAICompatCredential(cred)
+      : isAnthropicCompatProvider(name) ? parseAnthropicCredential(cred) : null;
+    if (parsed && parsed.baseURL) baseUrls[name] = parsed.baseURL;
+  }
+  return { ns, supported: SUPPORTED_PROVIDERS, configured: Object.keys(providers), baseUrls };
 }
 
 module.exports = { ensureUserStack, getState, markForRetry, setUserProvider, removeUserProvider, getProviderStatus, nsForUser };

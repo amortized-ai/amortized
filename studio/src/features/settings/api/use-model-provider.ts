@@ -14,6 +14,9 @@ export interface ModelProviderStatus {
   available: boolean
   supported: string[]
   configured: string[]
+  // Non-secret base URLs for configured BYOK endpoint providers (anthropic/maas), so the card can
+  // pre-fill them on edit and not silently revert a custom endpoint to native on key rotation.
+  baseUrls: Record<string, string>
 }
 
 async function fetchModelProvider(): Promise<ModelProviderStatus> {
@@ -22,13 +25,18 @@ async function fetchModelProvider(): Promise<ModelProviderStatus> {
   // index served for an unknown path in local dev). Any other non-OK status (401/500/…) or
   // a network failure is an operational error, not absence — let it throw so react-query
   // surfaces it as an error (an "unknown" state) instead of silently hiding the card.
-  if (resp.status === 404) return { available: false, supported: [], configured: [] }
+  if (resp.status === 404) return { available: false, supported: [], configured: [], baseUrls: {} }
   if (!resp.ok) throw new Error(`gateway provider status ${resp.status}`)
   if (!(resp.headers.get("content-type") || "").includes("application/json")) {
-    return { available: false, supported: [], configured: [] }
+    return { available: false, supported: [], configured: [], baseUrls: {} }
   }
   const data = await resp.json()
-  return { available: true, supported: data.supported ?? [], configured: data.configured ?? [] }
+  return {
+    available: true,
+    supported: data.supported ?? [],
+    configured: data.configured ?? [],
+    baseUrls: data.baseUrls ?? {},
+  }
 }
 
 export function useModelProvider() {

@@ -67,7 +67,7 @@ const CONFIGURED_BADGE =
 // One provider row: status badge + a credential editor (Change/Save/Cancel) mirroring the
 // legacy Agent Provider section, plus a Remove action. openai/anthropic take an API key
 // (masked input); vertex takes an ADC JSON blob (textarea).
-function ProviderRow({ providerID, configured }: { providerID: string; configured: boolean }) {
+function ProviderRow({ providerID, configured, baseUrl }: { providerID: string; configured: boolean; baseUrl?: string }) {
   const add = useAddModelProvider()
   const remove = useRemoveModelProvider()
   const [editing, setEditing] = useState(false)
@@ -154,7 +154,12 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
-                onClick={() => setEditing(true)}
+                onClick={() => {
+                  // Seed the base-URL field with the stored endpoint so rotating the key preserves it;
+                  // clearing the field is then an explicit switch to native.
+                  setBaseUrlDraft(baseUrl ?? "")
+                  setEditing(true)
+                }}
               >
                 Change
               </Button>
@@ -315,7 +320,12 @@ export function ModelProviderCard() {
         </p>
         <div className="space-y-3">
           {supported.map((providerID) => (
-            <ProviderRow key={providerID} providerID={providerID} configured={configured.has(providerID)} />
+            <ProviderRow
+              key={providerID}
+              providerID={providerID}
+              configured={configured.has(providerID)}
+              baseUrl={status.baseUrls?.[providerID]}
+            />
           ))}
         </div>
       </CardContent>
