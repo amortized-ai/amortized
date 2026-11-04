@@ -306,6 +306,11 @@ async def accessible_model_ids() -> dict[str, set[str]]:
         name = pdef.get("name", "")
         if name:
             out[name] = set(ids)
+            # Morty exposes the enmaas openai dialect under two opencode ids (enmaas-openai
+            # for gpt via Responses, enmaas for rits via chat); mirror the access set so the
+            # picker access-filters the gpt (enmaas-openai) models too.
+            if name == "enmaas":
+                out["enmaas-openai"] = set(ids)
     return out
 
 
