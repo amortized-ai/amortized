@@ -102,6 +102,42 @@ def _anthropic_provider_def() -> dict[str, str] | None:
     }
 
 
+def _enmaas_provider_def() -> dict[str, str] | None:
+    """Red Hat EnMaaS (OpenAI dialect) as a source distinct from ``maas``/``openai``, so SDG +
+    eval bill it separately. Its gpt + hosted models come from the Bearer ``/v1/models``; Claude
+    is a separate anthropic-dialect def (:func:`_enmaas_anthropic_provider_def`). Same per-user
+    ENMAAS_BASE_URL + ENMAAS_API_KEY as Morty's enmaas provider; surfaced only when both are set."""
+    base_url = os.environ.get("ENMAAS_BASE_URL", "").strip().rstrip("/")
+    if not base_url or not os.environ.get("ENMAAS_API_KEY"):
+        return None
+    if not base_url.lower().startswith("https://"):
+        logger.warning("ignoring non-HTTPS ENMAAS_BASE_URL (credentials must not cross plaintext)")
+        return None
+    return {
+        "name": "enmaas",
+        "endpoint": base_url,
+        "provider_type": "openai",
+        "api_key": "ENMAAS_API_KEY",
+    }
+
+
+def _enmaas_anthropic_provider_def() -> dict[str, str] | None:
+    """EnMaaS Claude via its anthropic dialect (x-api-key), a distinct source for billing. Same
+    key + base URL as :func:`_enmaas_provider_def`; ``provider_type`` 'anthropic' routes DD's
+    AnthropicClient + the eval runner to the Messages API."""
+    base_url = os.environ.get("ENMAAS_BASE_URL", "").strip().rstrip("/")
+    if not base_url or not os.environ.get("ENMAAS_API_KEY"):
+        return None
+    if not base_url.lower().startswith("https://"):
+        return None  # _enmaas_provider_def already logged the warning
+    return {
+        "name": "enmaas-anthropic",
+        "endpoint": base_url,
+        "provider_type": "anthropic",
+        "api_key": "ENMAAS_API_KEY",
+    }
+
+
 def enabled_provider_defs() -> list[dict[str, str]]:
     """Providers whose API key is configured on the server: the builtin data-designer
     catalog plus a native Anthropic provider and a BYOK MaaS endpoint (when configured).
@@ -120,11 +156,16 @@ def enabled_provider_defs() -> list[dict[str, str]]:
     except Exception:
         logger.warning("data-designer provider catalog unavailable", exc_info=True)
 
-    # Inject providers DD's builtin catalog lacks (it ships only openai-type providers): a native
-    # Anthropic provider and a BYOK MaaS endpoint, each when its key is configured. Skip any whose
-    # name a DD builtin already supplied, so a future DD catalog update wins without duplicating.
+    # Inject providers DD's builtin catalog lacks (it ships only openai-type providers): native
+    # Anthropic, a BYOK MaaS endpoint, and the EnMaaS gateway (its openai + anthropic dialects as
+    # two sources), each when its key is set. Skip any name a DD builtin already supplied.
     names = {d.get("name") for d in defs}
-    for extra in (_anthropic_provider_def(), _maas_provider_def()):
+    for extra in (
+        _anthropic_provider_def(),
+        _maas_provider_def(),
+        _enmaas_provider_def(),
+        _enmaas_anthropic_provider_def(),
+    ):
         if extra and extra["name"] not in names:
             defs.append(extra)
     return defs
@@ -201,6 +242,10 @@ def _keep_model(provider: str, model_id: str) -> bool:
         return False
     if provider == "openai":
         return any(model_id.startswith(p) for p in _OPENAI_CHAT_PREFIXES)
+    # EnMaaS's anthropic dialect also lists the hosted rits/* models (they serve both dialects);
+    # keep those only under the openai-dialect `enmaas` source, not duplicated under Claude.
+    if provider == "enmaas-anthropic":
+        return not model_id.startswith("rits/")
     return True
 
 
