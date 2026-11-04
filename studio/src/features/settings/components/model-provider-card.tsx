@@ -16,6 +16,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   vertex: "Vertex (ADC)",
   maas: "MaaS",
+  enmaas: "EnMaaS",
 }
 
 function label(provider: string): string {
@@ -28,10 +29,10 @@ function isAdc(provider: string): boolean {
   return provider === "vertex"
 }
 
-// MaaS is OpenAI-compatible BYOK: its credential is a base URL + an API key (two fields),
-// combined into a {baseURL, apiKey} JSON blob — so, like vertex, it is not a single key string.
+// MaaS/EnMaaS BYOK: credential is a base URL + an API key (two fields), combined into a
+// {baseURL, apiKey} JSON blob — so, like vertex, it is not a single key string.
 function isOpenAICompat(provider: string): boolean {
-  return provider === "maas"
+  return provider === "maas" || provider === "enmaas"
 }
 
 function isValidUrl(value: string): boolean {
@@ -83,7 +84,7 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
   const showInput = editing || !configured
 
   function handleSave() {
-    // MaaS stores a {baseURL, apiKey} blob (two fields); the others store a single credential string.
+    // MaaS/EnMaaS store a {baseURL, apiKey} blob (two fields); the others store a single credential string.
     const credential = compat
       ? JSON.stringify({ baseURL: baseUrlDraft.trim().replace(/\/+$/, ""), apiKey: draft.trim() })
       : draft.trim()
@@ -195,7 +196,7 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
             <Input
               value={baseUrlDraft}
               onChange={(e) => setBaseUrlDraft(e.target.value)}
-              placeholder="MaaS base URL, e.g. https://maas.example.com/v1"
+              placeholder={`${label(providerID)} base URL, e.g. https://…/v1`}
               autoComplete="off"
               spellCheck={false}
               className="flex-1 font-mono text-xs h-8"
@@ -205,7 +206,7 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
               <Input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder={configured ? "Enter a new API key…" : "Paste your MaaS API key…"}
+                placeholder={configured ? "Enter a new API key…" : `Paste your ${label(providerID)} API key…`}
                 type={showKey ? "text" : "password"}
                 autoComplete="off"
                 spellCheck={false}
@@ -275,7 +276,7 @@ export function ModelProviderCard() {
   // The card only applies to the hybrid gateway deployment.
   if (isLoading || !status?.available) return null
 
-  const supported = status.supported.length > 0 ? status.supported : ["openai", "anthropic", "vertex", "maas"]
+  const supported = status.supported.length > 0 ? status.supported : ["openai", "anthropic", "vertex", "maas", "enmaas"]
   const configured = new Set(status.configured)
 
   return (

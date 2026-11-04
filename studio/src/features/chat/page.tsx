@@ -184,6 +184,28 @@ export default function ChatPage() {
     [activeProviders, connectedKnownProviders, connectedProviders],
   )
 
+  // Collapse the EnMaaS sub-providers (enmaas-openai / enmaas-anthropic / enmaas) into ONE
+  // "EnMaaS" picker group — one credential source — while each model keeps its real provider id
+  // for the turn, so routing + billing stay separate. Other providers render as their own group.
+  const groupedProviders = useMemo(() => {
+    type Grp = { key: string; label: string; models: (typeof usableProviders)[number]["models"] }
+    const groups: Grp[] = []
+    const byKey = new Map<string, Grp>()
+    for (const p of usableProviders) {
+      const isEnmaas = p.providerID === "enmaas" || p.providerID.startsWith("enmaas-")
+      const key = isEnmaas ? "enmaas" : p.providerID
+      const label = isEnmaas ? "EnMaaS" : p.label
+      let g = byKey.get(key)
+      if (!g) {
+        g = { key, label, models: [] }
+        byKey.set(key, g)
+        groups.push(g)
+      }
+      g.models.push(...p.models)
+    }
+    return groups
+  }, [usableProviders])
+
   // Auto-enable a provider the FIRST time it appears connected, so a newly-added one becomes
   // selectable (e.g. the user adds OpenAI while Vertex is already connected). The store
   // persists which connected providers it has already observed, so this never RE-enables a
@@ -358,10 +380,10 @@ export default function ChatPage() {
                     {modelDisplayName(activeModelSelection)} (unavailable)
                   </SelectItem>
                 )}
-                {usableProviders.map((provider) => (
-                  <SelectGroup key={provider.providerID}>
-                    <SelectLabel className="text-xs text-muted-foreground">{provider.label}</SelectLabel>
-                    {provider.models.map((m) => {
+                {groupedProviders.map((group) => (
+                  <SelectGroup key={group.key}>
+                    <SelectLabel className="text-xs text-muted-foreground">{group.label}</SelectLabel>
+                    {group.models.map((m) => {
                       const value = encodeModelSelection(m.providerID, m.modelID)
                       return (
                         <SelectItem key={value} value={value} className="text-xs">
