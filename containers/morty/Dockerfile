@@ -13,14 +13,6 @@ RUN dnf install -y --nodocs nodejs npm && dnf clean all
 ARG OPENCODE_VERSION=1.18.33
 RUN npm install -g opencode-ai@${OPENCODE_VERSION} && opencode --version
 
-# Baked opencode provider shim for the BYOK MaaS provider (see maas-openai-chat/index.mjs).
-# Pin so @ai-sdk/provider-utils matches opencode's stream dialect.
-ARG AI_SDK_OPENAI_COMPATIBLE_VERSION=3.0.83
-RUN mkdir -p /opt/maas-openai-chat && cd /opt/maas-openai-chat \
-    && npm init -y >/dev/null \
-    && npm install @ai-sdk/openai-compatible@${AI_SDK_OPENAI_COMPATIBLE_VERSION}
-COPY maas-openai-chat/index.mjs /opt/maas-openai-chat/index.mjs
-
 ARG RIPGREP_VERSION=15.1.0
 RUN curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
       | tar -xz -C /tmp \

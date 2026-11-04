@@ -20,8 +20,6 @@ cp    "$REPO/k8s/base/morty-training-workflow.md" "$CTX/training.md"
 cp    "$REPO/k8s/base/morty-eval-workflow.md"     "$CTX/eval.md"
 cp -R "$REPO/k8s/base/morty-skills/."             "$CTX/skills/"        # sdg/ + training/ skill trees
 cp    "$HERE/opencode.json"                       "$CTX/opencode.json"
-mkdir -p "$CTX/maas-openai-chat"
-cp    "$HERE/maas-openai-chat/index.mjs"          "$CTX/maas-openai-chat/index.mjs"  # BYOK MaaS chat shim
 cp    "$HERE/Dockerfile"                          "$CTX/Dockerfile"
 
 echo "$CTX"

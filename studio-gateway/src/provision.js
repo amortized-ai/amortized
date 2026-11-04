@@ -126,15 +126,28 @@ const PROVIDERS = {
   // vertex's ADC JSON occupies the single credential slot. OpenAI-compatible, so (unlike vertex)
   // it ALSO powers the server catalog + SDG teacher + eval judge: ensureServerKeySecret writes
   // MAAS_API_KEY + MAAS_BASE_URL into the server env (model_catalog reads both). In the sandbox
-  // it is injected as an opencode `provider.maas` block (a baked @ai-sdk/openai-compatible shim;
-  // see containers/morty) whose models are discovered from the endpoint's /models at create time
-  // (see ensureSandbox).
+  // it is injected as an opencode `provider.maas` (@ai-sdk/openai-compatible) block whose models
+  // are discovered from the endpoint's /models at create time (see ensureSandbox).
   maas: {
     kind: 'openai-compat',
     credentialKey: 'MAAS_API_KEY',
     baseUrlEnv: 'MAAS_BASE_URL',
-    opencodeNpm: 'file:///opt/maas-openai-chat/index.mjs',
+    opencodeNpm: '@ai-sdk/openai-compatible',
     opencodeProvider: 'maas',
+  },
+  // Red Hat EnMaaS: the RH AI gateway. One credential (a {baseURL, apiKey} blob, like maas) fronts
+  // THREE upstream dialects behind one endpoint, so — unlike generic `maas` (a single chat-completions
+  // block) — it is injected as THREE source-namespaced opencode blocks so each model uses the dialect
+  // it needs: `enmaas-openai` (@ai-sdk/openai, Responses) for gpt/o/codex (their function tools are
+  // rejected on chat-completions), `enmaas-anthropic` (@ai-sdk/anthropic, Messages) for Claude, and
+  // `enmaas` (@ai-sdk/openai-compatible, chat) for hosted rits/* open-weight models. Models are
+  // discovered from both dialects' /models and classified at create time (see ensureSandbox). Keeping
+  // it a distinct provider id (not reusing `openai`/`anthropic`) keeps it billing-separable from a
+  // standalone OpenAI/Anthropic key. Like maas it also powers the server catalog + SDG + eval.
+  enmaas: {
+    kind: 'enmaas',
+    credentialKey: 'ENMAAS_API_KEY',
+    baseUrlEnv: 'ENMAAS_BASE_URL',
   },
 };
 const SUPPORTED_PROVIDERS = Object.keys(PROVIDERS);
@@ -147,7 +160,7 @@ function isOpenAICompatProvider(provider) { return PROVIDERS[provider]?.kind ===
 // Providers whose credential(s) are written into the server teacher-key secret (model_catalog
 // -> list_models + SDG teacher + eval judge): key providers and OpenAI-compatible ones. ADC
 // (vertex) is Morty-chat-only and contributes nothing server-side.
-function isServerProvider(provider) { const k = PROVIDERS[provider]?.kind; return k === 'key' || k === 'openai-compat'; }
+function isServerProvider(provider) { const k = PROVIDERS[provider]?.kind; return k === 'key' || k === 'openai-compat' || k === 'enmaas'; }
 
 // The gateway's own namespace: per-user model-key Secrets live here so a key
 // survives stack/sandbox recreation and is readable before amz-<user> exists.
@@ -309,7 +322,7 @@ function serverEnvForProvider(name, credential) {
   const p = PROVIDERS[name];
   if (!p) return {};
   if (p.kind === 'key') return { [p.credentialKey]: credential };
-  if (p.kind === 'openai-compat') {
+  if (p.kind === 'openai-compat' || p.kind === 'enmaas') {
     const { baseURL, apiKey } = parseOpenAICompatCredential(credential);
     return { [p.credentialKey]: apiKey, [p.baseUrlEnv]: baseURL };
   }
@@ -415,7 +428,7 @@ function modelEgressEndpoints(name, credential) {
       : `${p.location}-aiplatform.googleapis.com`;
     return [aiplatform, ...p.tokenHosts].map((h) => rw(h));
   }
-  if (p.kind === 'openai-compat') {
+  if (p.kind === 'openai-compat' || p.kind === 'enmaas') {
     const { baseURL } = parseOpenAICompatCredential(credential);
     try {
       const u = new URL(baseURL);
@@ -545,7 +558,34 @@ async function discoverOpenAICompatModels(baseURL, apiKey) {
   // stalls mid-body must still be bounded, or ensureSandbox can hang past the 10s budget.
   const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: ctrl.signal });
+    const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, redirect: 'error', signal: ctrl.signal });
+    if (!res.ok) return [];
+    const body = await res.json();
+    const data = Array.isArray(body?.data) ? body.data : [];
+    return data.map((m) => String(m?.id || '')).filter(Boolean);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Best-effort: list model ids from an anthropic-compatible endpoint's /models (x-api-key dialect,
+// not OpenAI's Bearer). Same shape ({"data":[{"id"}]}) + budget as discoverOpenAICompatModels;
+// returns [] on any failure so a flaky/native endpoint never blocks sandbox creation.
+async function discoverAnthropicModels(baseURL, apiKey) {
+  const base = String(baseURL || '').replace(/\/$/, '');
+  if (!base || !apiKey) return [];
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const res = await fetch(`${base}/models`, {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      // redirect:'error': never forward the key to a redirect target. A cross-origin redirect
+      // strips Authorization but NOT a custom x-api-key; a failed fetch is treated as empty below.
+      redirect: 'error',
+      signal: ctrl.signal,
+    });
     if (!res.ok) return [];
     const body = await res.json();
     const data = Array.isArray(body?.data) ? body.data : [];
@@ -578,20 +618,42 @@ async function ensureSandbox(ns, providers) {
   // models.dev, so its opencode.json provider block must declare the models explicitly. name -> [ids].
   const discoveredModels = {};
   for (const n of names) {
-    if (PROVIDERS[n].kind === 'openai-compat') {
+    const kind = PROVIDERS[n].kind;
+    if (kind === 'openai-compat') {
       const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
       discoveredModels[n] = await discoverOpenAICompatModels(baseURL, apiKey);
+    } else if (kind === 'enmaas') {
+      // EnMaaS fronts two dialects on one endpoint: discover both (/models Bearer vs x-api-key) and
+      // classify the OpenAI-dialect ids by namespace (gpt/o/codex -> Responses, rits/* -> chat; drop
+      // the rest, e.g. gemini). Claude ids come from the anthropic-dialect discovery. -> {o,h,c}Ids.
+      const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
+      const [compatIds, claudeIds] = await Promise.all([
+        discoverOpenAICompatModels(baseURL, apiKey),
+        discoverAnthropicModels(baseURL, apiKey),
+      ]);
+      discoveredModels[n] = {
+        openaiIds: compatIds.filter((id) => /^(gpt-|o\d|codex)/i.test(id)),
+        hostedIds: compatIds.filter((id) => /^rits\//.test(id)),
+        // hosted rits/* models surface in the anthropic dialect too — keep them in the chat block only.
+        claudeIds: claudeIds.filter((id) => !/^rits\//.test(id)),
+      };
     }
   }
 
   // opencode.json needs a default model; the chat UI selects per-request so this is only
   // the fallback. Prefer a Claude-capable provider (vertex, then anthropic), then openai, then a
   // discovered MaaS model — matching Studio's catalog ordering.
-  const preferred = ['vertex', 'anthropic', 'openai', 'maas'].find((n) => names.includes(n)) || names[0];
+  const preferred = ['vertex', 'anthropic', 'openai', 'enmaas', 'maas'].find((n) => names.includes(n)) || names[0];
   let defaultModel = PROVIDERS[preferred].model || '';
   if (PROVIDERS[preferred].kind === 'openai-compat') {
     const first = (discoveredModels[preferred] || [])[0];
     defaultModel = first ? `${PROVIDERS[preferred].opencodeProvider}/${first}` : '';
+  } else if (PROVIDERS[preferred].kind === 'enmaas') {
+    const d = discoveredModels[preferred] || {};
+    defaultModel = (d.openaiIds || [])[0] ? `enmaas-openai/${d.openaiIds[0]}`
+      : (d.hostedIds || [])[0] ? `enmaas/${d.hostedIds[0]}`
+      : (d.claudeIds || [])[0] ? `enmaas-anthropic/${d.claudeIds[0]}`
+      : '';
   }
   if (!defaultModel) {
     // No usable default — e.g. a MaaS-only user whose /v1/models discovery returned nothing. The
@@ -607,9 +669,8 @@ async function ensureSandbox(ns, providers) {
   // materializes the credentials JSON from its base64 env (MORTY_ADC_B64) to the
   // GOOGLE_APPLICATION_CREDENTIALS path before opencode starts (a no-op for the others). For a
   // MaaS (OpenAI-compatible) provider — which models.dev can't resolve — it writes an explicit
-  // `provider.maas` block with the per-user base URL and the discovered models, so opencode reports
-  // maas in /provider (connected) and resolves `maas/<model>` turns. The npm is a baked
-  // @ai-sdk/openai-compatible shim (/opt/maas-openai-chat; see containers/morty).
+  // `provider.maas` block (@ai-sdk/openai-compatible) with the per-user base URL and the discovered
+  // models, so opencode reports maas in /provider (connected) and resolves `maas/<model>` turns.
   const rewrite =
     'const fs=require("fs"),f="opencode.json",c=JSON.parse(fs.readFileSync(f));' +
     'if(process.env.MORTY_MODEL){c.model=process.env.MORTY_MODEL;}' +
@@ -617,7 +678,17 @@ async function ensureSandbox(ns, providers) {
     'if(process.env.MAAS_BASE_URL&&process.env.MAAS_API_KEY){' +
     'var mm={};JSON.parse(Buffer.from(process.env.MAAS_MODELS_B64||"W10=","base64").toString()).forEach(function(id){mm[id]={};});' +
     'c.provider=c.provider||{};' +
-    'c.provider.maas={npm:"file:///opt/maas-openai-chat/index.mjs",name:"MaaS",options:{baseURL:process.env.MAAS_BASE_URL,apiKey:process.env.MAAS_API_KEY},models:mm};' +
+    'c.provider.maas={npm:"@ai-sdk/openai-compatible",name:"MaaS",options:{baseURL:process.env.MAAS_BASE_URL,apiKey:process.env.MAAS_API_KEY},models:mm};' +
+    '}' +
+    // EnMaaS: one credential -> three source-namespaced blocks by dialect (openai->Responses,
+    // anthropic->Messages, hosted rits/*->chat). Each block emitted only if it has models.
+    'if(process.env.ENMAAS_BASE_URL&&process.env.ENMAAS_API_KEY){' +
+    'c.provider=c.provider||{};' +
+    'var eo=process.env.ENMAAS_BASE_URL,ek=process.env.ENMAAS_API_KEY;' +
+    'var mkE=function(b){var m={};JSON.parse(Buffer.from(b||"W10=","base64").toString()).forEach(function(id){m[id]={};});return m;};' +
+    'var eom=mkE(process.env.ENMAAS_OPENAI_MODELS_B64);if(Object.keys(eom).length){c.provider["enmaas-openai"]={npm:"@ai-sdk/openai",name:"EnMaaS",options:{baseURL:eo,apiKey:ek},models:eom};}' +
+    'var ehm=mkE(process.env.ENMAAS_HOSTED_MODELS_B64);if(Object.keys(ehm).length){c.provider.enmaas={npm:"@ai-sdk/openai-compatible",name:"EnMaaS",options:{baseURL:eo,apiKey:ek},models:ehm};}' +
+    'var ecm=mkE(process.env.ENMAAS_CLAUDE_MODELS_B64);if(Object.keys(ecm).length){c.provider["enmaas-anthropic"]={npm:"@ai-sdk/anthropic",name:"EnMaaS",options:{baseURL:eo,apiKey:ek},models:ecm};}' +
     '}' +
     'fs.writeFileSync(f,JSON.stringify(c,null,2));' +
     'if(process.env.MORTY_ADC_B64){fs.writeFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS,Buffer.from(process.env.MORTY_ADC_B64,"base64"))}';
@@ -654,12 +725,25 @@ async function ensureSandbox(ns, providers) {
         );
       } else if (p.kind === 'openai-compat') {
         // MaaS: the key + base URL + discovered models (base64 JSON) feed the opencode.json rewrite
-        // above, which writes them into the provider.maas block (a baked @ai-sdk/openai-compatible shim).
+        // above, which writes them into the provider.maas block (@ai-sdk/openai-compatible).
         const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
         credEnv.push(
           '--env', `${p.credentialKey}=${apiKey}`,
           '--env', `${p.baseUrlEnv}=${baseURL}`,
           '--env', `MAAS_MODELS_B64=${Buffer.from(JSON.stringify(discoveredModels[n] || [])).toString('base64')}`,
+        );
+      } else if (p.kind === 'enmaas') {
+        // EnMaaS: key + base URL + the three classified model lists (base64 JSON) feed the rewrite,
+        // which writes the enmaas-openai / enmaas-anthropic / enmaas blocks.
+        const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
+        const d = discoveredModels[n] || {};
+        const b64 = (a) => Buffer.from(JSON.stringify(a || [])).toString('base64');
+        credEnv.push(
+          '--env', `${p.credentialKey}=${apiKey}`,
+          '--env', `${p.baseUrlEnv}=${baseURL}`,
+          '--env', `ENMAAS_OPENAI_MODELS_B64=${b64(d.openaiIds)}`,
+          '--env', `ENMAAS_HOSTED_MODELS_B64=${b64(d.hostedIds)}`,
+          '--env', `ENMAAS_CLAUDE_MODELS_B64=${b64(d.claudeIds)}`,
         );
       } else {
         credEnv.push('--env', `${p.credentialKey}=${providers[n]}`);
@@ -815,7 +899,7 @@ function validateCredential(provider, credential) {
     if (!adc || typeof adc !== 'object' || !adc.type) {
       throw new Error('Vertex (ADC) JSON must be a Google credentials file (missing "type")');
     }
-  } else if (isOpenAICompatProvider(provider)) {
+  } else if (isOpenAICompatProvider(provider) || PROVIDERS[provider]?.kind === 'enmaas') {
     // MaaS: a {baseURL, apiKey} blob — the base URL is per-user (no fixed apiHost). Validate both
     // and return canonical JSON (origin + path only, no trailing slash) so the stored form is stable.
     let obj;
