@@ -5,7 +5,7 @@
 // Continue to provision the stack once with the full set. Polls /gateway/ready
 // and reloads into the studio SPA once ready.
 
-const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', maas: 'MaaS' };
+const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', maas: 'MaaS', enmaas: 'EnMaaS' };
 
 function renderSplash(state, basePath = '') {
   const st = (state && state.state) || 'provisioning';
@@ -17,7 +17,7 @@ function renderSplash(state, basePath = '') {
   const providerUrl = `${basePath}/gateway/provider`;
   const providers = Array.isArray(state && state.providers) && state.providers.length
     ? state.providers
-    : ['openai', 'anthropic', 'vertex', 'maas'];
+    : ['openai', 'anthropic', 'vertex', 'maas', 'enmaas'];
   const detail = isError
     ? escapeHtml(state.error || 'Provisioning failed.')
     : 'Setting up your isolated workspace (server, database, and compute namespace). This usually takes about a minute on first launch.';
@@ -125,15 +125,15 @@ function renderSplash(state, basePath = '') {
   var RETRY_URL = ${esc(retryUrl)};
   var PROVIDER_URL = ${esc(providerUrl)};
   var LABELS = ${esc(PROVIDER_LABELS)};
-  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.', maas: 'Enter your MaaS endpoint base URL and its API key (OpenAI-compatible).' };
+  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.', maas: 'Enter your MaaS endpoint base URL and its API key (OpenAI-compatible).', enmaas: 'Enter your Red Hat EnMaaS gateway base URL and its API key.' };
   var POLL_MS = 2500;
   var CONFIGURED = {};   // provider -> true (added this session / already stored)
   function el(id){ return document.getElementById(id); }
   function show(id, on){ var e = el(id); if (e) e.classList.toggle('hidden', !on); }
   // Vertex is ADC-only: its credential is a JSON blob (textarea), not a key string (input).
   function isAdc(p){ return p === 'vertex'; }
-  // MaaS is OpenAI-compatible BYOK: a base URL + a key (two inputs), combined into a JSON blob.
-  function isOpenAICompat(p){ return p === 'maas'; }
+  // MaaS/EnMaaS BYOK: a base URL + a key (two inputs), combined into a JSON blob.
+  function isOpenAICompat(p){ return p === 'maas' || p === 'enmaas'; }
   // HTTPS only: the server rejects http:// MaaS URLs (the key is sent to this endpoint), so match
   // that here and give the user an inline reason instead of a late generic network error.
   function isValidUrl(v){ try { return new URL(String(v).trim()).protocol === 'https:'; } catch (e) { return false; } }
@@ -143,7 +143,9 @@ function renderSplash(state, basePath = '') {
     var compat = isOpenAICompat(p.value);
     show('apikey', !adc); show('adcjson', adc);
     show('maasbaseurl', compat); show('baseurllabel', compat);
-    var lbl = el('credlabel'); if (lbl) lbl.textContent = adc ? 'Vertex ADC JSON' : (compat ? 'MaaS API key' : 'API key');
+    var label = LABELS[p.value] || '';
+    var urlLbl = el('baseurllabel'); if (urlLbl) urlLbl.textContent = label + ' base URL';
+    var lbl = el('credlabel'); if (lbl) lbl.textContent = adc ? 'Vertex ADC JSON' : (compat ? label + ' API key' : 'API key');
     el('hint').textContent = HINTS[p.value] || '';
   }
   function renderConfigured(){
@@ -226,8 +228,9 @@ function renderSplash(state, basePath = '') {
       if (!ok) { fe.textContent = 'Paste a valid Vertex ADC JSON (a Google credentials file).'; fe.classList.remove('hidden'); return false; }
     } else if (compat) {
       var baseUrl = el('maasbaseurl').value;
-      if (!isValidUrl(baseUrl)) { fe.textContent = 'Enter a valid MaaS base URL (https://…).'; fe.classList.remove('hidden'); return false; }
-      if (!key || key.trim().length < 8) { fe.textContent = 'Enter a valid MaaS API key.'; fe.classList.remove('hidden'); return false; }
+      var plabel = LABELS[provider] || 'endpoint';
+      if (!isValidUrl(baseUrl)) { fe.textContent = 'Enter a valid ' + plabel + ' base URL (https://…).'; fe.classList.remove('hidden'); return false; }
+      if (!key || key.trim().length < 8) { fe.textContent = 'Enter a valid ' + plabel + ' API key.'; fe.classList.remove('hidden'); return false; }
       key = JSON.stringify({ baseURL: baseUrl.trim(), apiKey: key.trim() });
     } else if (!key || key.trim().length < 8) {
       fe.textContent = 'Enter a valid API key.'; fe.classList.remove('hidden'); return false;
