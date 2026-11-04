@@ -1,4 +1,5 @@
 {{- if .Values.evalhub.url }}
+---
 # What each benchmark needs, recorded by scripts/evalhub/lighteval_compat.py inside the
 # pinned adapter image (make evalhub-compat). The server reads it at request time.
 apiVersion: v1
@@ -11,9 +12,9 @@ metadata:
     component: server
 data:
   {{- (.Files.Glob "files/evalhub/compat/*.json").AsConfig | nindent 2 }}
----
 {{- end }}
 {{- if .Values.evalhub.operator.createInstance }}
+---
 apiVersion: trustyai.opendatahub.io/v1alpha1
 kind: EvalHub
 metadata:
