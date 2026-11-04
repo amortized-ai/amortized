@@ -238,7 +238,8 @@ mlflow:
   # bearer token over a cleartext URI.
   enterprise:
     enabled: false
-    # X-MLFLOW-WORKSPACE header. Empty => the application namespace (.Values.namespace).
+    # X-MLFLOW-WORKSPACE header. Empty => jobsNamespace when Eval Hub is on (evalhub.url set;
+    # Hub logs into its job namespace and anything else is rejected), else .Values.namespace.
     workspace: ""
     # Bearer-token file (a Kubernetes SA token). The default projected SA token is auto-mounted
     # and rotated in place; the client re-reads it per request.
