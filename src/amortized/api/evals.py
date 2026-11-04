@@ -11,10 +11,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 import amortized.config as config_mod
 from amortized.core.mlflow_client import MLflowClient
@@ -32,29 +33,179 @@ router = APIRouter(prefix="/api/v1/evaluations", tags=["evaluations"])
 
 @router.get("/providers", operation_id="list_evaluation_providers")
 async def list_evaluation_providers() -> dict[str, Any]:
-    """Read enabled task/benchmark capabilities before assembling an approval card."""
+    """Read enabled task scoring and benchmark providers before assembling an eval."""
     from amortized.integrations.evalhub.client import client
 
     settings = config_mod.settings
     if not settings.evalhub_url:
         return {"enabled": False, "task_scoring": ["rubric", "embedding_anchor_query"]}
-    providers = []
     async with client() as sdk:
-        for name in [settings.evalhub_task_provider, *settings.evalhub_providers]:
+        task = await sdk.providers.get(settings.evalhub_task_provider)
+        benchmark_providers = []
+        for name in settings.evalhub_providers:
             provider = await sdk.providers.get(name)
-            enabled = settings.evalhub_benchmarks.get(name, ["task"])
-            data = provider.model_dump(mode="json", exclude_none=True)
-            data["benchmarks"] = [b for b in data.get("benchmarks", []) if b["id"] in enabled]
-            providers.append(data)
+            benchmark_providers.append(
+                {"id": name, "name": provider.title, "benchmarks": len(provider.benchmarks)}
+            )
     return {
         "enabled": True,
-        "providers": providers,
+        "providers": [task.model_dump(mode="json", exclude_none=True)],
         "task_scoring": [
-            "rubric", "exact_match@1", "json_schema@1", "numeric_mae@1",
-            "numeric_tolerance@1", "embedding_anchor_query@1",
+            "rubric",
+            "exact_match@1",
+            "json_schema@1",
+            "numeric_mae@1",
+            "numeric_tolerance@1",
+            "embedding_anchor_query@1",
         ],
-        "benchmark_contract": "endpoint-only; selected provider owns dataset and scoring",
+        "benchmark_providers": benchmark_providers,
+        "benchmarks": (
+            "Do not choose a benchmark from this list. Settle the model first, then call"
+            " find_benchmarks to look one up by name or browse, and get_benchmark for its"
+            " settings."
+        ),
     }
+
+
+class BenchmarkModel(BaseModel):
+    """The model the benchmark will evaluate; it decides which benchmarks can run."""
+
+    training_job_id: str = Field("", description="A finished training job (Amortized serves it)")
+    model_name_or_path: str = Field("", description="A base model Amortized serves")
+    endpoint: dict[str, Any] | None = Field(
+        None, description="An outside OpenAI-compatible endpoint (base_url, model)"
+    )
+    declared_capabilities: list[Literal["completions_logprobs"]] = Field(
+        default_factory=list,
+        description=(
+            "Outside endpoint only, and only if the user confirmed it: the endpoint serves"
+            " /v1/completions with echo and logprobs"
+        ),
+    )
+
+
+class FindBenchmarksRequest(BaseModel):
+    model: BenchmarkModel
+    name: str = Field("", description="A benchmark name the user gave, to look up exactly")
+    picks: dict[str, str] = Field(
+        default_factory=dict, description="The picks from the previous find_benchmarks response"
+    )
+    answer: str = Field("", description="The user's reply to the previous question, verbatim")
+
+
+class GetBenchmarkRequest(BaseModel):
+    provider_id: str = Field(..., description="provider_id from a find_benchmarks result")
+    id: str = Field(..., description="Benchmark id from a find_benchmarks result")
+    model: BenchmarkModel
+
+
+def _capability(model: BenchmarkModel) -> Any:
+    from amortized.integrations.evalhub.catalog import Capability
+
+    try:
+        return Capability.from_model(model.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+async def _read_catalog(
+    provider_ids: list[str] | None, with_shortlists: bool
+) -> tuple[list[Any], list[dict[str, Any]]]:
+    from amortized.integrations.evalhub import catalog
+    from amortized.integrations.evalhub.client import client
+
+    if not config_mod.settings.evalhub_url:
+        raise HTTPException(
+            status_code=422, detail="Benchmark evaluation is not enabled on this deployment"
+        )
+    try:
+        async with client() as sdk:
+            entries = await catalog.load(sdk, provider_ids)
+            shortlists: list[dict[str, Any]] = []
+            if with_shortlists:
+                try:
+                    shortlists = await catalog.load_shortlists(sdk)
+                except Exception:
+                    # Shortlists only help navigation; browsing works without them.
+                    logger.warning("Could not read Eval Hub collections", exc_info=True)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Could not read the Eval Hub catalog", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Cannot read the Eval Hub benchmark catalog; retry"
+        ) from exc
+    return entries, shortlists
+
+
+@router.post(
+    "/benchmarks/find",
+    operation_id="find_benchmarks",
+    summary=(
+        "Find a benchmark for a settled model: look one up by exact name, or browse with"
+        " narrowing questions. Follow the response's `next` instruction. Never pick or"
+        " submit a benchmark id that did not come from this tool's result."
+    ),
+)
+async def find_benchmarks(request: FindBenchmarksRequest) -> dict[str, Any]:
+    from amortized.integrations.evalhub import catalog
+
+    capability = _capability(request.model)
+    entries, shortlists = await _read_catalog(None, with_shortlists=not request.name)
+    try:
+        return catalog.find(
+            entries,
+            capability,
+            name=request.name.strip(),
+            picks=request.picks,
+            answer=request.answer.strip(),
+            shortlists=shortlists,
+        )
+    except catalog.ChoiceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/benchmarks/get",
+    operation_id="get_benchmark",
+    summary=(
+        "Get one benchmark's details, compatibility with the model, and the only settings"
+        " the user may change. Use the provider_id and id from a find_benchmarks result."
+    ),
+)
+async def get_benchmark(request: GetBenchmarkRequest) -> dict[str, Any]:
+    from amortized.integrations.evalhub import catalog
+
+    capability = _capability(request.model)
+    if request.provider_id not in config_mod.settings.evalhub_providers:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No enabled benchmark provider {request.provider_id!r}; use find_benchmarks",
+        )
+    entries, _ = await _read_catalog([request.provider_id], with_shortlists=False)
+    entry = next((e for e in entries if e.id == request.id), None)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Benchmark {request.id!r} is not in provider {request.provider_id!r};"
+                " use an id from a find_benchmarks result"
+            ),
+        )
+    result = catalog.detail(entry, capability)
+    if result["compatibility"] == "compatible":
+        result["next"] = (
+            "Ask the user only about these settings (the defaults apply if they have no"
+            " preference), then call validate_eval_job with evaluation = {kind: benchmark,"
+            " provider_id, benchmark_id: this id, parameters: only the settings the user"
+            " changed} and the same model fields."
+        )
+    else:
+        result["next"] = (
+            "This benchmark cannot be approved for this model. Explain the reason; do not"
+            " offer a different benchmark in its place."
+        )
+    return result
 
 
 def _tags(run: dict[str, Any]) -> dict[str, str]:

@@ -113,4 +113,37 @@ describe("extractValidatedJobConfig", () => {
     )
     expect(validated?.prompts.map((p) => p.text)).toEqual(["ASSESS"])
   })
+
+  it("carries the server's pinned benchmark for the eval card", () => {
+    const validated = extractValidatedJobConfig(
+      JSON.stringify({
+        valid: true,
+        job_type: "eval",
+        config: { evaluation: { kind: "benchmark" } },
+        benchmark: {
+          id: "gsm8k",
+          name: "GSM8K",
+          metric: "gsm8k.extractive_match",
+          num_few_shot: 8,
+          max_samples: null,
+          recipe_fingerprint: "215799b4e6da",
+        },
+      }),
+    )
+    expect(validated?.benchmark).toEqual({
+      id: "gsm8k",
+      name: "GSM8K",
+      metric: "gsm8k.extractive_match",
+      numFewShot: 8,
+      maxSamples: null,
+      recipeFingerprint: "215799b4e6da",
+    })
+  })
+
+  it("has no benchmark for task evaluations", () => {
+    const validated = extractValidatedJobConfig(
+      JSON.stringify({ valid: true, job_type: "eval", config: {} }),
+    )
+    expect(validated?.benchmark).toBeNull()
+  })
 })

@@ -264,6 +264,25 @@ async def prepare_serving(
     return {"base_url": url, "model": models[0]["id"]}
 
 
+def _approved_recipe(definition: dict[str, Any], provider: dict[str, Any]) -> dict[str, Any]:
+    """The recipe stored at Confirm, if the registered adapter is still the approved one."""
+    from amortized.integrations.evalhub.catalog import image_digest
+
+    recipe = definition.get("recipe")
+    if not isinstance(recipe, dict) or not recipe.get("adapter_digest"):
+        raise JobBuildError(
+            "This benchmark job has no approved recipe; validate and confirm it again"
+        )
+    runtime = (provider.get("runtime") or {}).get("k8s") or {}
+    # Hub 1.0.3 serializes the image as "Image"; provider YAML uses "image".
+    if image_digest(runtime.get("Image") or runtime.get("image") or "") != recipe["adapter_digest"]:
+        raise JobBuildError(
+            "The registered benchmark adapter image changed after approval;"
+            " validate and confirm the benchmark again"
+        )
+    return recipe
+
+
 async def prepare(
     job: dict[str, Any], store: EvalHubRepository, execution: dict[str, Any]
 ) -> dict[str, Any]:
@@ -283,6 +302,7 @@ async def prepare(
         inputs["catalog"] = provider.model_dump(mode="json", exclude_none=True)
         await store.update(job["id"], inputs=inputs)
     if benchmark:
+        recipe = _approved_recipe(definition, inputs["catalog"])
         data_ref, model_path = None, ""
     else:
         if "data_ref" not in inputs:
@@ -308,13 +328,11 @@ async def prepare(
         endpoint = await prepare_serving(job, store, execution)
     secret = await _credential_secret(job, store, endpoint, config.get("judge"))
     if benchmark:
+        # Built from the recipe approved on the card, never from later edits.
         selected = {
-            "id": definition["benchmark_id"],
-            "provider_id": definition["provider_id"],
-            "parameters": {
-                **(definition.get("parameters") or {}),
-                **({"max_samples": config["max_samples"]} if config.get("max_samples") else {}),
-            },
+            "id": recipe["benchmark_id"],
+            "provider_id": recipe["provider_id"],
+            "parameters": dict(recipe["parameters"]),
         }
         if definition.get("test_data_ref"):
             selected["test_data_ref"] = definition["test_data_ref"]

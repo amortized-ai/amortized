@@ -359,16 +359,55 @@ async def test_validate_is_read_only_then_confirm_creates_durable_intent(
     submit.assert_not_awaited()
 
 
+BENCHMARK_RECIPE = {
+    "version": 1,
+    "provider_id": "amortized-lighteval",
+    "benchmark_id": "gsm8k",
+    "catalog_entry": {"id": "gsm8k", "name": "GSM8K", "primary_score": {"metric": "m"}},
+    "adapter_digest": "sha256:pinned",
+    "parameters": {"provider": "endpoint", "num_few_shot": 8, "save_sample_results": False},
+    "model_serving": "endpoint",
+    "declared_capabilities": [],
+}
+
+
 @pytest.mark.asyncio
-async def test_benchmark_requires_neither_task_dataset_nor_judge(hub_http_client):
-    response = await hub_http_client.post(
-        "/api/v1/jobs/eval",
-        json={
-            "endpoint": TASK["endpoint"],
-            "evaluation": {"kind": "benchmark", "provider_id": "lighteval", "benchmark_id": "mmlu"},
+async def test_benchmark_requires_neither_task_dataset_nor_judge(hub_http_client, monkeypatch):
+    from amortized.integrations.evalhub.catalog import fingerprint
+
+    recipe = copy.deepcopy(BENCHMARK_RECIPE)
+    monkeypatch.setattr(client, "benchmark_recipe", AsyncMock(return_value=(recipe, [])))
+    request = {
+        "endpoint": TASK["endpoint"],
+        "evaluation": {
+            "kind": "benchmark",
+            "provider_id": "amortized-lighteval",
+            "benchmark_id": "gsm8k",
         },
+    }
+    validated = await hub_http_client.post("/api/v1/jobs/eval/validate", json=request)
+    assert validated.status_code == 200, validated.text
+    card = validated.json()
+    evaluation = card["config"]["evaluation"]
+    assert evaluation["recipe_fingerprint"] == fingerprint(recipe)
+    assert evaluation["parameters"]["num_few_shot"] == 8
+    assert "recipe" not in evaluation or evaluation["recipe"] is None
+    assert card["benchmark"]["name"] == "GSM8K"
+    assert card["benchmark"]["recipe_fingerprint"] == fingerprint(recipe)
+
+    # Confirm posts the card's config verbatim; a client-sent recipe is never trusted.
+    forged = {**evaluation, "recipe": {"parameters": {"num_few_shot": 0}}}
+    response = await hub_http_client.post(
+        "/api/v1/jobs/eval", json={**card["config"], "evaluation": forged}
     )
     assert response.status_code == 201, response.text
+    assert response.json()["config"]["evaluation"]["recipe"] == recipe
+
+    # The setup changed between the card and Confirm: refuse, ask for a new card.
+    recipe["adapter_digest"] = "sha256:changed"
+    stale = await hub_http_client.post("/api/v1/jobs/eval", json=card["config"])
+    assert stale.status_code == 422
+    assert "changed since validation" in stale.text
 
 
 @pytest.mark.asyncio
@@ -574,9 +613,9 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
     )
     monkeypatch.setattr(config_mod, "settings", settings)
     provider = Provider(
-        resource={"id": "lighteval"},
-        name="LightEval",
-        benchmarks=[{"id": "gsm8k", "name": "GSM8K", "category": ""}],
+        resource={"id": "amortized"},
+        name="Amortized",
+        benchmarks=[{"id": "task", "name": "Task", "category": ""}],
         runtime={"k8s": {image_field: "adapter@sha256:pinned"}},
     )
     sdk = MagicMock()
@@ -587,32 +626,36 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
         yield sdk
 
     monkeypatch.setattr(client, "client", sdk_client)
-    config = {
-        "endpoint": TASK["endpoint"],
-        "evaluation": {"kind": "benchmark", "provider_id": "lighteval", "benchmark_id": "gsm8k"},
-    }
-    assert await client.validate_definition(config) == []
+    assert await client.validate_definition(TASK) == []
     provider.runtime = {"k8s": {image_field: "adapter:latest"}}
-    assert "pinned adapter image" in (await client.validate_definition(config))[0]
+    assert "pinned adapter image" in (await client.validate_definition(TASK))[0]
     provider.runtime = {"k8s": {image_field: "adapter@sha256:pinned"}}
-    assert (
-        "capability contract"
-        in (
-            await client.validate_definition(
-                {**config, "evaluation": {**config["evaluation"], "benchmark_id": "winogrande"}}
-            )
-        )[0]
-    )
     assert (
         "loopback"
         in (
             await client.validate_definition(
-                {**config, "endpoint": {"base_url": "http://localhost:8000/v1", "model": "m"}}
+                {**TASK, "endpoint": {"base_url": "http://localhost:8000/v1", "model": "m"}}
             )
         )[0]
     )
     sdk.providers.get.side_effect = httpx.ConnectError("unavailable")
-    assert "Cannot verify" in (await client.validate_definition(config))[0]
+    assert "Cannot verify" in (await client.validate_definition(TASK))[0]
+    # Benchmark catalog membership/compatibility is checked when the recipe is pinned
+    # (tests/test_evalhub_catalog.py); here only the provider must be enabled.
+    benchmark = {
+        "endpoint": TASK["endpoint"],
+        "evaluation": {
+            "kind": "benchmark",
+            "provider_id": "amortized-lighteval",
+            "benchmark_id": "gsm8k",
+        },
+    }
+    assert await client.validate_definition(benchmark) == []
+    disabled = {**benchmark["evaluation"], "provider_id": "lighteval"}
+    assert (
+        "not enabled"
+        in (await client.validate_definition({**benchmark, "evaluation": disabled}))[0]
+    )
 
 
 async def test_model_serving_survives_readiness_timeout_without_a_second_gpu_job(monkeypatch):

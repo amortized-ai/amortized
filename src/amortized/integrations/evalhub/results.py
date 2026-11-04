@@ -75,7 +75,13 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
 
         config = EvalJobConfig(**(job.get("config") or {})).model_dump(exclude_none=True)
         definition = config.get("evaluation") or {}
-        if definition.get("kind") == "benchmark":
+        # The recipe fingerprint covers everything that decides a benchmark score
+        # (entry, adapter digest, settings) and leaves out how the model was served,
+        # so a base endpoint and a tuned model share a group.
+        pinned = definition.get("kind") == "benchmark" and definition.get("recipe_fingerprint")
+        if pinned:
+            dataset = "benchmark:" + str(definition["recipe_fingerprint"])
+        elif definition.get("kind") == "benchmark":
             dataset = "benchmark:" + json.dumps(definition, sort_keys=True)
         else:
             dataset = str((execution.get("inputs") or {}).get("dataset_identity") or "")
@@ -102,6 +108,8 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
         judge = config.get("judge") or {}
         semantics["judge"] = {key: judge.get(key) for key in ("base_url", "model")}
         semantics["catalog"] = (execution.get("inputs") or {}).get("catalog")
+        if pinned:
+            semantics = {key: None for key in semantics}
         semantics["metric_metadata"] = {
             name: {
                 k: v

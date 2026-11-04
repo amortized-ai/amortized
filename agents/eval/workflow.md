@@ -82,8 +82,8 @@ always `"eval"`.
 ## What an Eval Job Does
 
 An eval job evaluates **one model** using one user-approved recipe. Call
-`list_evaluation_providers` to discover whether the Eval Hub engine and its
-configured benchmarks are available. Never call Hub submission APIs directly.
+`list_evaluation_providers` to discover whether the Eval Hub engine is
+available. Never call Hub submission APIs directly.
 
 - **Task dataset:** generate each answer once, then apply implemented
   deterministic scorers and/or an explicitly selected rubric judge to that
@@ -92,9 +92,10 @@ configured benchmarks are available. Never call Hub submission APIs directly.
   executable scorer code from the user's prose.
 - **Embedding classifier:** retain the existing anchor/query workflow and
   its accuracy/F1 semantics; no chat endpoint or judge is needed.
-- **Benchmark:** the configured framework owns its dataset, prompts and
-  scoring protocol. Select an enabled provider/benchmark ID. Do not generate
-  an unrelated SDG dataset or require an unrelated task rubric/judge.
+- **Benchmark:** a published benchmark (e.g. GSM8K) whose framework owns its
+  dataset, prompts and scoring. Choose it only through `find_benchmarks` and
+  `get_benchmark` (Step 3), never from memory or from a provider list. One
+  benchmark per job. Do not generate an SDG dataset or require a rubric/judge.
 
 All requirement gathering, warning decisions, validation and confirmation
 remain here. Only after the user clicks Confirm does the accepted job run
@@ -107,7 +108,8 @@ before starting the next. The Evaluation tab then lines them up side by
 side.
 
 Results (per-sample outputs and aggregate metrics) are stored in MLflow
-on the eval job's run, under `eval_results/`.
+on the eval job's run, under `eval_results/`. Benchmark jobs store aggregate
+scores only; per-question results are off for now.
 
 ## Workflow
 
@@ -137,12 +139,10 @@ The model does NOT have to come from training. Any HF model or
 OpenAI-compatible endpoint can be evaluated (e.g. a gateway model).
 
 **Once the subject is settled, establish task versus benchmark intent.**
-For a requested benchmark, call `list_evaluation_providers`, ask the user to
-choose an enabled benchmark, and set `evaluation.kind="benchmark"`, its
-`provider_id` and `benchmark_id`. Then go to Step 1.5 for sample count and
-Step 2 for the model. Skip Step 1 and the custom-rubric branch of Step 3.
-Use only the exposed framework parameters; the first supported benchmark is
-generation-only GSM8K. Other protocols require an enabled capability contract.
+For a benchmark, settle the model FIRST (Step 2), because which benchmarks
+can run depends on how the model is served. Then choose the benchmark and its
+settings in Step 3's benchmark branch. Skip Step 1, Step 1.5 and the rubric
+loop of Step 3.
 
 For a task, your next step is the eval dataset (Step 1).
 If no eval dataset exists in this conversation, you cannot
@@ -348,9 +348,40 @@ can relay that error to the user when it happens.
 
 ### Step 3 — Design the metrics (approval loop) <!--signal:metrics-->
 
-**Choose the scoring mechanism before the rubric branch below.** For a
-benchmark, explain its framework-owned metric and proceed to validation.
-For an embedding task, retain the existing anchor/query metrics. For a
+**Benchmark branch.** Choose the benchmark with the two catalog tools, then go
+straight to Step 4; nothing else in this step applies. On every call pass the
+settled model as `model`: `training_job_id` or `model_name_or_path` for a model
+the eval serves, or `endpoint` for an outside endpoint. Add
+`declared_capabilities: ["completions_logprobs"]` only when the user confirmed
+that endpoint serves /v1/completions with echo and logprobs.
+
+1. **The user named a benchmark** → `find_benchmarks` with `name`. It matches
+   names exactly. If there is no match, or the match cannot run for this model,
+   say so and give the reason from the result. Never offer a different
+   benchmark in its place.
+2. **The user wants to browse** → `find_benchmarks` without `name`. Each result
+   is either a question or a list of benchmarks:
+   - `display: "card"` → call `present_options` with step `choose-benchmark`,
+     the given `question` (if any) and the `options` exactly as returned.
+   - `display: "text"` → list every choice with its count in your message and
+     ask the user to type one. Do not use `present_options`.
+
+   When the user replies, call `find_benchmarks` again with the same `model`,
+   `picks` copied from the last result, and `answer` set to the user's reply
+   verbatim. A 422 means the reply was not one of the choices: show the allowed
+   values it lists and ask again. Repeat until the step is `selected`. Mention
+   the `hidden` counts once, in one line (e.g. "7 suites aren't supported yet").
+3. **Settings** → `get_benchmark` with the chosen `provider_id` and `id`. Tell
+   the user its name, metric and number of questions, then ask only about the
+   `settings` it returns, showing each default (e.g. "8-shot, all questions").
+   Put only the values the user changed into `evaluation.parameters`.
+
+Then set `evaluation = {kind: "benchmark", provider_id, benchmark_id,
+parameters}`. Never submit a `provider_id` or `benchmark_id` that did not come
+from a `find_benchmarks` or `get_benchmark` result in this conversation.
+
+**Choose the scoring mechanism before the rubric branch below.** For an
+embedding task, retain the existing anchor/query metrics. For a
 deterministic task, set `evaluation={kind:"task",version:"1",scorers:[...]}`
 using implemented IDs (`exact_match`, `json_schema`, `numeric_mae`,
 `numeric_tolerance`), each with a unique name and version "1". Confirm the
@@ -483,8 +514,15 @@ After the user clicks Confirm on the platform card, the job is
 submitted and you'll be notified when it completes. Never claim the job
 was submitted — check the job's existence first if in doubt.
 
-For a benchmark or deterministic-only task, summarize the selected protocol,
-scorers and sample limits instead of an invented judge. Use Amortized job IDs
+For a benchmark, the card shows the server's benchmark name, metric, few-shot
+count, question count and recipe fingerprint. Your one line repeats them from
+the `validate_eval_job` result's `benchmark` field, e.g. `GSM8K ·
+gsm8k.extractive_match · 8-shot · all questions · recipe 215799b4e6da`; there
+is no judge or temperature line. If the user reports that Confirm failed
+because the benchmark setup changed, re-validate and point them to the new card.
+
+For a deterministic-only task, summarize the selected scorers and sample limits
+instead of an invented judge. Use Amortized job IDs
 for monitoring, logs, results and Cancel. A cancellation request remains pending
 until the execution engine reports its outcome; a timeout or stale observation
 is not evidence that the evaluation failed. Preserve raw metric units/direction,
@@ -508,7 +546,8 @@ scores:
 
 Rubric criteria are absolute 0-1 scores (shown as percentages) — the
 share of the reference-level quality the model reached on that
-criterion, averaged over the scored samples.
+criterion, averaged over the scored samples. For a benchmark, report its
+metric by name with the raw value and whether higher is better.
 
 If `get_eval_results` reports `num_scored` of 0 (or null/empty scores),
 the eval produced no usable results — say so plainly, check the job logs,

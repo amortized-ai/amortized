@@ -82,36 +82,78 @@ scores retain the existing normalized 0–1 semantics. The embedding adapter cal
 the existing anchor/query implementation, retaining its splits, seeds, parameters,
 confusion matrix, and separability-proxy interpretation.
 
-The initial benchmark capability is **generation-only GSM8K through LightEval**:
+Benchmarks come from **Eval Hub's own LightEval catalog**, vendored verbatim at a
+pinned commit in `deploy/helm/amortized/files/evalhub/lighteval.yaml`
+(`make evalhub-catalog`). The chart registers it as `amortized-lighteval`,
+replacing only the id and runtime so the pinned adapter image runs. One benchmark
+per job; suites are not supported yet.
+
+What each benchmark needs is recorded by a release helper,
+`scripts/evalhub/lighteval_compat.py`, which runs **inside the pinned adapter
+image** (`make evalhub-compat`, needs network) and writes
+`files/evalhub/compat/amortized-lighteval.json`: the adapter's resolved tasks,
+scoring (`generative`, or `likelihood` when any metric needs log-probabilities),
+answers per question, dataset revisions and the settings profile. Anything the
+helper cannot establish is `unknown` with a reason. The chart mounts the file into
+the server and refuses to render if it describes a different image than
+`evalhub.operator.lightEvalImage`; at runtime a digest mismatch makes every entry
+`unknown`.
+
+Compatibility is decided from the model before anything is shown. A model
+Amortized serves (`training_job_id`, `model_name_or_path`) supports chat and
+`/v1/completions` with logprobs. An outside `endpoint` supports chat, plus
+`completions_logprobs` only when the user declares it
+(`evaluation.declared_capabilities`). Likelihood benchmarks are hidden for a
+chat-only endpoint, and the hidden counts are reported.
+
+Morty uses two read-only tools, never a provider list:
+
+- `find_benchmarks` (`POST /api/v1/evaluations/benchmarks/find`) looks a benchmark
+  up by exact normalized name, or browses. Browsing asks one question at a time in
+  the fixed order area → kind → provider, picking the first that splits the list.
+  Four or fewer choices come back as a card (`present_options`); more come back as
+  a typed question. The user's reply goes back as `answer` with the returned
+  `picks`; an off-list reply is a 422 listing the allowed values. Hub collections
+  are offered as shortlists at the first question, for navigation only.
+- `get_benchmark` (`POST /api/v1/evaluations/benchmarks/get`) returns one entry's
+  details, compatibility and the only settings the user may change, with bounds and
+  defaults.
 
 ```json
 {
   "endpoint": {"base_url": "https://model.example/v1", "model": "candidate"},
   "evaluation": {
     "kind": "benchmark",
-    "provider_id": "lighteval",
+    "provider_id": "amortized-lighteval",
     "benchmark_id": "gsm8k",
-    "parameters": {"max_samples": 10, "num_few_shot": 0}
+    "parameters": {"max_samples": 200}
   }
 }
 ```
 
-For the optional chart-owned provider registration use `amortized-lighteval` and
-configure that ID in `evalhub.providers`/`evalhub.benchmarks`. The underlying
-adapter still resolves `gsm8k`. No unrelated task dataset or judge is required.
-Allowed LightEval parameters are endpoint provider, positive sample count,
-few-shot count, batch size, and enabled sample artifacts. Arbitrary framework
-code-loading flags, in-adapter GPU backends, secret parameters, dataset-revision
-overrides and unsupported custom data are rejected. The reviewed adapter does
-not apply a caller-supplied random seed, so this integration rejects that knob
-instead of claiming it worked. Framework defaults are tied to the pinned image.
-Log-likelihood benchmarks need a separate endpoint-capability contract and are
-not enabled by this initial catalog.
+Allowed LightEval settings are sample count, few-shot count (0–50) and batch size
+(1–64). Few-shot defaults to the catalog's value (GSM8K 8, otherwise 0) and is
+sent explicitly, because Hub copies only request parameters to the adapter.
+`save_sample_results` is fixed to `false` and no `exports` are sent: the pinned
+adapter requires an OCI export for per-question results, and no registry is
+configured yet, so benchmarks store aggregate scores only. Code-loading flags,
+in-adapter GPU backends, secrets, dataset-revision overrides, custom data and a
+random seed are rejected.
 
-`GET /api/v1/evaluations/providers` (`list_evaluation_providers` in MCP) exposes
-the enabled catalog without submitting anything. The eval workflow uses it to
-select task/scorer or benchmark requirements, then follows the existing approval
-card. Unknown or unavailable catalog selections fail before that card.
+**Recipe pinning.** `validate_eval_job` resolves the exact recipe (catalog entry,
+adapter image digest, compatibility record, settings, dataset revisions), writes the
+resolved settings and a 12-character `recipe_fingerprint` into the card's config,
+and returns the server's name, metric, few-shot count, question count and
+fingerprint for the card. `create_eval_job` resolves the recipe again and refuses a
+card whose fingerprint changed (422, re-validate); otherwise it stores the recipe,
+ignoring any recipe a client sent. Before submitting to Hub, preparation builds the
+benchmark from that stored recipe and stops if the registered adapter image is no
+longer the approved digest. The fingerprint leaves out how the model was served, so
+a base endpoint and a tuned model share one comparison group.
+
+`GET /api/v1/evaluations/providers` (`list_evaluation_providers` in MCP) reports
+whether Hub is enabled, task scoring and benchmark provider counts; it no longer
+lists benchmarks.
 
 ## Components and images
 
@@ -185,7 +227,6 @@ evalhub:
   caConfigMap: openshift-service-ca.crt
   stagingBucket: amortized
   providers: [amortized-lighteval]
-  benchmarks: {amortized-lighteval: [gsm8k]}
   operator:
     createInstance: true
     namespace: amortized-jobs
@@ -212,7 +253,8 @@ hybrid generation reuse, adapter artifacts, raw units and comparison identity.
 They do **not** establish Kubernetes/operator/image/endpoint compatibility.
 
 The cluster release check must run the exact pinned images against a small real
-task, a rubric/hybrid task, an embedding task and GSM8K through the normal Amortized
+task, a rubric/hybrid task, an embedding task, GSM8K (generative) and one
+likelihood benchmark on a served model (e.g. ARC challenge) through the normal Amortized
 validate → user Confirm path. Verify outputs/sample artifacts and the single
 primary MLflow run, cancel a genuinely running evaluation, restart Amortized
 between POST and observation, and check that serving/credential resources are
@@ -231,5 +273,6 @@ Hub metrics/outcomes and MLflow/OCI artifacts are authoritative execution output
 Amortized's timestamped snapshot is a disposable UI projection; restoring it must
 not launch another evaluation. Task comparison groups include dataset content
 hash, scorer/rubric/mapping/settings and provider catalog/image identity, while
-excluding per-job object prefixes and model checkpoint paths. Different recipes
+excluding per-job object prefixes and model checkpoint paths. Benchmark groups key on
+the recipe fingerprint alone. Different recipes
 stay separate; raw units and direction remain attached to the metric.

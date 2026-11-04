@@ -279,6 +279,17 @@ class PromptView(BaseModel):
     text: str
 
 
+class BenchmarkView(BaseModel):
+    """Benchmark facts the eval confirmation card shows, from the server's catalog."""
+
+    id: str
+    name: str
+    metric: str = ""
+    num_few_shot: int | None = None
+    max_samples: int | None = None
+    recipe_fingerprint: str = ""
+
+
 class ValidatedJobConfig(BaseModel):
     valid: bool = True
     job_type: JobType
@@ -304,6 +315,8 @@ class ValidatedJobConfig(BaseModel):
     # rendered as "trainer default" on the confirmation card. Kept out of `config` (never
     # re-submitted to the create endpoint). Empty for non-training validate paths.
     trainer_default_fields: list[str] = Field(default_factory=list)
+    # The pinned benchmark (eval benchmark jobs only); None otherwise.
+    benchmark: BenchmarkView | None = None
 
 
 class RecipeSummary(BaseModel):

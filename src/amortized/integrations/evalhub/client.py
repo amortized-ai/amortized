@@ -120,12 +120,13 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             return [f"{key}: loopback endpoints cannot be reached from Eval Hub workloads"]
     if any(config.get(key) for key in ("endpoint_base", "endpoint_tuned")):
         return ["Submit one model per evaluation using endpoint, rather than legacy endpoint pairs"]
-    provider_id = definition["provider_id"] if benchmark else settings.evalhub_task_provider
-    benchmark_id = definition["benchmark_id"] if benchmark else "task"
-    if benchmark and provider_id not in settings.evalhub_providers:
-        return [f"benchmark provider {provider_id!r} is not enabled"]
-    if benchmark and benchmark_id not in settings.evalhub_benchmarks.get(provider_id, []):
-        return [f"benchmark {benchmark_id!r} has no enabled endpoint-capability contract"]
+    if benchmark:
+        if definition["provider_id"] not in settings.evalhub_providers:
+            return [f"benchmark provider {definition['provider_id']!r} is not enabled"]
+        # Catalog membership, compatibility and settings are checked when the
+        # recipe is pinned (benchmark_recipe), from the same catalog read.
+        return []
+    provider_id, benchmark_id = settings.evalhub_task_provider, "task"
     try:
         async with client() as sdk:
             provider = await sdk.providers.get(provider_id)
@@ -142,3 +143,24 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             "Cannot verify the selected benchmark against the Eval Hub catalog; retry validation"
         ]
     return []
+
+
+async def benchmark_recipe(config: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+    """Resolve the exact recipe a benchmark job would run, or the reasons it cannot."""
+    from amortized.integrations.evalhub import catalog
+
+    definition = config.get("evaluation") or {}
+    try:
+        capability = catalog.Capability.from_model(
+            {**config, "declared_capabilities": definition.get("declared_capabilities")}
+        )
+    except ValueError as exc:
+        return None, [str(exc)]
+    try:
+        async with client() as sdk:
+            entries = await catalog.load(sdk, [definition["provider_id"]])
+    except Exception:
+        return None, [
+            "Cannot verify the selected benchmark against the Eval Hub catalog; retry validation"
+        ]
+    return catalog.resolve_recipe(entries, capability, definition, config)

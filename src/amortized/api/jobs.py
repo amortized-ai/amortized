@@ -47,6 +47,7 @@ from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.jobs.training import ALGO_ALIASES
 from amortized.models import (
+    BenchmarkView,
     EvalJobRequest,
     Job,
     JobStatus,
@@ -492,6 +493,57 @@ async def _validate_eval_definition(config: dict[str, Any]) -> list[str]:
     return errors
 
 
+async def _pin_benchmark(
+    config: dict[str, Any], *, approved: bool
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Pin the exact recipe a benchmark job runs (no-op for task evaluations).
+
+    At validation it fills the resolved settings and the recipe fingerprint into the
+    card's config. At create (approved=True) it re-resolves the recipe, refuses a card
+    whose setup changed since validation, and stores the approved recipe, which the
+    worker later builds the Hub job from.
+    """
+    definition = config.get("evaluation")
+    if not isinstance(definition, dict) or definition.get("kind") != "benchmark":
+        return None, []
+    from amortized.integrations.evalhub.catalog import fingerprint
+    from amortized.integrations.evalhub.client import benchmark_recipe
+
+    definition.pop("recipe", None)  # server-owned; never trusted from a client
+    submitted = str(definition.pop("recipe_fingerprint", "") or "")
+    recipe, errors = await benchmark_recipe(config)
+    if errors or recipe is None:
+        return None, errors
+    current = fingerprint(recipe)
+    if approved and submitted != current:
+        return None, [
+            "The benchmark setup changed since validation (catalog entry, adapter image,"
+            " compatibility or settings). Re-validate with validate_eval_job and confirm"
+            " the new card."
+        ]
+    definition["parameters"] = recipe["parameters"]
+    definition["recipe_fingerprint"] = current
+    if approved:
+        definition["recipe"] = recipe
+    return recipe, []
+
+
+def _benchmark_view(recipe: dict[str, Any] | None, config: dict[str, Any]) -> BenchmarkView | None:
+    """The confirmation card's benchmark facts, taken from the server's catalog entry."""
+    if recipe is None:
+        return None
+    entry = recipe.get("catalog_entry") or {}
+    parameters = recipe.get("parameters") or {}
+    return BenchmarkView(
+        id=str(recipe["benchmark_id"]),
+        name=str(entry.get("name") or recipe["benchmark_id"]),
+        metric=str((entry.get("primary_score") or {}).get("metric") or ""),
+        num_few_shot=parameters.get("num_few_shot"),
+        max_samples=parameters.get("max_samples"),
+        recipe_fingerprint=str((config.get("evaluation") or {}).get("recipe_fingerprint") or ""),
+    )
+
+
 # Tunable training hyperparameters that fall back to the trainer's own default when unset
 # (amortized does not inject a value — training-hub does). validate_training_job reports
 # which of these the config left unset so the card can show "trainer default" instead of the
@@ -761,6 +813,8 @@ async def create_eval_job(
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
     errors.extend(await _validate_eval_definition(config))
+    if not errors:
+        errors.extend((await _pin_benchmark(config, approved=True))[1])
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -877,6 +931,8 @@ async def retry_job(
         errors += await _apply_classification_eval_mode(config, db)
         errors += _validate_eval_rubric_judge(config)
         errors += await _validate_eval_definition(config)
+        if not errors:
+            errors += (await _pin_benchmark(config, approved=True))[1]
         if errors:
             raise HTTPException(status_code=422, detail=errors)
         await _persist_metric_set(config, parent_job_id, db)
@@ -1329,6 +1385,10 @@ async def validate_eval_job(
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
     errors.extend(await _validate_eval_definition(config))
+    recipe = None
+    if not errors:
+        recipe, pin_errors = await _pin_benchmark(config, approved=False)
+        errors.extend(pin_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -1368,6 +1428,7 @@ async def validate_eval_job(
         config=config,
         parent_job_id=parent_job_id,
         warnings=warnings,
+        benchmark=_benchmark_view(recipe, config),
     )
 
 

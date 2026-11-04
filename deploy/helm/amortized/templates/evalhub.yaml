@@ -1,3 +1,18 @@
+{{- if .Values.evalhub.url }}
+# What each benchmark needs, recorded by scripts/evalhub/lighteval_compat.py inside the
+# pinned adapter image (make evalhub-compat). The server reads it at request time.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-evalhub-compat
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: server
+data:
+  {{- (.Files.Glob "files/evalhub/compat/*.json").AsConfig | nindent 2 }}
+---
+{{- end }}
 {{- if .Values.evalhub.operator.createInstance }}
 apiVersion: trustyai.opendatahub.io/v1alpha1
 kind: EvalHub
@@ -58,6 +73,20 @@ data:
       - id: task
         name: User-approved task recipe
         description: Dataset snapshot, scorer versions and optional approved-rubric judge
+{{- /* The upstream Eval Hub catalog, vendored verbatim at a pinned commit. Only the
+id and runtime are replaced, so the registered adapter is the pinned image. */}}
+{{- $lighteval := .Files.Get "files/evalhub/lighteval.yaml" | fromYaml }}
+{{- $_ := set $lighteval "id" "amortized-lighteval" }}
+{{- $_ := set $lighteval "runtime" (dict "k8s" (dict
+      "image" .Values.evalhub.operator.lightEvalImage
+      "image_pull_policy" "if_not_present"
+      "entrypoint" (list "python" "main.py")
+      "cpu_request" "500m" "cpu_limit" "4000m"
+      "memory_request" "4Gi" "memory_limit" "8Gi")) }}
+{{- $compat := .Files.Get "files/evalhub/compat/amortized-lighteval.json" | fromJson }}
+{{- if ne (get $compat "adapter_digest") (regexReplaceAll "^[^@]*@" .Values.evalhub.operator.lightEvalImage "") }}
+{{- fail "files/evalhub/compat/amortized-lighteval.json describes a different adapter image than evalhub.operator.lightEvalImage; run make evalhub-compat" }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -69,24 +98,5 @@ metadata:
     trustyai.opendatahub.io/evalhub-provider-name: amortized-lighteval
 data:
   amortized-lighteval.yaml: |
-    id: amortized-lighteval
-    name: Amortized LightEval endpoint evaluation
-    description: CPU-only generation benchmark; framework owns data and scoring
-    runtime:
-      k8s:
-        image: {{ .Values.evalhub.operator.lightEvalImage | quote }}
-        image_pull_policy: if_not_present
-        entrypoint: [python, main.py]
-        cpu_request: 500m
-        cpu_limit: 4000m
-        memory_request: 4Gi
-        memory_limit: 8Gi
-    benchmarks:
-      - id: gsm8k
-        name: GSM8K
-        description: Grade-school math word problems using LightEval's built-in protocol
-        metrics: [exact_match]
-        primary_score:
-          metric: exact_match
-          lower_is_better: false
+    {{- toYaml $lighteval | nindent 4 }}
 {{- end }}

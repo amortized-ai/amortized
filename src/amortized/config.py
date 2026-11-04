@@ -68,9 +68,9 @@ class Settings(BaseSettings):
     evalhub_poll_interval: float = Field(3.0, ge=0.1)
     evalhub_timeout: float = Field(30.0, gt=0)
     evalhub_preparation_timeout: float = Field(1800.0, gt=0)
-    evalhub_providers: list[str] = Field(default_factory=lambda: ["lighteval"])
-    evalhub_benchmarks: dict[str, list[str]] = Field(
-        default_factory=lambda: {"lighteval": ["gsm8k"]}
+    evalhub_providers: list[str] = Field(default_factory=lambda: ["amortized-lighteval"])
+    evalhub_compat_dir: str = Field(
+        "", description="Directory of <provider_id>.json files from scripts/evalhub"
     )
     evalhub_task_provider: str = "amortized"
     evalhub_staging_bucket: str = ""

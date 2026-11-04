@@ -1661,7 +1661,7 @@
           "evaluations"
         ],
         "summary": "List Evaluation Providers",
-        "description": "Read enabled task/benchmark capabilities before assembling an approval card.",
+        "description": "Read enabled task scoring and benchmark providers before assembling an eval.",
         "operationId": "list_evaluation_providers",
         "responses": {
           "200": {
@@ -1672,6 +1672,92 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response List Evaluation Providers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations/benchmarks/find": {
+      "post": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "Find a benchmark for a settled model: look one up by exact name, or browse with narrowing questions. Follow the response's `next` instruction. Never pick or submit a benchmark id that did not come from this tool's result.",
+        "operationId": "find_benchmarks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindBenchmarksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Find Benchmarks"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations/benchmarks/get": {
+      "post": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "Get one benchmark's details, compatibility with the model, and the only settings the user may change. Use the provider_id and id from a find_benchmarks result.",
+        "operationId": "get_benchmark",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetBenchmarkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Benchmark"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -2520,6 +2606,31 @@
             "type": "object",
             "title": "Parameters"
           },
+          "declared_capabilities": {
+            "items": {
+              "type": "string",
+              "const": "completions_logprobs"
+            },
+            "type": "array",
+            "title": "Declared Capabilities"
+          },
+          "recipe_fingerprint": {
+            "type": "string",
+            "title": "Recipe Fingerprint",
+            "default": ""
+          },
+          "recipe": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe"
+          },
           "dataset_revision": {
             "type": "string",
             "const": "",
@@ -2547,6 +2658,98 @@
           "benchmark_id"
         ],
         "title": "BenchmarkEvaluation"
+      },
+      "BenchmarkModel": {
+        "properties": {
+          "training_job_id": {
+            "type": "string",
+            "title": "Training Job Id",
+            "description": "A finished training job (Amortized serves it)",
+            "default": ""
+          },
+          "model_name_or_path": {
+            "type": "string",
+            "title": "Model Name Or Path",
+            "description": "A base model Amortized serves",
+            "default": ""
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint",
+            "description": "An outside OpenAI-compatible endpoint (base_url, model)"
+          },
+          "declared_capabilities": {
+            "items": {
+              "type": "string",
+              "const": "completions_logprobs"
+            },
+            "type": "array",
+            "title": "Declared Capabilities",
+            "description": "Outside endpoint only, and only if the user confirmed it: the endpoint serves /v1/completions with echo and logprobs"
+          }
+        },
+        "type": "object",
+        "title": "BenchmarkModel",
+        "description": "The model the benchmark will evaluate; it decides which benchmarks can run."
+      },
+      "BenchmarkView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "metric": {
+            "type": "string",
+            "title": "Metric",
+            "default": ""
+          },
+          "num_few_shot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Few Shot"
+          },
+          "max_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Samples"
+          },
+          "recipe_fingerprint": {
+            "type": "string",
+            "title": "Recipe Fingerprint",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "BenchmarkView",
+        "description": "Benchmark facts the eval confirmation card shows, from the server's catalog."
       },
       "BernoulliMixtureSamplerParams": {
         "properties": {
@@ -4032,6 +4235,38 @@
         "title": "ExpressionColumnConfig",
         "description": "Configuration for derived columns using Jinja2 expressions.\n\nExpression columns compute values by evaluating Jinja2 templates that reference other\ncolumns. Useful for transformations, concatenations, conditional logic, and derived\nfeatures without requiring LLM generation. The expression is evaluated row-by-row.\n\nAttributes:\n    expr (required): Jinja2 expression to evaluate. Can reference other column values using\n        {{ column_name }} syntax. Supports filters, conditionals, and arithmetic.\n        Must be a valid, non-empty Jinja2 template.\n    dtype: Data type to cast the result to. Must be one of \"int\", \"float\", \"str\", or \"bool\".\n        Defaults to \"str\". Type conversion is applied after expression evaluation.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
       },
+      "FindBenchmarksRequest": {
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/BenchmarkModel"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "A benchmark name the user gave, to look up exactly",
+            "default": ""
+          },
+          "picks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Picks",
+            "description": "The picks from the previous find_benchmarks response"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer",
+            "description": "The user's reply to the previous question, verbatim",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "title": "FindBenchmarksRequest"
+      },
       "GatewayModel": {
         "properties": {
           "name": {
@@ -4106,6 +4341,30 @@
         ],
         "title": "GenerationStrategy",
         "description": "Strategy for custom column generation."
+      },
+      "GetBenchmarkRequest": {
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "title": "Provider Id",
+            "description": "provider_id from a find_benchmarks result"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Benchmark id from a find_benchmarks result"
+          },
+          "model": {
+            "$ref": "#/components/schemas/BenchmarkModel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "id",
+          "model"
+        ],
+        "title": "GetBenchmarkRequest"
       },
       "GetModelPricingResponse": {
         "properties": {
@@ -7561,6 +7820,16 @@
             },
             "type": "array",
             "title": "Trainer Default Fields"
+          },
+          "benchmark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

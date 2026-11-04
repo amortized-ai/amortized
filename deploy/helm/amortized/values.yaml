@@ -82,8 +82,9 @@ evalhub:
   s3Secret: amortized-s3
   pollInterval: 3
   preparationTimeout: 1800
-  providers: [lighteval]
-  benchmarks: {lighteval: [gsm8k]}
+  # Benchmark providers Morty may browse. The catalog is Eval Hub's own
+  # (files/evalhub/lighteval.yaml); compatibility comes from files/evalhub/compat/.
+  providers: [amortized-lighteval]
   taskProvider: amortized
   experiment: amortized/evaluation
   # Installed operator owns the Go server, TLS/auth proxy, and runtime helpers.

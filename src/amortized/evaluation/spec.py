@@ -66,6 +66,12 @@ class BenchmarkEvaluation(BaseModel):
     provider_id: str = Field(min_length=1)
     benchmark_id: str = Field(min_length=1)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Endpoint features the user declared for an outside endpoint (never probed).
+    declared_capabilities: list[Literal["completions_logprobs"]] = Field(default_factory=list)
+    # Set by validate_eval_job; create_eval_job rejects a card whose setup changed since.
+    recipe_fingerprint: str = ""
+    # Server-owned: the approved recipe, written at create and used to build the Hub job.
+    recipe: dict[str, Any] | None = None
     # The first framework integration uses its pinned, framework-owned dataset.
     # Do not accept an override that the framework would silently ignore.
     dataset_revision: Literal[""] = ""
@@ -92,9 +98,12 @@ class LightEvalParameters(BaseModel):
     model_config = {"extra": "forbid"}
     provider: Literal["endpoint"] = "endpoint"
     max_samples: int | None = Field(None, gt=0)
-    num_few_shot: int = Field(0, ge=0, le=50)
+    # None = the catalog's default, filled in explicitly when the recipe is pinned.
+    num_few_shot: int | None = Field(None, ge=0, le=50)
     batch_size: int = Field(1, ge=1, le=64)
-    save_sample_results: Literal[True] = True
+    # Off until a registry backs exports.oci: the pinned adapter refuses per-question
+    # results without an OCI export.
+    save_sample_results: Literal[False] = False
 
 
 EvaluationDefinition = Annotated[TaskEvaluation | BenchmarkEvaluation, Field(discriminator="kind")]
