@@ -16,6 +16,9 @@ data:
   AMORTIZED_IMAGE_REGISTRY: {{ .Values.server.imageRegistry | quote }}
   AMORTIZED_EXTERNAL_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
   AMORTIZED_AGENT_SERVER_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
+  {{- if .Values.modelCheck.enabled }}
+  AMORTIZED_MODEL_CHECK_URL: "http://amortized-model-check.{{ include "amortized.jobsNamespace" . }}.svc:{{ .Values.modelCheck.port }}"
+  {{- end }}
   AMORTIZED_MLFLOW_TRACKING_URI: {{ include "amortized.mlflowTrackingUri" . | quote }}
   {{- if .Values.mlflow.enterprise.enabled }}
   # RHOAI enterprise MLflow auth: bearer token (SA token file, re-read per request for

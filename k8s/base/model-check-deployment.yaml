@@ -1,0 +1,57 @@
+# Model-liveness check service: a small, stateless helper the server calls at job
+# validate/create time to verify the LLM endpoints a job will use (eval judge, SDG teacher
+# models) actually answer. Runs in the jobs namespace so it shares the job pods' network
+# position. Callers send each endpoint's resolved key in the request; nothing is mounted or
+# stored here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-model-check
+  namespace: amortized-jobs
+  labels:
+    app: amortized
+    component: model-check
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: model-check
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: model-check
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: model-check
+          image: ghcr.io/amortized-ai/model-check:latest
+          imagePullPolicy: Always
+          args: ["serve", "--port", "7351"]
+          ports:
+            - name: http
+              containerPort: 7351
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

@@ -241,6 +241,17 @@ class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     )
 
 
+class ModelCheckResult(BaseModel):
+    """Outcome of checking one LLM endpoint a job will call. URLs are redacted."""
+
+    label: str
+    model: str
+    base_url: str
+    outcome: Literal["passed", "failed", "unverified"]
+    reason: str
+    detail: str = ""
+
+
 class Job(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     type: JobType
@@ -258,6 +269,8 @@ class Job(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     retry_of: str = ""
+    # The model-liveness check recorded at creation; `unverified` entries are warnings.
+    model_checks: list[ModelCheckResult] = Field(default_factory=list)
 
 
 class PromptView(BaseModel):
@@ -302,6 +315,9 @@ class ValidatedJobConfig(BaseModel):
     # rendered as "trainer default" on the confirmation card. Kept out of `config` (never
     # re-submitted to the create endpoint). Empty for non-training validate paths.
     trainer_default_fields: list[str] = Field(default_factory=list)
+    # Model-liveness results for the endpoints this job will call. Definite failures are
+    # rejected before a card exists, so these are passed or unverified (shown as warnings).
+    model_checks: list[ModelCheckResult] = Field(default_factory=list)
 
 
 class RecipeSummary(BaseModel):

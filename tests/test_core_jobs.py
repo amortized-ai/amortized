@@ -56,6 +56,7 @@ class TestCreateJob:
             repo,
             job_type=JobType.sdg,
             config={"model": "openai/gpt-4o"},
+            models_checked=True,  # core behavior under test; admission is tested separately
         )
         assert row["type"] == "sdg"
 
@@ -169,6 +170,7 @@ class TestListJobs:
             repo,
             job_type=JobType.sdg,
             config={"model": "openai/gpt-4o"},
+            models_checked=True,  # core behavior under test; admission is tested separately
         )
 
         training = await list_jobs(repo, job_type=JobType.training)

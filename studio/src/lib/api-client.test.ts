@@ -31,6 +31,7 @@ import {
   getMlflowGatewayRoutes,
   shouldKeepSessionOnError,
   ApiError,
+  sendOpenCodeMessage,
 } from "@/lib/api-client"
 
 const mockFetch = vi.fn()
@@ -257,5 +258,62 @@ describe("API Client", () => {
       expect(shouldKeepSessionOnError(new TypeError("fetch failed"))).toBe(false)
       expect(shouldKeepSessionOnError(null)).toBe(false)
     })
+  })
+})
+
+describe("ApiError — error envelope code", () => {
+  it("keeps the API's stable code so callers can branch on it", async () => {
+    mockFetch.mockReturnValue(errorResponse(422, {
+      code: "model_check_failed",
+      message: "judge model 'x' at 'http://gw/v1' did not answer a test request (unreachable)",
+      details: [{ field: "judge", error: "x at http://gw/v1: unreachable" }],
+    }))
+    const err = await createSdgJob({} as never).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).code).toBe("model_check_failed")
+    expect((err as ApiError).status).toBe(422)
+  })
+
+  it("leaves code unset when the body has none", async () => {
+    mockFetch.mockReturnValue(errorResponse(400, { detail: "bad" }))
+    const err = await createSdgJob({} as never).catch((e: unknown) => e)
+    expect((err as ApiError).code).toBeUndefined()
+  })
+})
+
+
+describe("sendOpenCodeMessage — idempotent events", () => {
+  function route(handler: (url: string, init?: RequestInit) => Promise<Response>) {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => handler(url, init))
+  }
+
+  it("retries a lost-response event on the same session with the same event_id", async () => {
+    const sessionsCreated: string[] = []
+    const messageBodies: Array<{ url: string; body: Record<string, unknown> }> = []
+    let posts = 0
+    route(async (url, init) => {
+      if (url.endsWith("/agent/session") && init?.method === "POST") {
+        sessionsCreated.push(url)
+        return new Response(JSON.stringify({ id: "ses-1" }), { status: 200 })
+      }
+      if (url.includes("/message")) {
+        messageBodies.push({ url, body: JSON.parse(String(init?.body)) })
+        posts++
+        if (posts === 1) throw new TypeError("fetch failed") // reached the server, response lost
+        return new Response(JSON.stringify({ turn_id: "t1" }), { status: 200 })
+      }
+      if (url.includes("/turn/t1")) {
+        return new Response(JSON.stringify({ active: false, result: { info: {}, parts: [] } }), { status: 200 })
+      }
+      throw new Error(`unexpected ${url}`)
+    })
+
+    await sendOpenCodeMessage("conv-1", "blocked", undefined, "confirmation_blocked", undefined, "eval", undefined,
+      { eventId: "confirmation_blocked:m1" })
+
+    expect(sessionsCreated).toHaveLength(1) // no fresh session that never saw the first POST
+    expect(messageBodies).toHaveLength(2)
+    expect(new Set(messageBodies.map((m) => m.url)).size).toBe(1)
+    expect(messageBodies.map((m) => m.body.event_id)).toEqual(["confirmation_blocked:m1", "confirmation_blocked:m1"])
   })
 })

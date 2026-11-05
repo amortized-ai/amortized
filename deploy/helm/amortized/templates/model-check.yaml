@@ -1,0 +1,106 @@
+{{- if .Values.modelCheck.enabled }}
+# Model-liveness check service: a small, stateless helper the server calls at job
+# validate/create time to verify the LLM endpoints a job will use (eval judge, SDG teacher
+# models) actually answer. Runs in the jobs namespace so it shares the job pods' network
+# position. Callers send each endpoint's resolved key in the request; nothing is stored here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-model-check
+  namespace: {{ include "amortized.jobsNamespace" . }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: model-check
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: model-check
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: model-check
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
+      containers:
+        - name: model-check
+          image: {{ include "amortized.image" .Values.images.modelCheck }}
+          imagePullPolicy: {{ include "amortized.pullPolicy" .Values.images.modelCheck }}
+          args:
+            - serve
+            - --port
+            - {{ .Values.modelCheck.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.modelCheck.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.modelCheck.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-model-check
+  namespace: {{ include "amortized.jobsNamespace" . }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: model-check
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: model-check
+  ports:
+    - name: http
+      port: {{ .Values.modelCheck.port }}
+      targetPort: http
+---
+# Only the server may call the model-check service. It sends requests to caller-supplied URLs
+# with caller-supplied keys, so ClusterIP reachability alone is not enough: job pods share this
+# namespace and must not be able to use it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: amortized-model-check
+  namespace: {{ include "amortized.jobsNamespace" . }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: model-check
+spec:
+  podSelector:
+    matchLabels:
+      app: amortized
+      component: model-check
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "amortized.namespace" . }}
+          podSelector:
+            matchLabels:
+              app: amortized
+              component: server
+      ports:
+        - protocol: TCP
+          port: {{ .Values.modelCheck.port }}
+{{- end }}

@@ -10,6 +10,7 @@ interface MessageListProps {
   onOptionSelect?: (value: string, messageId?: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
+  onRetryBlockedNotice?: (messageId: string) => void
   onJobComplete?: (jobId: string, jobType: string, status: string, mode?: string) => void
 }
 
@@ -20,6 +21,7 @@ export function MessageList({
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
+  onRetryBlockedNotice,
   onJobComplete,
 }: MessageListProps) {
   // `messages` is already derived from the store by useChat (single source of truth), so
@@ -50,6 +52,7 @@ export function MessageList({
               onOptionSelect={onOptionSelect}
               onConfirmAction={onConfirmAction}
               onRejectAction={onRejectAction}
+              onRetryBlockedNotice={onRetryBlockedNotice}
               onJobComplete={onJobComplete}
             />
           ))}

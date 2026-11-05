@@ -1,3 +1,4 @@
+import type { ModelCheckResult } from "@/types/api"
 import type { PromptView } from "../types"
 
 interface McpContentBlock {
@@ -83,6 +84,29 @@ export interface ValidatedJobConfig {
   dataRecordCount: number | null
   outputPrompt: string | null
   prompts: PromptView[]
+  modelChecks: ModelCheckResult[]
+}
+
+const MODEL_CHECK_OUTCOMES = new Set(["passed", "failed", "unverified"])
+
+// Model-liveness results from a validate_* result; malformed entries are dropped.
+export function extractModelChecks(raw: unknown): ModelCheckResult[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((item): ModelCheckResult[] => {
+    if (!item || typeof item !== "object") return []
+    const o = item as Record<string, unknown>
+    if (typeof o.label !== "string" || typeof o.outcome !== "string" || !MODEL_CHECK_OUTCOMES.has(o.outcome)) {
+      return []
+    }
+    return [{
+      label: o.label,
+      model: typeof o.model === "string" ? o.model : "",
+      base_url: typeof o.base_url === "string" ? o.base_url : "",
+      outcome: o.outcome as ModelCheckResult["outcome"],
+      reason: typeof o.reason === "string" ? o.reason : "",
+      detail: typeof o.detail === "string" ? o.detail : "",
+    }]
+  })
 }
 
 export function extractValidatedJobConfig(result: string): ValidatedJobConfig | null {
@@ -102,6 +126,7 @@ export function extractValidatedJobConfig(result: string): ValidatedJobConfig | 
       outputPrompt:
         typeof obj.output_prompt === "string" ? obj.output_prompt : null,
       prompts: extractPromptViews(obj.prompts),
+      modelChecks: extractModelChecks(obj.model_checks),
     }
   }
   return null

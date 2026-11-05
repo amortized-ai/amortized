@@ -537,3 +537,58 @@ describe("MessageBubble — model label", () => {
     expect(screen.queryByTestId("message-model")).toBeNull()
   })
 })
+
+describe("model-check warnings and blocked confirmations", () => {
+  const unverified = {
+    label: "judge", model: "gpt-oss", base_url: "http://gw/v1",
+    outcome: "unverified" as const, reason: "checker_unavailable", detail: "",
+  }
+  const passed = { ...unverified, label: "model under test", model: "qwen", outcome: "passed" as const, reason: "ok" }
+
+  function blockedMsg(notify: "sending" | "delivered" | "failed"): ChatMessage {
+    return {
+      id: "action-1",
+      role: "assistant",
+      content: "",
+      timestamp: new Date().toISOString(),
+      toolResults: [],
+      proposedAction: null,
+      optionCards: [],
+      actionBlocked: { message: "judge model 'gpt-oss' did not answer a test request", jobType: "eval", notify },
+    }
+  }
+
+  it("ActionCard shows unverified endpoints as warnings, not passed ones", () => {
+    render(
+      <ActionCard
+        action={{ action: "Create EVAL Job", description: "Submit?", params: {}, modelChecks: [unverified, passed] }}
+        onConfirm={vi.fn()}
+        onReject={vi.fn()}
+      />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText(/Judge gpt-oss not verified: the model check service was unavailable/)).toBeInTheDocument()
+    expect(screen.queryByText(/qwen not verified/)).not.toBeInTheDocument()
+  })
+
+  it("MessageBubble always explains a blocked submission, even with no text or card", () => {
+    render(<MessageBubble message={blockedMsg("sending")} />, { wrapper: Wrapper })
+    expect(screen.getByText("Not submitted")).toBeInTheDocument()
+    expect(screen.getByText(/did not answer a test request/)).toBeInTheDocument()
+    expect(screen.getByText(/Letting Morty know/)).toBeInTheDocument()
+  })
+
+  it("offers Retry once automatic delivery to Morty has failed", () => {
+    const onRetry = vi.fn()
+    render(<MessageBubble message={blockedMsg("failed")} onRetryBlockedNotice={onRetry} />, { wrapper: Wrapper })
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(onRetry).toHaveBeenCalledWith("action-1")
+  })
+
+  it("shows no delivery status once Morty has the notice", () => {
+    render(<MessageBubble message={blockedMsg("delivered")} onRetryBlockedNotice={vi.fn()} />, { wrapper: Wrapper })
+    expect(screen.getByText("Not submitted")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Letting Morty know/)).not.toBeInTheDocument()
+  })
+})

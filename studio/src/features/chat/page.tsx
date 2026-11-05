@@ -44,6 +44,7 @@ function ChatContent({ sendBlockedReason }: { sendBlockedReason?: string }) {
     thinkingStep,
     confirmAction,
     rejectAction,
+    retryBlockedNotice,
     notifyJobComplete,
   } = useChat()
 
@@ -84,6 +85,7 @@ function ChatContent({ sendBlockedReason }: { sendBlockedReason?: string }) {
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
+        onRetryBlockedNotice={retryBlockedNotice}
         onJobComplete={notifyJobComplete}
       />
       {sendBlockedReason && (

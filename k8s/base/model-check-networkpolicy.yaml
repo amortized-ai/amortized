@@ -1,0 +1,30 @@
+# Only the server may call the model-check service. The service sends requests to
+# caller-supplied URLs with caller-supplied keys, so ClusterIP reachability alone is not
+# enough: job pods share this namespace and must not be able to use it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: amortized-model-check
+  namespace: amortized-jobs
+  labels:
+    app: amortized
+    component: model-check
+spec:
+  podSelector:
+    matchLabels:
+      app: amortized
+      component: model-check
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: amortized
+          podSelector:
+            matchLabels:
+              app: amortized
+              component: server
+      ports:
+        - protocol: TCP
+          port: 7351

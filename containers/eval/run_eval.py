@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import glob
 import json
 import os
@@ -48,9 +47,6 @@ import httpx
 
 MAX_PARALLEL = 16
 REQUEST_TIMEOUT = 300.0
-# Preflight (--check-judge) per-request timeout: a judge that can't answer a 16-token ping in
-# this long is treated as unreachable.
-CHECK_TIMEOUT = 30.0
 MAX_RETRIES = 3
 # Distinct param adaptations allowed per request: a reasoning model can reject BOTH a non-default
 # temperature AND max_tokens, in either order, so one adaptation isn't always enough.
@@ -509,68 +505,13 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
-async def check_endpoint(config: dict[str, Any], name: str) -> str | None:
-    """Send one minimal request to ``config["endpoints"][name]`` through the same ``call_model``
-    the eval uses. Returns the error text if the request fails, None if the endpoint responds."""
-    endpoint = config["endpoints"][name]
-    api_key = os.environ.get(endpoint.get("api_key_env", ""), "")
-    async with httpx.AsyncClient(timeout=httpx.Timeout(CHECK_TIMEOUT)) as client:
-        try:
-            await call_model(
-                client,
-                endpoint,
-                [{"role": "user", "content": "ping"}],
-                temperature=0.0,
-                max_tokens=16,
-                api_key=api_key,
-            )
-        except Exception as exc:
-            return str(exc)
-    return None
-
-
-def check_judge(config: dict[str, Any]) -> None:
-    """Fail fast when the judge can't answer. Runs as the pod's first step, before the model
-    under test is served — otherwise a dead judge surfaces only after generation, as a
-    "completed" eval with null scores. The reason goes to the K8s termination log so it
-    lands in the job's error, not just its logs."""
-    judge = config.get("endpoints", {}).get("judge")
-    if not judge:
-        # The builder only adds --check-judge when a judge is configured, so this is a builder
-        # bug — fail loudly rather than pass a config that can't score.
-        message = "--check-judge was given but the config has no judge endpoint"
-    else:
-        error = asyncio.run(check_endpoint(config, "judge"))
-        if error is None:
-            print("judge model reachable")
-            return
-        message = (
-            f"judge model {judge.get('model')!r} at {judge.get('base_url')!r} did not answer a"
-            f" test request ({error})"
-        )
-    print("=== EVAL-STAGE: judge-unreachable ===")
-    print(message)
-    with contextlib.suppress(OSError):
-        Path(os.environ.get("TERMINATION_LOG", "/dev/termination-log")).write_text(message)
-    raise SystemExit(1)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="Path to config.json")
-    parser.add_argument(
-        "--check-judge",
-        action="store_true",
-        help="Only verify the judge endpoint answers, then exit (pod preflight)",
-    )
     args = parser.parse_args()
 
     with open(args.config, encoding="utf-8") as f:
         config = json.load(f)
-
-    if args.check_judge:
-        check_judge(config)
-        return
 
     summary = asyncio.run(run(config))
 
