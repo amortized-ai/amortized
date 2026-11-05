@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 import amortized.config as config_mod
-from amortized.core.mlflow_client import MLflowClient
+from amortized.core.mlflow_client import MLflowClient, gateway_mlflow_client
 
 logger = logging.getLogger("amortized.api.eval")
 
@@ -40,10 +40,10 @@ async def get_eval_endpoint_suggestions(
     # --- Known serving endpoints: models behind the MLflow AI Gateway ---
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     gateway_url = config_mod.settings.gateway_url
-    if tracking_uri and gateway_url:
+    gateway_client = gateway_mlflow_client() if gateway_url else None
+    if gateway_client is not None:
         try:
-            client = MLflowClient(tracking_uri)
-            gateway_models = await client.list_gateway_models()
+            gateway_models = await gateway_client.list_gateway_models()
             suggestions["known_endpoints"] = [
                 {
                     "name": m.get("name", ""),

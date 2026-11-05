@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter
 
 import amortized.config as config_mod
-from amortized.core.mlflow_client import MLflowClient
+from amortized.core.mlflow_client import gateway_mlflow_client
 from amortized.core.model_catalog import available_models, enabled_models
 from amortized.models import GatewayModel, ModelsResponse
 
@@ -29,11 +29,10 @@ router = APIRouter(prefix="/api/v1", tags=["models"])
     summary="List available models (MLflow AI Gateway, or direct providers via dropped-in keys).",
 )
 async def list_models() -> ModelsResponse:
-    tracking_uri = config_mod.settings.mlflow_tracking_uri
     gateway_models: list[GatewayModel] = []
-    if tracking_uri:
+    client = gateway_mlflow_client()
+    if client is not None:
         try:
-            client = MLflowClient(tracking_uri)
             raw_models = await client.list_gateway_models()
             gateway_models = [GatewayModel(**m) for m in raw_models]
         except Exception:
