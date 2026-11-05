@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from hf_identity import dataset
+
 SCHEMA = "amortized.evalhub.compat/v1"
 # Names the parameter contract Amortized implements for this adapter
 # (amortized.evaluation.spec.LightEvalParameters). Bump it when the adapter's
@@ -42,12 +44,13 @@ def describe(benchmark_id: str, adapter: Any, configs: dict[str, Any], methods: 
     for task in tasks:
         config = configs[task.split("|", 1)[0]]
         datasets.append(
-            {
-                "task": task,
-                "hf_repo": getattr(config, "hf_repo", None),
-                "hf_subset": getattr(config, "hf_subset", None),
-                "hf_revision": getattr(config, "hf_revision", None),
-            }
+            dataset(
+                task,
+                getattr(config, "hf_repo", None),
+                getattr(config, "hf_subset", None),
+                [str(s) for s in getattr(config, "evaluation_splits", None) or ()],
+                getattr(config, "hf_revision", None),
+            )
         )
     return {
         **record,
@@ -95,6 +98,8 @@ def main() -> None:
             "catalog": {"repo": args.catalog_repo, "commit": args.catalog_commit},
             "adapter_image": args.adapter_image,
             "adapter_digest": args.adapter_image.split("@", 1)[1],
+            # The adapter-wide contract, also for entries whose own record is unknown.
+            "settings_profile": SETTINGS_PROFILE,
             "lighteval_version": lighteval_version,
             "benchmarks": benchmarks,
         },

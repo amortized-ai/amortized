@@ -82,9 +82,11 @@ evalhub:
   s3Secret: amortized-s3
   pollInterval: 3
   preparationTimeout: 1800
-  # Benchmark providers Morty may browse. The catalog is Eval Hub's own
-  # (files/evalhub/lighteval.yaml); compatibility comes from files/evalhub/compat/.
-  providers: [amortized-lighteval]
+  # Benchmark providers Morty may browse, in default order: when two providers carry the
+  # same questions (same Hugging Face dataset, subset and split), the first that can run
+  # them is the default. Catalogs are Eval Hub's own (files/evalhub/<provider>.yaml);
+  # compatibility comes from files/evalhub/compat/.
+  providers: [amortized-lm-eval, amortized-lighteval]
   taskProvider: amortized
   experiment: amortized/evaluation
   # Installed operator owns the Go server, TLS/auth proxy, and runtime helpers.
@@ -98,6 +100,8 @@ evalhub:
     namespaceForProviders: "" # installed TrustyAI operator namespace
     taskAdapterImage: "" # required immutable ghcr.io/amortized-ai/evalhub-adapter@sha256:...
     lightEvalImage: quay.io/evalhub/community-lighteval@sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc
+    # TrustyAI lm-eval adapter: the catalog's quay.io/opendatahub/ta-lmes-job:odh-3.4-ea2, pinned.
+    lmEvalImage: quay.io/opendatahub/ta-lmes-job@sha256:5a40e71f254b32ab899588c2470ee818281925bd5a4b531ac959e6aa4d130fdb
     # Existing operator tenant API Role; set empty only when auth is handled elsewhere.
     apiRole: evalhub-user
     jobServiceAccount: "" # actual operator-created adapter/sidecar SA for MLflow

@@ -752,7 +752,9 @@ class EvalJobConfig(BaseModel):
                 raise ValueError("benchmark scoring is defined by its provider, not a task rubric")
             if self.temperature != 0.0 or self.judge_max_samples or self.judge:
                 raise ValueError("benchmark generation/scoring settings belong to its provider")
-            selected_limit = self.evaluation.parameters.get("max_samples")
+            from amortized.evaluation.spec import benchmark_limit
+
+            selected_limit = benchmark_limit(self.evaluation.parameters)
             if self.max_samples and selected_limit and self.max_samples != selected_limit:
                 raise ValueError("Conflicting task and benchmark sample limits")
         if isinstance(self.evaluation, TaskEvaluation):

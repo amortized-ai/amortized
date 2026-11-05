@@ -10,8 +10,9 @@ STUDIO_IMAGE  ?= ghcr.io/amortized-ai/studio:latest
 EVALHUB_CATALOG_COMMIT ?= 9a18b91657dae635d9ed56a2075ec1b808eb6345
 EVALHUB_DIR            := deploy/helm/amortized/files/evalhub
 LIGHTEVAL_IMAGE        ?= $(shell sed -n 's/^ *lightEvalImage: *//p' deploy/helm/amortized/values.yaml)
+LM_EVAL_IMAGE          ?= $(shell sed -n 's/^ *lmEvalImage: *//p' deploy/helm/amortized/values.yaml)
 
-.PHONY: help build build-server build-studio prompt deploy-dev lint typecheck test evalhub-catalog evalhub-compat
+.PHONY: help build build-server build-studio prompt deploy-dev lint typecheck test evalhub-catalog evalhub-compat evalhub-compat-lighteval evalhub-compat-lm-eval
 
 # ──────────────────────────────────────────────
 # Help
@@ -107,18 +108,30 @@ typecheck: ## Run type checker (mypy)
 test: ## Run test suite (pytest)
 	pytest tests/
 
-evalhub-catalog: ## Vendor Eval Hub's LightEval catalog at EVALHUB_CATALOG_COMMIT (re-run evalhub-compat after)
-	{ printf '# Verbatim copy of https://github.com/eval-hub/eval-hub/blob/%s/config/providers/lighteval.yaml\n' $(EVALHUB_CATALOG_COMMIT); \
-	  printf '# Refresh with `make evalhub-catalog`; the Helm template overrides only id, runtime and resources.\n'; \
-	  curl -fsSL https://raw.githubusercontent.com/eval-hub/eval-hub/$(EVALHUB_CATALOG_COMMIT)/config/providers/lighteval.yaml; \
-	} > $(EVALHUB_DIR)/lighteval.yaml.tmp
-	mv $(EVALHUB_DIR)/lighteval.yaml.tmp $(EVALHUB_DIR)/lighteval.yaml
+evalhub-catalog: ## Vendor Eval Hub's LightEval and lm-eval catalogs at EVALHUB_CATALOG_COMMIT (re-run evalhub-compat after)
+	for name in lighteval lm_evaluation_harness; do \
+	  { printf '# Verbatim copy of https://github.com/eval-hub/eval-hub/blob/%s/config/providers/%s.yaml\n' $(EVALHUB_CATALOG_COMMIT) $$name; \
+	    printf '# Refresh with `make evalhub-catalog`; the Helm template overrides only id, runtime and resources.\n'; \
+	    curl -fsSL https://raw.githubusercontent.com/eval-hub/eval-hub/$(EVALHUB_CATALOG_COMMIT)/config/providers/$$name.yaml; \
+	  } > $(EVALHUB_DIR)/$$name.yaml.tmp && mv $(EVALHUB_DIR)/$$name.yaml.tmp $(EVALHUB_DIR)/$$name.yaml || exit 1; \
+	done
 
-# Needs network: LightEval's task registry downloads files when it loads.
-evalhub-compat: ## Record what each benchmark needs, read from inside the pinned LightEval adapter image
-	docker run --rm --entrypoint python \
+# Needs network: LightEval's task registry downloads files when it loads, and both
+# helpers resolve Hugging Face dataset names to their canonical repo.
+evalhub-compat: evalhub-compat-lighteval evalhub-compat-lm-eval ## Record what each benchmark needs, read from inside each pinned adapter image
+
+evalhub-compat-lighteval:
+	docker run --rm --entrypoint python -e HF_HOME=/tmp/hf \
 	  -v $(REPO_ROOT)/scripts/evalhub:/helper:ro -v $(REPO_ROOT)/$(EVALHUB_DIR):/catalog:ro \
 	  $(LIGHTEVAL_IMAGE) /helper/lighteval_compat.py --catalog /catalog/lighteval.yaml \
 	  --catalog-commit $(EVALHUB_CATALOG_COMMIT) --adapter-image $(LIGHTEVAL_IMAGE) \
 	  > $(EVALHUB_DIR)/compat/amortized-lighteval.json.tmp
 	mv $(EVALHUB_DIR)/compat/amortized-lighteval.json.tmp $(EVALHUB_DIR)/compat/amortized-lighteval.json
+
+evalhub-compat-lm-eval:
+	docker run --rm --entrypoint /opt/app-root/bin/python -e HF_HOME=/tmp/hf \
+	  -v $(REPO_ROOT)/scripts/evalhub:/helper:ro -v $(REPO_ROOT)/$(EVALHUB_DIR):/catalog:ro \
+	  $(LM_EVAL_IMAGE) /helper/lm_eval_compat.py --catalog /catalog/lm_evaluation_harness.yaml \
+	  --catalog-commit $(EVALHUB_CATALOG_COMMIT) --adapter-image $(LM_EVAL_IMAGE) \
+	  > $(EVALHUB_DIR)/compat/amortized-lm-eval.json.tmp
+	mv $(EVALHUB_DIR)/compat/amortized-lm-eval.json.tmp $(EVALHUB_DIR)/compat/amortized-lm-eval.json

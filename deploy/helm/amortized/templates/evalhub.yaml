@@ -1,7 +1,7 @@
 {{- if .Values.evalhub.url }}
 ---
-# What each benchmark needs, recorded by scripts/evalhub/lighteval_compat.py inside the
-# pinned adapter image (make evalhub-compat). The server reads it at request time.
+# What each benchmark needs, recorded by scripts/evalhub/*_compat.py inside each pinned
+# adapter image (make evalhub-compat). The server reads it at request time.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -27,6 +27,7 @@ spec:
     secret: {{ required "evalhub.operator.databaseSecret with db-url is required" .Values.evalhub.operator.databaseSecret }}
   providers:
     - amortized
+    - amortized-lm-eval
     - amortized-lighteval
   env:
     - name: MLFLOW_TRACKING_URI
@@ -43,9 +44,6 @@ spec:
 {{- $taskImage := required "Pin evalhub.operator.taskAdapterImage to a built image digest" .Values.evalhub.operator.taskAdapterImage }}
 {{- if not (contains "@sha256:" $taskImage) }}
 {{- fail "evalhub.operator.taskAdapterImage must use an immutable digest" }}
-{{- end }}
-{{- if not (contains "@sha256:" .Values.evalhub.operator.lightEvalImage) }}
-{{- fail "evalhub.operator.lightEvalImage must use an immutable digest" }}
 {{- end }}
 ---
 apiVersion: v1
@@ -74,30 +72,46 @@ data:
       - id: task
         name: User-approved task recipe
         description: Dataset snapshot, scorer versions and optional approved-rubric judge
-{{- /* The upstream Eval Hub catalog, vendored verbatim at a pinned commit. Only the
-id and runtime are replaced, so the registered adapter is the pinned image. */}}
-{{- $lighteval := .Files.Get "files/evalhub/lighteval.yaml" | fromYaml }}
-{{- $_ := set $lighteval "id" "amortized-lighteval" }}
-{{- $_ := set $lighteval "runtime" (dict "k8s" (dict
-      "image" .Values.evalhub.operator.lightEvalImage
+{{- /* The upstream Eval Hub catalogs, vendored verbatim at a pinned commit. Only the
+id and runtime are replaced, so each registered adapter is its pinned image. */}}
+{{- $adapters := list
+      (dict "id" "amortized-lm-eval" "catalog" "lm_evaluation_harness.yaml" "value" "lmEvalImage"
+            "image" .Values.evalhub.operator.lmEvalImage
+            "entrypoint" (list "/opt/app-root/bin/python" "/opt/app-root/src/main.py")
+            "env" (list (dict "name" "HF_HOME" "value" "/tmp/hf_home")))
+      (dict "id" "amortized-lighteval" "catalog" "lighteval.yaml" "value" "lightEvalImage"
+            "image" .Values.evalhub.operator.lightEvalImage
+            "entrypoint" (list "python" "main.py")) }}
+{{- range $adapters }}
+{{- if not (contains "@sha256:" .image) }}
+{{- fail (printf "evalhub.operator.%s must use an immutable digest" .value) }}
+{{- end }}
+{{- $provider := $.Files.Get (printf "files/evalhub/%s" .catalog) | fromYaml }}
+{{- $_ := set $provider "id" .id }}
+{{- /* The image's own HF_HOME is writable only by OpenShift's group-0 UIDs. */}}
+{{- $runtime := dict
+      "image" .image
       "image_pull_policy" "if_not_present"
-      "entrypoint" (list "python" "main.py")
+      "entrypoint" .entrypoint
       "cpu_request" "500m" "cpu_limit" "4000m"
-      "memory_request" "4Gi" "memory_limit" "8Gi")) }}
-{{- $compat := .Files.Get "files/evalhub/compat/amortized-lighteval.json" | fromJson }}
-{{- if ne (get $compat "adapter_digest") (regexReplaceAll "^[^@]*@" .Values.evalhub.operator.lightEvalImage "") }}
-{{- fail "files/evalhub/compat/amortized-lighteval.json describes a different adapter image than evalhub.operator.lightEvalImage; run make evalhub-compat" }}
+      "memory_request" "4Gi" "memory_limit" "8Gi" }}
+{{- if .env }}{{ $_ := set $runtime "env" .env }}{{ end }}
+{{- $_ := set $provider "runtime" (dict "k8s" $runtime) }}
+{{- $compat := $.Files.Get (printf "files/evalhub/compat/%s.json" .id) | fromJson }}
+{{- if ne (get $compat "adapter_digest") (regexReplaceAll "^[^@]*@" .image "") }}
+{{- fail (printf "files/evalhub/compat/%s.json describes a different adapter image than evalhub.operator.%s; run make evalhub-compat" .id .value) }}
 {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: amortized-evalhub-lighteval-provider
+  name: {{ printf "%s-provider" (replace "amortized-" "amortized-evalhub-" .id) }}
   namespace: {{ $operatorNamespace }}
   labels:
     trustyai.opendatahub.io/evalhub-provider-type: system
-    trustyai.opendatahub.io/evalhub-provider-name: amortized-lighteval
+    trustyai.opendatahub.io/evalhub-provider-name: {{ .id }}
 data:
-  amortized-lighteval.yaml: |
-    {{- toYaml $lighteval | nindent 4 }}
+  {{ .id }}.yaml: |
+    {{- toYaml $provider | nindent 4 }}
+{{- end }}
 {{- end }}

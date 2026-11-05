@@ -532,6 +532,8 @@ def _benchmark_view(recipe: dict[str, Any] | None, config: dict[str, Any]) -> Be
     """The confirmation card's benchmark facts, taken from the server's catalog entry."""
     if recipe is None:
         return None
+    from amortized.evaluation.spec import benchmark_limit
+
     entry = recipe.get("catalog_entry") or {}
     parameters = recipe.get("parameters") or {}
     return BenchmarkView(
@@ -539,7 +541,7 @@ def _benchmark_view(recipe: dict[str, Any] | None, config: dict[str, Any]) -> Be
         name=str(entry.get("name") or recipe["benchmark_id"]),
         metric=str((entry.get("primary_score") or {}).get("metric") or ""),
         num_few_shot=parameters.get("num_few_shot"),
-        max_samples=parameters.get("max_samples"),
+        max_samples=benchmark_limit(parameters),
         recipe_fingerprint=str((config.get("evaluation") or {}).get("recipe_fingerprint") or ""),
     )
 

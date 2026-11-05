@@ -92,7 +92,9 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
     if settings.resolved_default_backend != "kubernetes":
         return ["Eval Hub execution requires the Kubernetes preparation backend"]
     benchmark = definition.get("kind") == "benchmark"
-    if benchmark and definition["provider_id"] not in {"lighteval", "amortized-lighteval"}:
+    from amortized.evaluation.spec import PROVIDER_PARAMETERS
+
+    if benchmark and definition["provider_id"] not in PROVIDER_PARAMETERS:
         return ["This benchmark provider needs an implemented parameter/capability contract"]
     if not settings.mlflow_tracking_uri:
         return ["Eval Hub evaluation requires configured MLflow artifact storage"]

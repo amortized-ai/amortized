@@ -264,6 +264,22 @@ async def prepare_serving(
     return {"base_url": url, "model": models[0]["id"]}
 
 
+async def _hf_tokenizer(config: dict[str, Any], repo: Any) -> str:
+    """The served model's Hugging Face id; a tuned model uses its base model's."""
+    from amortized.integrations.evalhub.catalog import _HF_ID
+
+    name = str(config.get("model_name_or_path") or "").strip()
+    if not name and config.get("training_job_id"):
+        training = await repo.get_job(str(config["training_job_id"]))
+        name = str(((training or {}).get("config") or {}).get("model_name_or_path") or "")
+    if not _HF_ID.match(name.strip()):
+        raise JobBuildError(
+            f"lm-evaluation-harness needs the model's Hugging Face tokenizer, but {name!r}"
+            " is not a Hugging Face model id"
+        )
+    return name.strip()
+
+
 def _approved_recipe(definition: dict[str, Any], provider: dict[str, Any]) -> dict[str, Any]:
     """The recipe stored at Confirm, if the registered adapter is still the approved one."""
     from amortized.integrations.evalhub.catalog import image_digest
@@ -336,6 +352,10 @@ async def prepare(
         }
         if definition.get("test_data_ref"):
             selected["test_data_ref"] = definition["test_data_ref"]
+        if (recipe.get("compatibility") or {}).get("settings_profile") == "lm-eval-completions-v1":
+            # The adapter loads this to count tokens; the served model name may be a
+            # tuned model's display name, so name the Hugging Face model explicitly.
+            selected["parameters"]["tokenizer"] = await _hf_tokenizer(config, store.repo)
     else:
         # Only accepted semantic configuration crosses the engine boundary.
         keys = (

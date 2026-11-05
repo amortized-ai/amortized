@@ -182,8 +182,11 @@ async def get_benchmark(request: GetBenchmarkRequest) -> dict[str, Any]:
             status_code=404,
             detail=f"No enabled benchmark provider {request.provider_id!r}; use find_benchmarks",
         )
-    entries, _ = await _read_catalog([request.provider_id], with_shortlists=False)
-    entry = next((e for e in entries if e.id == request.id), None)
+    # Every enabled provider, so the answer can name the benchmark's copies elsewhere.
+    entries, _ = await _read_catalog(None, with_shortlists=False)
+    entry = next(
+        (e for e in entries if e.provider.id == request.provider_id and e.id == request.id), None
+    )
     if entry is None:
         raise HTTPException(
             status_code=404,
@@ -192,7 +195,7 @@ async def get_benchmark(request: GetBenchmarkRequest) -> dict[str, Any]:
                 " use an id from a find_benchmarks result"
             ),
         )
-    result = catalog.detail(entry, capability)
+    result = catalog.detail(entry, capability, entries)
     if result["compatibility"] == "compatible":
         result["next"] = (
             "Ask the user only about these settings (the defaults apply if they have no"

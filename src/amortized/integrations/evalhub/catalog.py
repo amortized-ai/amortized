@@ -1,8 +1,12 @@
-"""Benchmark catalog: Eval Hub's provider catalog joined with the release helper's file.
+"""Benchmark catalog: Eval Hub's provider catalogs joined with the release helpers' files.
 
-The helper (scripts/evalhub/lighteval_compat.py) runs inside the pinned adapter image and
-records what each benchmark needs. Everything here is read-only and deterministic: exact
-name matching and fixed-order narrowing questions; no ranking, embeddings or paging.
+Each helper (scripts/evalhub/*_compat.py) runs inside its pinned adapter image and records
+what each benchmark needs. Everything here is read-only and deterministic: exact name
+matching and fixed-order narrowing questions; no ranking, embeddings or paging.
+
+When two providers score the same questions (same Hugging Face dataset, subset and split),
+Morty sees one entry: the copy from the first provider in settings.evalhub_providers that
+can run for this model. The other copy is listed under "also_in" and can still be named.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 import amortized.config as config_mod
-from amortized.evaluation.spec import LightEvalParameters
+from amortized.evaluation.spec import LightEvalParameters, LMEvalParameters
 
 SCHEMA = "amortized.evalhub.compat/v1"
 # present_options renders at most 4 choices (api/ui.py); more become a typed question.
@@ -30,7 +34,20 @@ QUESTIONS = {
     "provider": "Which evaluation framework?",
 }
 COMPLETIONS_LOGPROBS = "completions_logprobs"
-SETTINGS_PROFILES: dict[str, type[BaseModel]] = {"lighteval-endpoint-v1": LightEvalParameters}
+HF_TOKENIZER = "hf_tokenizer"
+SETTINGS_PROFILES: dict[str, type[BaseModel]] = {
+    "lighteval-endpoint-v1": LightEvalParameters,
+    "lm-eval-completions-v1": LMEvalParameters,
+}
+# What a settings profile's adapter needs from the model, beyond what its scoring needs.
+_PROFILE_NEEDS = {
+    "lm-eval-completions-v1": (
+        HF_TOKENIZER,
+        "lm-evaluation-harness sends every question to /v1/completions and loads the"
+        " model's Hugging Face tokenizer, which Amortized knows only for a model it serves"
+        " from a Hugging Face id. Evaluate a model Amortized serves",
+    ),
+}
 # Categories spelled differently across Eval Hub providers. Used only for narrowing;
 # the catalog itself is never rewritten.
 KIND_ALIASES = {"coding": "code", "cybersecurity": "security"}
@@ -39,6 +56,7 @@ _CONTEXT_KEYS = ("model_serving", "declared_capabilities")
 _SETTING_HELP = {
     "num_few_shot": "Worked examples placed in front of each question",
     "max_samples": "Number of questions to evaluate (unset = all)",
+    "num_examples": "Number of questions to evaluate (unset = all)",
     "batch_size": "Requests sent to the model at once",
 }
 
@@ -54,6 +72,7 @@ class Provider:
     image: str
     catalog_source: dict[str, Any]
     problem: str  # why compatibility is unknown for every entry, or ""
+    profile: str = ""  # the adapter's settings profile, from the compatibility file
 
 
 @dataclass(frozen=True)
@@ -97,17 +116,25 @@ class Entry:
         return (self.provider.id,)
 
 
+_HF_ID = re.compile(r"^[\w.-]+/[\w.-]+$")
+
+
 @dataclass(frozen=True)
 class Capability:
     serving: str  # "served": Amortized starts vLLM; "endpoint": an outside URL
     declared: frozenset[str]
+    known: frozenset[str] = frozenset()  # facts Amortized knows about a model it serves
 
     @classmethod
     def from_model(cls, model: dict[str, Any]) -> Capability:
         declared = frozenset(model.get("declared_capabilities") or ())
         if model.get("endpoint"):
             return cls("endpoint", declared)
-        if model.get("training_job_id") or model.get("model_name_or_path"):
+        # A tuned model's tokenizer is its base model's (training configs name an HF id;
+        # the Hub job build checks it); a named model needs an owner/name HF id.
+        if model.get("training_job_id") or _HF_ID.match(str(model.get("model_name_or_path"))):
+            return cls("served", frozenset(), frozenset({HF_TOKENIZER}))
+        if model.get("model_name_or_path"):
             return cls("served", frozenset())
         raise ValueError(
             "Settle the model first: pass training_job_id, model_name_or_path or endpoint"
@@ -117,7 +144,7 @@ class Capability:
     def features(self) -> frozenset[str]:
         if self.serving == "served":
             # vLLM serves /v1/completions with echo and logprobs.
-            return frozenset({"chat", COMPLETIONS_LOGPROBS})
+            return frozenset({"chat", COMPLETIONS_LOGPROBS}) | self.known
         return frozenset({"chat"}) | self.declared
 
 
@@ -168,6 +195,7 @@ async def load(sdk: Any, provider_ids: list[str] | None = None) -> list[Entry]:
             image=image,
             catalog_source=dict((compat or {}).get("catalog") or {}),
             problem=problem,
+            profile=str((compat or {}).get("settings_profile") or ""),
         )
         records = (compat or {}).get("benchmarks") or {}
         for raw in data.get("benchmarks") or []:
@@ -199,6 +227,12 @@ def compatibility(entry: Entry, capability: Capability) -> tuple[str, str]:
         return "unsupported", "it needs non-text input"
     if entry.suite:
         return "unsupported", "suites are not supported yet"
+    # What the adapter itself needs holds even for entries the helper could not describe.
+    need = _PROFILE_NEEDS.get(
+        entry.provider.profile or str((entry.compat or {}).get("settings_profile"))
+    )
+    if need is not None and need[0] not in capability.features:
+        return "incompatible", need[1]
     compat = entry.compat
     if compat is None:
         return "unknown", entry.provider.problem or "the compatibility file has no record for it"
@@ -219,9 +253,88 @@ def compatibility(entry: Entry, capability: Capability) -> tuple[str, str]:
     return "compatible", ""
 
 
-def view(entry: Entry, capability: Capability) -> dict[str, Any]:
+def identity(entry: Entry) -> tuple[tuple[str, str, tuple[str, ...]], ...] | None:
+    """The questions an entry scores: (canonical HF repo, subset, splits) per dataset.
+
+    The revision is left out: a pinned and an unpinned copy ask the same questions.
+    None when the helper could not establish every part.
+    """
+    compat = entry.compat or {}
+    datasets = compat.get("datasets") or []
+    if compat.get("status") != "known" or entry.suite or not datasets:
+        return None
+    if any(not d.get("hf_repo") or not d.get("splits") for d in datasets):
+        return None
+    return tuple(
+        sorted(
+            (str(d["hf_repo"]), str(d.get("hf_subset") or "default"), tuple(d["splits"]))
+            for d in datasets
+        )
+    )
+
+
+def overlaps(entries: list[Entry]) -> dict[tuple[str, str], list[Entry]]:
+    """Copies of the same questions in different providers, in provider order.
+
+    Keyed by every member's (provider_id, id). A provider with two entries on the same
+    questions scores them differently, so such a group is not treated as copies.
+    """
+    by_identity: dict[Any, list[Entry]] = {}
+    for entry in entries:
+        key = identity(entry)
+        if key is not None:
+            by_identity.setdefault(key, []).append(entry)
+    groups: dict[tuple[str, str], list[Entry]] = {}
+    for group in by_identity.values():
+        providers = [e.provider.id for e in group]
+        if len(set(providers)) > 1 and len(set(providers)) == len(providers):
+            for entry in group:
+                groups[(entry.provider.id, entry.id)] = group
+    return groups
+
+
+def _default(group: list[Entry], statuses: dict[int, tuple[str, str]]) -> Entry:
+    """The copy to offer: the first provider's that can run, else the first's."""
+    for wanted in ("compatible", "unknown"):
+        for entry in group:
+            if statuses[id(entry)][0] == wanted:
+                return entry
+    return group[0]
+
+
+def _fold(
+    entries: list[Entry],
+    groups: dict[tuple[str, str], list[Entry]],
+    statuses: dict[int, tuple[str, str]],
+    *,
+    keep_blocked: bool = False,
+) -> list[Entry]:
+    """One entry per group of copies. With keep_blocked, a group none of whose copies can
+    run keeps every copy, so each one's reason (and way forward) is shown."""
+    shown: list[Entry] = []
+    for entry in entries:
+        group = groups.get((entry.provider.id, entry.id))
+        chosen = _default(group, statuses) if group else entry
+        if keep_blocked and statuses[id(chosen)][0] not in {"compatible", "unknown"}:
+            chosen = entry
+        if chosen not in shown:
+            shown.append(chosen)
+    return shown
+
+
+def _also_in(entry: Entry, groups: dict[tuple[str, str], list[Entry]]) -> list[dict[str, str]]:
+    group = groups.get((entry.provider.id, entry.id)) or []
+    return [{"provider_id": e.provider.id, "id": e.id} for e in group if e is not entry]
+
+
+def view(
+    entry: Entry,
+    capability: Capability,
+    groups: dict[tuple[str, str], list[Entry]] | None = None,
+) -> dict[str, Any]:
     status, reason = compatibility(entry, capability)
     compat = entry.compat or {}
+    also_in = _also_in(entry, groups or {})
     return {
         "provider_id": entry.provider.id,
         "id": entry.id,
@@ -233,6 +346,9 @@ def view(entry: Entry, capability: Capability) -> dict[str, Any]:
         "answers_per_question": compat.get("answers_per_question"),
         "compatibility": status,
         **({"reason": reason} if reason else {}),
+        # Same questions in another framework; offered here because this provider comes
+        # first in the enabled order (or the other copy cannot run for this model).
+        **({"also_in": also_in} if also_in else {}),
     }
 
 
@@ -320,13 +436,19 @@ def find(
     answer: str = "",
     shortlists: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    shortlists = shortlists or []
-    if name:
-        return _by_name(entries, capability, name)
     statuses = {id(e): compatibility(e, capability) for e in entries}
-    browsable = [e for e in entries if statuses[id(e)][0] in {"compatible", "unknown"}]
+    groups = overlaps(entries)
+    if name:
+        return _by_name(entries, capability, name, statuses, groups)
+    # A shortlist naming one copy of a benchmark also holds its other copies.
+    shortlists = [
+        {**s, "members": s["members"] | {k for m in s["members"] for k in _keys(groups.get(m))}}
+        for s in shortlists or []
+    ]
+    shown = _fold(entries, groups, statuses)
+    browsable = [e for e in shown if statuses[id(e)][0] in {"compatible", "unknown"}]
     hidden = Counter(
-        statuses[id(e)][1] for e in entries if statuses[id(e)][0] in {"incompatible", "unsupported"}
+        statuses[id(e)][1] for e in shown if statuses[id(e)][0] in {"incompatible", "unsupported"}
     )
     picks = dict(picks or {})
     pool = _narrow(browsable, picks, shortlists)
@@ -339,7 +461,7 @@ def find(
                 raise ChoiceError(f"{answer!r} is not one of the listed benchmarks: {ids}")
             return {
                 "step": "selected",
-                "benchmark": view(chosen[0], capability),
+                "benchmark": view(chosen[0], capability, groups),
                 "next": (
                     "Call get_benchmark with this provider_id and id and the same model,"
                     " then ask the user only about its settings."
@@ -387,7 +509,7 @@ def find(
                 " present_options for this question. " + _REPLY
             )
         return response
-    benchmarks = [view(e, capability) for e in pool]
+    benchmarks = [view(e, capability, groups) for e in pool]
     response.update(step="benchmarks", benchmarks=benchmarks)
     if not pool:
         response["display"] = "text"
@@ -424,19 +546,48 @@ def find(
     return response
 
 
-def _by_name(entries: list[Entry], capability: Capability, name: str) -> dict[str, Any]:
-    prefixes = {normalize(p) for e in entries for p in (e.provider.id, e.provider.name)}
+def _keys(group: list[Entry] | None) -> set[tuple[str, str]]:
+    return {(e.provider.id, e.id) for e in group or ()}
+
+
+def _prefixes(provider: Provider) -> set[str]:
+    """Ways a user names a framework: its id, its id without "amortized-", its title."""
+    names = (provider.id, provider.id.removeprefix("amortized-"), provider.name)
+    return {normalize(n) for n in names} - {""}
+
+
+def _by_name(
+    entries: list[Entry],
+    capability: Capability,
+    name: str,
+    statuses: dict[int, tuple[str, str]],
+    groups: dict[tuple[str, str], list[Entry]],
+) -> dict[str, Any]:
     key = normalize(name)
-    keys = {key} | {key[len(p) :] for p in prefixes if p and key.startswith(p)}
-    found = [e for e in entries if keys & {normalize(e.id), normalize(e.name)}]
-    benchmarks = [view(e, capability) for e in found]
+    names = {id(e): {normalize(e.id), normalize(e.name)} for e in entries}
+    # "lighteval arc easy" names the framework too: then only that framework's entry.
+    named = [
+        e
+        for e in entries
+        if any(key.startswith(p) and key[len(p) :] in names[id(e)] for p in _prefixes(e.provider))
+    ]
+    found = named or _fold(
+        [e for e in entries if key in names[id(e)]], groups, statuses, keep_blocked=True
+    )
+    benchmarks = [view(e, capability, groups) for e in found]
+    compatible = [b for b in benchmarks if b["compatibility"] == "compatible"]
     if not benchmarks:
         next_step = (
             f"No benchmark is named {name!r}. Say so; do not suggest a substitute. Ask for the"
             " exact name, or browse by calling find_benchmarks without a name."
         )
-    elif any(b["compatibility"] == "compatible" for b in benchmarks):
+    elif len(compatible) == 1:
         next_step = "Call get_benchmark with the compatible match's provider_id and id."
+    elif compatible:
+        next_step = (
+            "More than one benchmark matches: list them (id and name) and ask the user which"
+            " one, then call get_benchmark with its provider_id and id."
+        )
     else:
         next_step = (
             "Explain the reason it cannot run as requested and the ways forward it names."
@@ -460,7 +611,7 @@ def _settings(entry: Entry, profile: type[BaseModel]) -> list[dict[str, Any]]:
                 bounds["max"] = item.le
         if name == "num_few_shot":
             default: Any = int(entry.raw.get("num_few_shot") or 0)
-        elif name == "max_samples":
+        elif name == getattr(profile, "LIMIT", None):
             default = "all questions"
         else:
             default = field.default
@@ -468,11 +619,13 @@ def _settings(entry: Entry, profile: type[BaseModel]) -> list[dict[str, Any]]:
     return settings
 
 
-def detail(entry: Entry, capability: Capability) -> dict[str, Any]:
+def detail(
+    entry: Entry, capability: Capability, entries: list[Entry] | None = None
+) -> dict[str, Any]:
     compat = entry.compat or {}
     profile = SETTINGS_PROFILES.get(str(compat.get("settings_profile")))
     return {
-        **view(entry, capability),
+        **view(entry, capability, overlaps(entries or [entry])),
         "category": entry.raw.get("category"),
         "areas": list(entry.areas),
         "metrics": entry.raw.get("metrics") or [],
@@ -514,8 +667,9 @@ def resolve_recipe(
     parameters = dict(definition.get("parameters") or {})
     if parameters.get("num_few_shot") is None:
         parameters["num_few_shot"] = int(entry.raw.get("num_few_shot") or 0)
-    if config.get("max_samples") and not parameters.get("max_samples"):
-        parameters["max_samples"] = config["max_samples"]
+    limit = getattr(profile, "LIMIT", "")
+    if limit and config.get("max_samples") and not parameters.get(limit):
+        parameters[limit] = config["max_samples"]
     try:
         parameters = profile.model_validate(parameters).model_dump(exclude_none=True)
     except ValidationError as exc:

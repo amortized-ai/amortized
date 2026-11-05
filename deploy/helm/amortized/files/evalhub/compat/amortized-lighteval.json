@@ -9,6 +9,9 @@
           "hf_repo": "HuggingFaceH4/aime_2024",
           "hf_revision": null,
           "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
           "task": "aime24"
         }
       ],
@@ -27,6 +30,9 @@
           "hf_repo": "yentinglin/aime_2025",
           "hf_revision": null,
           "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
           "task": "aime25"
         }
       ],
@@ -45,6 +51,9 @@
           "hf_repo": "allenai/ai2_arc",
           "hf_revision": null,
           "hf_subset": "ARC-Challenge",
+          "splits": [
+            "test"
+          ],
           "task": "arc:challenge"
         }
       ],
@@ -63,6 +72,9 @@
           "hf_repo": "allenai/ai2_arc",
           "hf_revision": null,
           "hf_subset": "ARC-Easy",
+          "splits": [
+            "test"
+          ],
           "task": "arc:easy"
         }
       ],
@@ -81,24 +93,37 @@
           "hf_repo": "Rowan/hellaswag",
           "hf_revision": null,
           "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
           "task": "hellaswag"
         },
         {
           "hf_repo": "allenai/winogrande",
           "hf_revision": null,
           "hf_subset": "winogrande_xl",
+          "splits": [
+            "validation"
+          ],
           "task": "winogrande"
         },
         {
           "hf_repo": "allenai/openbookqa",
           "hf_revision": null,
           "hf_subset": "main",
+          "splits": [
+            "test",
+            "validation"
+          ],
           "task": "openbookqa"
         },
         {
           "hf_repo": "allenai/ai2_arc",
           "hf_revision": null,
           "hf_subset": "ARC-Easy",
+          "splits": [
+            "test"
+          ],
           "task": "arc:easy"
         }
       ],
@@ -120,6 +145,9 @@
           "hf_repo": "nyu-mll/glue",
           "hf_revision": null,
           "hf_subset": "cola",
+          "splits": [
+            "validation"
+          ],
           "task": "glue:cola"
         }
       ],
@@ -138,6 +166,9 @@
           "hf_repo": "nyu-mll/glue",
           "hf_revision": null,
           "hf_subset": "mrpc",
+          "splits": [
+            "validation"
+          ],
           "task": "glue:mrpc"
         }
       ],
@@ -156,6 +187,9 @@
           "hf_repo": "nyu-mll/glue",
           "hf_revision": null,
           "hf_subset": "sst2",
+          "splits": [
+            "validation"
+          ],
           "task": "glue:sst2"
         }
       ],
@@ -174,6 +208,9 @@
           "hf_repo": "Idavidrein/gpqa",
           "hf_revision": null,
           "hf_subset": "gpqa_diamond",
+          "splits": [
+            "train"
+          ],
           "task": "gpqa:diamond"
         }
       ],
@@ -192,6 +229,9 @@
           "hf_repo": "openai/gsm8k",
           "hf_revision": null,
           "hf_subset": "main",
+          "splits": [
+            "test"
+          ],
           "task": "gsm8k"
         }
       ],
@@ -210,6 +250,9 @@
           "hf_repo": "Rowan/hellaswag",
           "hf_revision": null,
           "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
           "task": "hellaswag"
         }
       ],
@@ -238,18 +281,27 @@
           "hf_repo": "nyu-mll/glue",
           "hf_revision": null,
           "hf_subset": "cola",
+          "splits": [
+            "validation"
+          ],
           "task": "glue:cola"
         },
         {
           "hf_repo": "nyu-mll/glue",
           "hf_revision": null,
           "hf_subset": "sst2",
+          "splits": [
+            "validation"
+          ],
           "task": "glue:sst2"
         },
         {
           "hf_repo": "nyu-mll/glue",
           "hf_revision": null,
           "hf_subset": "mrpc",
+          "splits": [
+            "validation"
+          ],
           "task": "glue:mrpc"
         }
       ],
@@ -270,6 +322,9 @@
           "hf_repo": "lighteval/code_generation_lite",
           "hf_revision": null,
           "hf_subset": "v6",
+          "splits": [
+            "test"
+          ],
           "task": "lcb:codegeneration_v6"
         }
       ],
@@ -288,24 +343,36 @@
           "hf_repo": "openai/gsm8k",
           "hf_revision": null,
           "hf_subset": "main",
+          "splits": [
+            "test"
+          ],
           "task": "gsm8k"
         },
         {
           "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "algebra",
+          "splits": [
+            "test"
+          ],
           "task": "math:algebra"
         },
         {
           "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "counting_and_probability",
+          "splits": [
+            "test"
+          ],
           "task": "math:counting_and_probability"
         },
         {
           "hf_repo": "HuggingFaceH4/MATH-500",
           "hf_revision": null,
           "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
           "task": "math_500"
         }
       ],
@@ -327,6 +394,9 @@
           "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "algebra",
+          "splits": [
+            "test"
+          ],
           "task": "math:algebra"
         }
       ],
@@ -345,6 +415,9 @@
           "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "counting_and_probability",
+          "splits": [
+            "test"
+          ],
           "task": "math:counting_and_probability"
         }
       ],
@@ -363,6 +436,9 @@
           "hf_repo": "HuggingFaceH4/MATH-500",
           "hf_revision": null,
           "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
           "task": "math_500"
         }
       ],
@@ -389,6 +465,10 @@
           "hf_repo": "allenai/openbookqa",
           "hf_revision": null,
           "hf_subset": "main",
+          "splits": [
+            "test",
+            "validation"
+          ],
           "task": "openbookqa"
         }
       ],
@@ -407,6 +487,9 @@
           "hf_repo": "regisss/piqa",
           "hf_revision": "b434c23003a4bee60e2d88b3403259f5487dc5f4",
           "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
           "task": "evalhub_piqa"
         }
       ],
@@ -425,6 +508,9 @@
           "hf_repo": "regisss/piqa",
           "hf_revision": "b434c23003a4bee60e2d88b3403259f5487dc5f4",
           "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
           "task": "evalhub_piqa"
         }
       ],
@@ -443,12 +529,18 @@
           "hf_repo": "allenai/ai2_arc",
           "hf_revision": null,
           "hf_subset": "ARC-Easy",
+          "splits": [
+            "test"
+          ],
           "task": "arc:easy"
         },
         {
           "hf_repo": "allenai/ai2_arc",
           "hf_revision": null,
           "hf_subset": "ARC-Challenge",
+          "splits": [
+            "test"
+          ],
           "task": "arc:challenge"
         }
       ],
@@ -468,6 +560,9 @@
           "hf_repo": "mandarjoshi/trivia_qa",
           "hf_revision": null,
           "hf_subset": "rc.nocontext",
+          "splits": [
+            "validation"
+          ],
           "task": "triviaqa"
         }
       ],
@@ -486,12 +581,18 @@
           "hf_repo": "truthfulqa/truthful_qa",
           "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
           "hf_subset": "multiple_choice",
+          "splits": [
+            "validation"
+          ],
           "task": "evalhub_truthfulqa_mc"
         },
         {
           "hf_repo": "truthfulqa/truthful_qa",
           "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
           "hf_subset": "generation",
+          "splits": [
+            "validation"
+          ],
           "task": "evalhub_truthfulqa_gen"
         }
       ],
@@ -511,6 +612,9 @@
           "hf_repo": "truthfulqa/truthful_qa",
           "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
           "hf_subset": "generation",
+          "splits": [
+            "validation"
+          ],
           "task": "evalhub_truthfulqa_gen"
         }
       ],
@@ -529,6 +633,9 @@
           "hf_repo": "truthfulqa/truthful_qa",
           "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
           "hf_subset": "multiple_choice",
+          "splits": [
+            "validation"
+          ],
           "task": "evalhub_truthfulqa_mc"
         }
       ],
@@ -547,6 +654,9 @@
           "hf_repo": "allenai/winogrande",
           "hf_revision": null,
           "hf_subset": "winogrande_xl",
+          "splits": [
+            "validation"
+          ],
           "task": "winogrande"
         }
       ],
@@ -564,5 +674,6 @@
     "repo": "eval-hub/eval-hub"
   },
   "lighteval_version": "0.13.0",
-  "schema": "amortized.evalhub.compat/v1"
+  "schema": "amortized.evalhub.compat/v1",
+  "settings_profile": "lighteval-endpoint-v1"
 }
