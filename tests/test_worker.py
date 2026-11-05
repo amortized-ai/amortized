@@ -501,6 +501,30 @@ class TestTrainingHubConfig:
         assert parsed["max_batch_len"] == 60000
         assert "max_tokens_per_gpu" not in parsed
         assert "learning_rate" not in parsed
+        assert "enable_model_splitting" not in parsed
+
+    def test_thub_config_yaml_lora_sft_multi_gpu_enables_model_splitting(self) -> None:
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"algorithm": "lora_sft", "model_name_or_path": "m", "data_path": "/d"}
+        multi = yaml.safe_load(_training_hub_config_yaml("lora_sft", {**base, "nproc_per_node": 4}))
+        assert multi["enable_model_splitting"] is True
+        assert multi["nproc_per_node"] == 4
+
+        single = yaml.safe_load(
+            _training_hub_config_yaml("lora_sft", {**base, "nproc_per_node": 1})
+        )
+        assert "enable_model_splitting" not in single
+
+        opt_out = yaml.safe_load(_training_hub_config_yaml(
+            "lora_sft", {**base, "nproc_per_node": 4, "enable_model_splitting": False}
+        ))
+        assert opt_out["enable_model_splitting"] is False
+
+        sft = yaml.safe_load(_training_hub_config_yaml(
+            "sft", {**base, "algorithm": "sft", "nproc_per_node": 4}
+        ))
+        assert "enable_model_splitting" not in sft
 
     def test_thub_config_yaml_gepa_output_dir(self) -> None:
         from amortized.jobs.training import _training_hub_config_yaml

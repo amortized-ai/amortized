@@ -101,6 +101,11 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("effective_batch_size", batch * 4)
         thub_config.setdefault("max_seq_len", 2048)
         thub_config.setdefault("max_batch_len", 60000)
+        # `thub lora-sft` runs as a single process (no torchrun), so with nproc_per_node > 1 the
+        # extra GPUs would sit idle. enable_model_splitting shards the model across all visible
+        # GPUs (device_map="balanced"). An explicit enable_model_splitting in the config wins.
+        if int(thub_config.get("nproc_per_node") or 1) > 1:
+            thub_config.setdefault("enable_model_splitting", True)
     elif algorithm == "embedding_sft":
         # Contrastive embedding fine-tuning (classifiers/routers). It uses
         # ``batch_size`` (not micro_batch_size) and has none of the SFT/OSFT
