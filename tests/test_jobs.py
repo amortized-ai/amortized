@@ -293,6 +293,46 @@ class TestEvalConfirmCardFacts:
         assert seen == [run_id]
         assert "data_record_count" not in data["config"]
 
+    @pytest.mark.asyncio
+    async def test_validate_eval_record_count_prefers_eval_data_run_over_parent(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Regression: with BOTH a parent and eval_data_run_id set (a held-out
+        # split-complement eval), the card's count must reflect the run the job actually
+        # scores — eval_data_run_id — not the parent's full output. Mirrors how the eval
+        # job + _persist_metric_set resolve it (eval_data_run_id first, parent fallback).
+        import amortized.api.jobs as jobs_mod
+        import amortized.db.connection as _db_conn
+        from amortized.db.repository import Repository
+
+        sdg = await _create_sdg(client)
+        parent_id = sdg.json()["id"]
+        async with _db_conn._pool.acquire() as conn:
+            await Repository(conn).update_job(
+                parent_id, status="succeeded", mlflow_run_id="parent-run-xyz"
+            )
+
+        seen: list[str] = []
+
+        async def _count(run_id: str) -> int:
+            seen.append(run_id)
+            return 150
+
+        monkeypatch.setattr(jobs_mod, "_dataset_record_count", _count)
+        eval_run = "e" * 32
+        body = {
+            "model_name_or_path": "Qwen/Qwen3.5-0.8B",
+            "judge": {"base_url": "http://x/v1", "model": "gpt-oss"},
+            "rubric": [{"name": "acc", "description": "Is the answer correct?"}],
+            "parent_job_id": parent_id,
+            "eval_data_run_id": eval_run,
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data_record_count"] == 150
+        # eval_data_run_id wins over the parent's run (parent-run-xyz).
+        assert seen == [eval_run]
+
 
 class TestListJobs:
     @pytest.mark.asyncio

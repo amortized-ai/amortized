@@ -1343,9 +1343,11 @@ async def validate_eval_job(
             ],
         )
 
-    # Same precedence as the worker: the parent's output first, else eval_data_run_id.
-    data_run = await _resolve_data_run(
-        Repository(db), parent_job_id, str(config.get("eval_data_run_id") or "")
+    # Match how the eval job (and _persist_metric_set / the overlap check) resolve the run
+    # it scores: an explicit eval_data_run_id (e.g. a split complement) wins over the
+    # parent's output, so the card's count is the dataset the job actually reads.
+    data_run = str(config.get("eval_data_run_id") or "") or await _resolve_data_run(
+        Repository(db), parent_job_id, ""
     )
     record_count = await _dataset_record_count(data_run)
 
