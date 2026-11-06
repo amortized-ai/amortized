@@ -899,7 +899,7 @@
         "tags": [
           "costs"
         ],
-        "summary": "Estimate GPU VRAM requirements for training. Supports model sizes: 0.5B, 1B, 3B, 8B, 13B, 32B, 70B, 120B. Methods: sft, lora, qlora, osft. Call for each candidate size/method to build a comparison card.",
+        "summary": "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the HuggingFace model id and method. Returns the single-GPU need and the per-GPU need for 1/2/4/8 GPUs, to suggest nproc_per_node.",
         "operationId": "estimate_training_resources",
         "requestBody": {
           "content": {
@@ -6662,114 +6662,131 @@
       },
       "TrainingEstimateRequest": {
         "properties": {
-          "model_size": {
+          "model_name_or_path": {
             "type": "string",
-            "title": "Model Size",
-            "description": "Model size: '0.5B', '1B', '3B', '8B', '13B', '32B', '70B', or '120B'"
+            "minLength": 1,
+            "title": "Model Name Or Path",
+            "description": "HuggingFace model id (e.g. 'Qwen/Qwen3.5-4B'); its config is read for the architecture"
           },
           "method": {
             "type": "string",
             "title": "Method",
-            "description": "Training method: sft, lora, qlora, osft",
+            "description": "Training method: sft, osft, lora, qlora",
             "default": "lora"
           },
-          "num_gpus": {
+          "effective_batch_size": {
             "type": "integer",
-            "title": "Num Gpus",
-            "description": "Number of GPUs",
-            "default": 1
-          },
-          "batch_size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Batch Size",
-            "description": "Batch size (provide with max_seq_len)"
+            "minimum": 1.0,
+            "title": "Effective Batch Size",
+            "description": "Same value as the job config (default 8): samples per optimizer step across all GPUs",
+            "default": 8
           },
           "max_seq_len": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Max Seq Len",
-            "description": "Max sequence length"
+            "description": "Max sequence length (the config's max_length; default 2048)"
           },
           "max_tokens_per_gpu": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Max Tokens Per Gpu",
-            "description": "Max tokens per GPU (alternative to batch_size + max_seq_len)"
+            "description": "sft/osft token budget per GPU per step (job default 4096)"
+          },
+          "gradient_accumulation_steps": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Gradient Accumulation Steps",
+            "description": "lora/qlora only: same value as the job config (default 1); each step runs effective_batch_size // gradient_accumulation_steps samples",
+            "default": 1
           },
           "lora_r": {
             "type": "integer",
+            "minimum": 1.0,
             "title": "Lora R",
-            "description": "LoRA rank (only for lora/qlora)",
+            "description": "LoRA rank (lora/qlora only)",
             "default": 32
           },
           "unfreeze_rank_ratio": {
             "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Unfreeze Rank Ratio",
-            "description": "Unfreeze ratio (only for osft)",
-            "default": 0.25
+            "description": "OSFT unfreeze ratio (osft only)",
+            "default": 0.2
           }
         },
         "type": "object",
         "required": [
-          "model_size"
+          "model_name_or_path"
         ],
         "title": "TrainingEstimateRequest"
       },
       "TrainingEstimateResponse": {
         "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
           "model_size": {
             "type": "string",
-            "title": "Model Size"
+            "title": "Model Size",
+            "description": "Parameter count, e.g. '4.7B'"
+          },
+          "arch_source": {
+            "type": "string",
+            "title": "Arch Source",
+            "description": "catalog (built-in table of verified models) or huggingface (config fetched from the hub)"
           },
           "method": {
             "type": "string",
             "title": "Method"
           },
-          "num_gpus": {
+          "vram_gb": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Vram Gb",
+            "description": "VRAM to train on a single GPU: low / expected / high"
+          },
+          "per_gpu_vram_gb_by_gpu_count": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Per Gpu Vram Gb By Gpu Count",
+            "description": "Expected VRAM each GPU needs when the job uses 1, 2, 4 or 8 GPUs (nproc_per_node). Pick the smallest count whose value fits the GPU's memory."
+          },
+          "gpu_budget": {
             "type": "integer",
-            "title": "Num Gpus"
-          },
-          "vram_per_gpu_gb": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "Vram Per Gpu Gb"
-          },
-          "total_vram_gb": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "Total Vram Gb"
+            "title": "Gpu Budget",
+            "description": "Max GPUs (nproc_per_node) one job may use; a larger count is rejected at submission"
           }
         },
         "type": "object",
         "required": [
+          "model",
           "model_size",
+          "arch_source",
           "method",
-          "num_gpus",
-          "vram_per_gpu_gb",
-          "total_vram_gb"
+          "vram_gb",
+          "per_gpu_vram_gb_by_gpu_count",
+          "gpu_budget"
         ],
         "title": "TrainingEstimateResponse"
       },
@@ -7239,7 +7256,7 @@
           "model_size": {
             "type": "string",
             "title": "Model Size",
-            "description": "Model size (e.g. '8B')"
+            "description": "Model label for the card: the model id with its size (e.g. 'Qwen/Qwen3.5-4B (4.7B)')"
           },
           "method": {
             "type": "string",
