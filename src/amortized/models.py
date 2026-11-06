@@ -183,9 +183,15 @@ class TrainingJobConfig(BaseModel):
         1,
         ge=1,
         description=(
-            "GPUs for this single training job (single-node multi-GPU). Training Hub"
-            " launches torchrun across this many GPUs, and the pod requests that many"
-            " nvidia.com/gpu — so it needs ONE node with >= nproc_per_node GPUs. Default 1."
+            "GPUs for this single training job (single-node multi-GPU). The pod requests that"
+            " many nvidia.com/gpu — so it needs ONE node with >= nproc_per_node GPUs. Default 1."
+            " sft/osft: effective_batch_size is the global batch across all GPUs; it defaults"
+            " to 4 x per_device_train_batch_size (8 if unset) — training derives micro-batch"
+            " and grad-accum from max_tokens_per_gpu. lora_sft: ONE process with the model's"
+            " layers split across the GPUs (more VRAM, not more throughput); effective batch"
+            " defaults to per_device_train_batch_size x gradient_accumulation_steps"
+            " (grad-accum defaults to 1), or 8 if neither is set. For both, an explicit"
+            " effective_batch_size takes precedence and the GPU count does NOT multiply it."
             " Must be <= the per-user GPU budget. IGNORED for embedding_sft (single-device,"
             " no torchrun) — use train_on_gpu instead."
         ),

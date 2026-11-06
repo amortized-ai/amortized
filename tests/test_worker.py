@@ -488,9 +488,8 @@ class TestTrainingHubConfig:
         assert "max_batch_len" not in sft
 
     def test_thub_config_yaml_lora_sft_unchanged(self) -> None:
-        # lora_sft behavior is intentionally preserved: effective_batch_size + max_seq_len +
-        # the (thub-ignored) max_batch_len, and NO amortized-set learning_rate (thub lora-sft
-        # applies its own 2e-4 default).
+        # lora_sft: effective_batch_size + max_seq_len, NO amortized-set learning_rate (thub
+        # lora-sft applies its own 2e-4 default), and no max_batch_len (not a lora-sft knob).
         from amortized.jobs.training import _training_hub_config_yaml
 
         parsed = yaml.safe_load(_training_hub_config_yaml(
@@ -498,9 +497,55 @@ class TestTrainingHubConfig:
         ))
         assert parsed["effective_batch_size"] == 8
         assert parsed["max_seq_len"] == 2048
-        assert parsed["max_batch_len"] == 60000
+        assert "max_batch_len" not in parsed
         assert "max_tokens_per_gpu" not in parsed
         assert "learning_rate" not in parsed
+        assert "enable_model_splitting" not in parsed
+
+    def test_thub_config_yaml_lora_sft_effective_batch_is_per_device_times_grad_accum(
+        self,
+    ) -> None:
+        # thub lora-sft is one process (world_size 1) and runs
+        # micro = effective_batch_size // gradient_accumulation_steps, so effective must be
+        # per-device x grad-accum — never multiplied by nproc_per_node.
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"algorithm": "lora_sft", "model_name_or_path": "m", "data_path": "/d"}
+
+        def eff(**kw: object) -> int:
+            parsed = yaml.safe_load(_training_hub_config_yaml("lora_sft", {**base, **kw}))
+            assert "micro_batch_size" not in parsed
+            return int(parsed["effective_batch_size"])
+
+        assert eff(per_device_train_batch_size=1, gradient_accumulation_steps=4,
+                   nproc_per_node=4) == 4
+        assert eff(per_device_train_batch_size=1) == 1
+        assert eff(per_device_train_batch_size=2, gradient_accumulation_steps=8) == 16
+        assert eff(effective_batch_size=32, per_device_train_batch_size=1) == 32
+        assert eff() == 8
+
+    def test_thub_config_yaml_lora_sft_multi_gpu_enables_model_splitting(self) -> None:
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"algorithm": "lora_sft", "model_name_or_path": "m", "data_path": "/d"}
+        multi = yaml.safe_load(_training_hub_config_yaml("lora_sft", {**base, "nproc_per_node": 4}))
+        assert multi["enable_model_splitting"] is True
+        assert multi["nproc_per_node"] == 4
+
+        single = yaml.safe_load(
+            _training_hub_config_yaml("lora_sft", {**base, "nproc_per_node": 1})
+        )
+        assert "enable_model_splitting" not in single
+
+        opt_out = yaml.safe_load(_training_hub_config_yaml(
+            "lora_sft", {**base, "nproc_per_node": 4, "enable_model_splitting": False}
+        ))
+        assert opt_out["enable_model_splitting"] is False
+
+        sft = yaml.safe_load(_training_hub_config_yaml(
+            "sft", {**base, "algorithm": "sft", "nproc_per_node": 4}
+        ))
+        assert "enable_model_splitting" not in sft
 
     def test_thub_config_yaml_gepa_output_dir(self) -> None:
         from amortized.jobs.training import _training_hub_config_yaml
