@@ -1,6 +1,6 @@
 {
-  "adapter_digest": "sha256:5a40e71f254b32ab899588c2470ee818281925bd5a4b531ac959e6aa4d130fdb",
-  "adapter_image": "quay.io/opendatahub/ta-lmes-job@sha256:5a40e71f254b32ab899588c2470ee818281925bd5a4b531ac959e6aa4d130fdb",
+  "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+  "adapter_image": "quay.io/opendatahub/ta-lmes-job@sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
   "benchmarks": {
     "AraDiCE_ArabicMMLU_egy": {
       "reason": "lm-eval group",
@@ -1532,8 +1532,22 @@
       ]
     },
     "bbq": {
-      "reason": "lm-eval has no such task",
-      "status": "unknown",
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "oskarvanderwal/bbq",
+          "hf_revision": null,
+          "hf_subset": "All",
+          "splits": [
+            "test"
+          ],
+          "task": "bbq"
+        }
+      ],
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
       "tasks": [
         "bbq"
       ]
@@ -1984,7 +1998,7 @@
       ]
     },
     "careqa_open_perplexity": {
-      "reason": "loading it fails: ModuleNotFoundError: Please install evaluation metrics via pip install evaluate and pip install bert-score",
+      "reason": "the adapter fails on it: RuntimeError: Error loading evaluation metrics: module 'huggingface_hub.hf_api' has no attribute 'HfFolder'. Please check your installation.",
       "status": "unknown"
     },
     "ceval-valid_college_programming": {
@@ -2184,7 +2198,7 @@
       "answers_per_question": 1,
       "datasets": [
         {
-          "hf_repo": "BigScienceBiasEval/crows_pairs_multilingual",
+          "hf_repo": "jannalu/crows_pairs_multilingual",
           "hf_revision": null,
           "hf_subset": "english",
           "splits": [
@@ -2202,8 +2216,22 @@
       ]
     },
     "cruxeval_output": {
-      "reason": "lm-eval has no such task",
-      "status": "unknown",
+      "answers_per_question": 10,
+      "datasets": [
+        {
+          "hf_repo": "cruxeval-org/cruxeval",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "cruxeval_output"
+        }
+      ],
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
       "tasks": [
         "cruxeval_output"
       ]
@@ -2213,7 +2241,7 @@
       "datasets": [
         {
           "hf_repo": "EleutherAI/hendrycks_ethics",
-          "hf_revision": null,
+          "hf_revision": "a710dd862056df1a92346e7afee93a34d57a5f42",
           "hf_subset": "commonsense",
           "splits": [
             "test"
@@ -2690,7 +2718,7 @@
       ]
     },
     "humaneval": {
-      "reason": "loading it fails: ValueError: The \"code_eval\" metric executes untrusted model-generated code in Python.",
+      "reason": "the adapter fails on it: AttributeError: module 'huggingface_hub.hf_api' has no attribute 'HfFolder'",
       "status": "unknown"
     },
     "humaneval_instruct": {
@@ -2701,26 +2729,85 @@
       ]
     },
     "ifeval": {
-      "reason": "loading it fails: PermissionError: [Errno 13] Permission denied: '/opt/app-root/src/nltk_data'",
-      "status": "unknown"
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "google/IFEval",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
+          "task": "ifeval"
+        }
+      ],
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "ifeval"
+      ]
     },
     "jsonschema_bench_easy": {
-      "reason": "lm-eval has no such task",
-      "status": "unknown",
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "epfl-dlab/JSONSchemaBench",
+          "hf_revision": null,
+          "hf_subset": "Github_easy",
+          "splits": [
+            "test"
+          ],
+          "task": "jsonschema_bench_easy"
+        }
+      ],
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
       "tasks": [
         "jsonschema_bench_easy"
       ]
     },
     "jsonschema_bench_hard": {
-      "reason": "lm-eval has no such task",
-      "status": "unknown",
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "epfl-dlab/JSONSchemaBench",
+          "hf_revision": null,
+          "hf_subset": "Github_hard",
+          "splits": [
+            "test"
+          ],
+          "task": "jsonschema_bench_hard"
+        }
+      ],
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
       "tasks": [
         "jsonschema_bench_hard"
       ]
     },
     "jsonschema_bench_medium": {
-      "reason": "lm-eval has no such task",
-      "status": "unknown",
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "epfl-dlab/JSONSchemaBench",
+          "hf_revision": null,
+          "hf_subset": "Github_medium",
+          "splits": [
+            "test"
+          ],
+          "task": "jsonschema_bench_medium"
+        }
+      ],
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
       "tasks": [
         "jsonschema_bench_medium"
       ]
@@ -2792,7 +2879,7 @@
       "answers_per_question": 1,
       "datasets": [
         {
-          "hf_repo": "marcob/lambada_multilingual",
+          "hf_repo": "EleutherAI/lambada_multilingual_stablelm",
           "hf_revision": null,
           "hf_subset": "es",
           "splits": [
@@ -2813,7 +2900,7 @@
       "answers_per_question": 1,
       "datasets": [
         {
-          "hf_repo": "marcob/lambada_multilingual",
+          "hf_repo": "EleutherAI/lambada_multilingual_stablelm",
           "hf_revision": null,
           "hf_subset": "nl",
           "splits": [
@@ -2915,8 +3002,25 @@
       ]
     },
     "leaderboard_ifeval": {
-      "reason": "loading it fails: PermissionError: [Errno 13] Permission denied: '/opt/app-root/src/nltk_data'",
-      "status": "unknown"
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "wis-k/instruction-following-eval",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
+          "task": "leaderboard_ifeval"
+        }
+      ],
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "leaderboard_ifeval"
+      ]
     },
     "leaderboard_math_hard": {
       "reason": "lm-eval group",
@@ -2964,14 +3068,11 @@
       ]
     },
     "longbenchv2": {
-      "reason": "lm-eval has no such task",
-      "status": "unknown",
-      "tasks": [
-        "longbenchv2"
-      ]
+      "reason": "the adapter fails on it: ValueError: LongBench requires parameters.max_length set to the served model's context limit",
+      "status": "unknown"
     },
     "mbpp": {
-      "reason": "loading it fails: ValueError: The \"code_eval\" metric executes untrusted model-generated code in Python.",
+      "reason": "the adapter fails on it: AttributeError: module 'huggingface_hub.hf_api' has no attribute 'HfFolder'",
       "status": "unknown"
     },
     "metabench_truthfulqa_permute": {
@@ -3172,8 +3273,25 @@
       ]
     },
     "tinyTruthfulQA": {
-      "reason": "loading it fails: ModuleNotFoundError: `tinyBenchmarks` is required for tinyBenchmarks task metric calculation, install via `pip install git+https://github.com/felipemaiapolo/tinyBenchmarks`",
-      "status": "unknown"
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "tinyBenchmarks/tinyTruthfulQA",
+          "hf_revision": null,
+          "hf_subset": "multiple_choice",
+          "splits": [
+            "validation"
+          ],
+          "task": "tinyTruthfulQA"
+        }
+      ],
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "tinyTruthfulQA"
+      ]
     },
     "toxigen": {
       "answers_per_question": 1,
@@ -3241,10 +3359,24 @@
       ]
     },
     "winogender": {
-      "reason": "lm-eval has no such task",
-      "status": "unknown",
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "oskarvanderwal/winogender",
+          "hf_revision": null,
+          "hf_subset": "all",
+          "splits": [
+            "test"
+          ],
+          "task": "winogender_all"
+        }
+      ],
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
       "tasks": [
-        "winogender"
+        "winogender_all"
       ]
     }
   },

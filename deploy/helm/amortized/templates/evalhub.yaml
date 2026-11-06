@@ -77,8 +77,8 @@ id and runtime are replaced, so each registered adapter is its pinned image. */}
 {{- $adapters := list
       (dict "id" "amortized-lm-eval" "catalog" "lm_evaluation_harness.yaml" "value" "lmEvalImage"
             "image" .Values.evalhub.operator.lmEvalImage
-            "entrypoint" (list "/opt/app-root/bin/python" "/opt/app-root/src/main.py")
-            "env" (list (dict "name" "HF_HOME" "value" "/tmp/hf_home")))
+            "entrypoint" (list "/bin/sh" "-c" "mkdir -p /tmp/lmes && cp /opt/app-root/src/main.py /tmp/lmes/ && exec /opt/app-root/bin/python /tmp/lmes/main.py")
+            "env" (list (dict "name" "HF_HOME" "value" "/tmp/hf_home") (dict "name" "HOME" "value" "/tmp/lmes")))
       (dict "id" "amortized-lighteval" "catalog" "lighteval.yaml" "value" "lightEvalImage"
             "image" .Values.evalhub.operator.lightEvalImage
             "entrypoint" (list "python" "main.py")) }}
@@ -88,7 +88,9 @@ id and runtime are replaced, so each registered adapter is its pinned image. */}
 {{- end }}
 {{- $provider := $.Files.Get (printf "files/evalhub/%s" .catalog) | fromYaml }}
 {{- $_ := set $provider "id" .id }}
-{{- /* The image's own HF_HOME is writable only by OpenShift's group-0 UIDs. */}}
+{{- /* The lm-eval image's HOME, HF_HOME and main.py's output/ folder are writable only by
+       OpenShift's group-0 UIDs, and Hub sets no pod group. Running the pinned main.py from a
+       copy under /tmp lets it write results under any UID. */}}
 {{- $runtime := dict
       "image" .image
       "image_pull_policy" "if_not_present"

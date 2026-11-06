@@ -129,7 +129,7 @@ evalhub-compat-lighteval:
 	mv $(EVALHUB_DIR)/compat/amortized-lighteval.json.tmp $(EVALHUB_DIR)/compat/amortized-lighteval.json
 
 evalhub-compat-lm-eval:
-	docker run --rm --entrypoint /opt/app-root/bin/python -e HF_HOME=/tmp/hf \
+	docker run --rm --entrypoint /opt/app-root/bin/python -e HF_HOME=/tmp/hf_home -e HOME=/tmp/lmes \
 	  -v $(REPO_ROOT)/scripts/evalhub:/helper:ro -v $(REPO_ROOT)/$(EVALHUB_DIR):/catalog:ro \
 	  $(LM_EVAL_IMAGE) /helper/lm_eval_compat.py --catalog /catalog/lm_evaluation_harness.yaml \
 	  --catalog-commit $(EVALHUB_CATALOG_COMMIT) --adapter-image $(LM_EVAL_IMAGE) \

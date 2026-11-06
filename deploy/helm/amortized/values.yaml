@@ -100,8 +100,9 @@ evalhub:
     namespaceForProviders: "" # installed TrustyAI operator namespace
     taskAdapterImage: "" # required immutable ghcr.io/amortized-ai/evalhub-adapter@sha256:...
     lightEvalImage: quay.io/evalhub/community-lighteval@sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc
-    # TrustyAI lm-eval adapter: the catalog's quay.io/opendatahub/ta-lmes-job:odh-3.4-ea2, pinned.
-    lmEvalImage: quay.io/opendatahub/ta-lmes-job@sha256:5a40e71f254b32ab899588c2470ee818281925bd5a4b531ac959e6aa4d130fdb
+    # TrustyAI lm-eval adapter quay.io/opendatahub/ta-lmes-job:odh-3.6.0, pinned. The catalog's
+    # odh-3.4-ea2 ships eval-hub-sdk 0.1.1, which can't read Hub 1.0.3's job spec.
+    lmEvalImage: quay.io/opendatahub/ta-lmes-job@sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0
     # Existing operator tenant API Role; set empty only when auth is handled elsewhere.
     apiRole: evalhub-user
     jobServiceAccount: "" # actual operator-created adapter/sidecar SA for MLflow

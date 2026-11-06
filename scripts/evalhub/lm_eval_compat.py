@@ -6,13 +6,17 @@ category. See `make evalhub-compat`. Writes JSON to stdout. Anything it cannot
 establish is recorded as "unknown" with a reason.
 
 The adapter (main.py) always uses lm-eval's `local-completions` backend: every request
-goes to /v1/completions, and it loads the model's Hugging Face tokenizer.
+goes to /v1/completions, and it loads the model's Hugging Face tokenizer. Benchmark IDs are
+mapped to lm-eval tasks and task configs are loaded through main.py's own functions, so the
+records follow the adapter's aliases and its code-execution allow list.
 """
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from hf_identity import dataset
@@ -26,6 +30,9 @@ SETTINGS_PROFILE = "lm-eval-completions-v1"
 # probability (echo + logprobs on /v1/completions); generate_until reads generated text.
 LIKELIHOOD = {"multiple_choice", "loglikelihood", "loglikelihood_rolling"}
 GENERATIVE = {"generate_until"}
+# What Amortized sends (preparation.py adds the tokenizer); main.py rejects a benchmark
+# that needs more, e.g. LongBench without max_length.
+SENT_PARAMETERS = {"batch_size": 1, "num_few_shot": 0, "tokenizer": "org/model"}
 
 
 def _subtasks(config: dict[str, Any]) -> list[str]:
@@ -35,20 +42,36 @@ def _subtasks(config: dict[str, Any]) -> list[str]:
     return [t if isinstance(t, str) else str(t.get("task") or t.get("group")) for t in tasks]
 
 
-def describe(benchmark_id: str, manager: Any) -> dict[str, Any]:
-    index = manager.task_index.get(benchmark_id)
+def load_adapter(path: str) -> Any:
+    spec = importlib.util.spec_from_file_location("lmes_adapter", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load the adapter from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def describe(benchmark_id: str, manager: Any, adapter: Any) -> dict[str, Any]:
+    task = adapter._resolve_lmeval_task(benchmark_id, manager)  # raises for tags, as in a job
+    adapter.build_lmeval_config(
+        SimpleNamespace(
+            benchmark_id=benchmark_id,
+            model=SimpleNamespace(name="org/model", url="http://model/v1"),
+            parameters=dict(SENT_PARAMETERS),
+        )
+    )
+    index = manager.task_index.get(task)
     if index is None:
-        return {"tasks": [benchmark_id], "status": "unknown", "reason": "lm-eval has no such task"}
+        return {"tasks": [task], "status": "unknown", "reason": "lm-eval has no such task"}
     kind = index["type"]
-    if kind in {"group", "tag"}:
-        tasks = list(index.get("task") or []) if kind == "tag" else []
-        if kind == "group":
-            tasks = _subtasks(manager._get_config(benchmark_id))
-        return {"tasks": tasks, "suite": True, "status": "known", "reason": f"lm-eval {kind}"}
-    record: dict[str, Any] = {"tasks": [benchmark_id], "suite": False}
+    if kind == "group":
+        tasks = _subtasks(manager._get_config(task))
+        return {"tasks": tasks, "suite": True, "status": "known", "reason": "lm-eval group"}
+    record: dict[str, Any] = {"tasks": [task], "suite": False}
     if kind != "task":
         return {**record, "status": "unknown", "reason": f"lm-eval {kind} (Python class task)"}
-    config = manager._get_config(benchmark_id)
+    with adapter._code_eval_environment(benchmark_id):
+        config = manager._get_config(task)
     output_type = config.get("output_type") or "generate_until"
     if output_type in LIKELIHOOD:
         scoring = "likelihood"
@@ -71,7 +94,7 @@ def describe(benchmark_id: str, manager: Any) -> dict[str, Any]:
         "settings_profile": SETTINGS_PROFILE,
         "datasets": [
             dataset(
-                benchmark_id,
+                task,
                 config["dataset_path"],
                 config.get("dataset_name"),
                 [str(split)],
@@ -87,6 +110,7 @@ def main() -> None:
     parser.add_argument("--catalog-repo", default="eval-hub/eval-hub")
     parser.add_argument("--catalog-commit", required=True)
     parser.add_argument("--adapter-image", required=True, help="image@sha256:... being described")
+    parser.add_argument("--adapter-main", default="/opt/app-root/src/main.py")
     args = parser.parse_args()
     if "@sha256:" not in args.adapter_image:
         parser.error("--adapter-image must be pinned by digest")
@@ -94,18 +118,19 @@ def main() -> None:
     from importlib.metadata import version
 
     import yaml
-    from lm_eval.tasks import TaskManager
 
-    manager = TaskManager()  # the adapter's own task index (main.py)
+    out, sys.stdout = sys.stdout, sys.stderr  # main.py logs to stdout; keep it for the JSON
+    adapter = load_adapter(args.adapter_main)
+    manager = adapter.TaskManager()  # the adapter's own task index (main.py)
     catalog = yaml.safe_load(Path(args.catalog).read_text())
     benchmarks = {}
     for entry in catalog["benchmarks"]:
         try:
-            benchmarks[entry["id"]] = describe(entry["id"], manager)
+            benchmarks[entry["id"]] = describe(entry["id"], manager, adapter)
         except Exception as exc:  # record, never guess; the adapter would hit the same error
             # First sentence-like line: skips banners such as "!!!WARNING!!!" and "####".
             lines = [ln.strip() for ln in str(exc).splitlines() if any(c.islower() for c in ln)]
-            reason = f"loading it fails: {type(exc).__name__}: {lines[0] if lines else ''}"
+            reason = f"the adapter fails on it: {type(exc).__name__}: {lines[0] if lines else ''}"
             benchmarks[entry["id"]] = {"status": "unknown", "reason": reason[:300]}
     json.dump(
         {
@@ -118,11 +143,11 @@ def main() -> None:
             "lm_eval_version": version("lm_eval"),
             "benchmarks": benchmarks,
         },
-        sys.stdout,
+        out,
         indent=2,
         sort_keys=True,
     )
-    sys.stdout.write("\n")
+    out.write("\n")
 
 
 if __name__ == "__main__":
