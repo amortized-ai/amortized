@@ -1343,10 +1343,20 @@ async def validate_eval_job(
             ],
         )
 
+    # Count the run the eval job actually scores. resolve_parent_artifacts injects the
+    # parent sdg/upload output as eval_data_path unconditionally, so a parent wins over
+    # eval_data_run_id (jobs/eval.py only downloads the run when there is no parent) —
+    # resolve it parent-first to match.
+    data_run = await _resolve_data_run(
+        Repository(db), parent_job_id, str(config.get("eval_data_run_id") or "")
+    )
+    record_count = await _dataset_record_count(data_run)
+
     return ValidatedJobConfig(
         job_type=JobType.eval,
         config=config,
         parent_job_id=parent_job_id,
+        data_record_count=record_count,
         warnings=warnings,
     )
 
