@@ -294,13 +294,12 @@ class TestEvalConfirmCardFacts:
         assert "data_record_count" not in data["config"]
 
     @pytest.mark.asyncio
-    async def test_validate_eval_record_count_prefers_eval_data_run_over_parent(
+    async def test_validate_eval_record_count_prefers_parent_over_eval_data_run(
         self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Regression: with BOTH a parent and eval_data_run_id set (a held-out
-        # split-complement eval), the card's count must reflect the run the job actually
-        # scores — eval_data_run_id — not the parent's full output. Mirrors how the eval
-        # job + _persist_metric_set resolve it (eval_data_run_id first, parent fallback).
+        # With BOTH a parent and eval_data_run_id set, the eval job scores the PARENT's
+        # dataset — resolve_parent_artifacts injects the parent output as eval_data_path
+        # unconditionally — so the card's count must be the parent's run, not eval_data_run_id.
         import amortized.api.jobs as jobs_mod
         import amortized.db.connection as _db_conn
         from amortized.db.repository import Repository
@@ -330,8 +329,8 @@ class TestEvalConfirmCardFacts:
         resp = await client.post("/api/v1/jobs/eval/validate", json=body)
         assert resp.status_code == 200, resp.text
         assert resp.json()["data_record_count"] == 150
-        # eval_data_run_id wins over the parent's run (parent-run-xyz).
-        assert seen == [eval_run]
+        # The parent's run wins over eval_data_run_id (matches resolve_parent_artifacts).
+        assert seen == ["parent-run-xyz"]
 
 
 class TestListJobs:
