@@ -26,7 +26,6 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError(f"unexpected HuggingFace fetch for {model_id}")
 
     monkeypatch.setattr(model_arch, "fetch_hf_arch", _blocked)
-    model_arch._hf_cache.clear()
 
 
 async def _estimate(**kwargs: Any) -> costs.TrainingEstimateResponse:
@@ -155,7 +154,6 @@ class TestFetchHfArch:
             "AsyncClient",
             lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw),
         )
-        model_arch._hf_cache.clear()
         arch = await model_arch.fetch_hf_arch("org/model")
         assert arch is not None
         assert arch.num_params == 4242 - 10 * 8  # stored lm_head (vocab x hidden) dropped
@@ -176,7 +174,6 @@ class TestFetchHfArch:
             "AsyncClient",
             lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw),
         )
-        model_arch._hf_cache.clear()
         assert await model_arch.fetch_hf_arch("org/gated") is None
 
 

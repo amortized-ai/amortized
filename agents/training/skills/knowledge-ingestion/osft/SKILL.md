@@ -78,7 +78,7 @@ Ask the user:
    VRAM. Call `estimate_training_resources` with the chosen model id,
    method, and the config's `effective_batch_size`, `max_length` (as
    `max_seq_len`), `max_tokens_per_gpu` and `unfreeze_rank_ratio`. Then
-   set `nproc_per_node` to the smallest GPU count within the GPU budget
+   set `nproc_per_node` to the smallest GPU count within the compute budget
    (gathered in the workflow; H100 80 GB by default) in
    `per_gpu_vram_gb_by_gpu_count` whose value is at most ~90% of one
    GPU's memory. Do NOT divide `vram_gb` by the GPU

@@ -3,7 +3,7 @@
 Lookup order for ``resolve_arch``:
   1. ``KNOWN_ARCHS`` — the verified training models, so estimation works offline.
   2. HuggingFace — ``config.json`` plus the exact parameter count from the hub's
-     safetensors metadata (no weights are downloaded). Cached per model id.
+     safetensors metadata (no weights are downloaded).
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import time
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -182,8 +181,6 @@ KNOWN_ARCHS: dict[str, ModelArch] = {
 }
 
 _HF_ID_RE = re.compile(r"^[A-Za-z0-9][\w.\-]*/[\w.\-]+$")
-_FAILURE_TTL_SECONDS = 600.0
-_hf_cache: dict[str, tuple[float, ModelArch | None]] = {}
 
 
 def _hf_headers() -> dict[str, str]:
@@ -195,10 +192,6 @@ async def fetch_hf_arch(model_id: str) -> ModelArch | None:
     """Fetch config.json + parameter count from the hub. None if unreachable or unparseable."""
     if not _HF_ID_RE.match(model_id):
         return None
-    cached = _hf_cache.get(model_id)
-    if cached and (cached[1] is not None or time.monotonic() - cached[0] < _FAILURE_TTL_SECONDS):
-        return cached[1]
-
     endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co").rstrip("/")
     arch: ModelArch | None = None
     try:
@@ -209,20 +202,23 @@ async def fetch_hf_arch(model_id: str) -> ModelArch | None:
             resp = await client.get(f"{endpoint}/{model_id}/resolve/main/config.json")
             resp.raise_for_status()
             config = resp.json()
+            if not isinstance(config, dict):
+                raise ValueError("config.json is not a JSON object")
             num_params: int | None = None
             try:
                 meta = await client.get(
                     f"{endpoint}/api/models/{model_id}", params={"expand[]": "safetensors"}
                 )
                 meta.raise_for_status()
-                num_params = (meta.json().get("safetensors") or {}).get("total")
+                info = meta.json()
+                safetensors = info.get("safetensors") if isinstance(info, dict) else None
+                if isinstance(safetensors, dict):
+                    num_params = safetensors.get("total")
             except (httpx.HTTPError, ValueError):
                 logger.info("no safetensors metadata for %s; approximating params", model_id)
         arch = arch_from_hf_config(config, num_params)
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         logger.warning("could not fetch HuggingFace config for %s: %s", model_id, exc)
-
-    _hf_cache[model_id] = (time.monotonic(), arch)
     return arch
 
 

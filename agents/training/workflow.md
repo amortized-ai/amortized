@@ -121,7 +121,7 @@ are committing to.
 
 ## When the Config Doesn't Fit
 
-It doesn't fit when no GPU count within the GPU budget brings per-GPU
+It doesn't fit when no GPU count within the compute budget brings per-GPU
 VRAM under ~90% of one GPU's memory. Use the branch for the chosen
 method, re-estimate each option, and present them as choices for the
 user (alongside the "any method" options):
@@ -225,10 +225,13 @@ care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
 
 Key decisions to gather:
-- **GPU budget** (ask first) — which GPU type and how many GPUs the job
-  may use. If the user doesn't know or skips, assume H100 (80 GB) and up
-  to the estimate's `gpu_budget` GPUs, and say so. Never go above
-  `gpu_budget` — the server rejects it.
+- **Compute budget** (ask first) — which GPU type and how many GPUs the
+  job may use. If the user doesn't know or skips, assume H100 (80 GB) and
+  up to the estimate's `gpu_budget` GPUs, and say so. Never go above
+  `gpu_budget` — the server rejects it. If `gpu_budget` is 0, only CPU
+  training is possible: explain that LLM methods (lora/qlora/osft/sft)
+  need a GPU, and offer the embedding classifier if it fits the task or
+  ask the user to get a GPU budget — don't suggest config changes.
 - **Model** — present options with VRAM estimates
 - **Training data** — should come from a completed SDG job via
   `parent_job_id`. If not provided in context, ask for the SDG job ID.
