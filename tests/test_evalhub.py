@@ -193,6 +193,167 @@ async def test_hub_get_outage_does_not_fail_remote_job(monkeypatch):
     assert store.execution["state"] == "accepted"
 
 
+def fake_k8s(monkeypatch):
+    """Hub's adapter Job and pod as the Kubernetes API returns them."""
+    from types import SimpleNamespace
+
+    import kubernetes_asyncio.client as k8s_client
+
+    from amortized.backends.kubernetes import KubernetesBackend
+
+    backend = KubernetesBackend.__new__(KubernetesBackend)
+    backend._client = object()
+    monkeypatch.setattr("amortized.core.compute.get_backend", lambda _: backend)
+    state = SimpleNamespace(jobs=[], pods=[], log="", selectors=[])
+
+    async def listed(items, _namespace, label_selector):
+        state.selectors.append(label_selector)
+        return SimpleNamespace(items=items())
+
+    monkeypatch.setattr(
+        k8s_client,
+        "BatchV1Api",
+        lambda _: SimpleNamespace(
+            list_namespaced_job=lambda *a, **k: listed(lambda: state.jobs, *a, **k)
+        ),
+    )
+    monkeypatch.setattr(
+        k8s_client,
+        "CoreV1Api",
+        lambda _: SimpleNamespace(
+            list_namespaced_pod=lambda *a, **k: listed(lambda: state.pods, *a, **k),
+            read_namespaced_pod_log=AsyncMock(side_effect=lambda *a, **k: state.log),
+        ),
+    )
+    return state
+
+
+def k8s_job(ended="", age=0):
+    from datetime import UTC, datetime, timedelta
+    from types import SimpleNamespace
+
+    condition = SimpleNamespace(
+        type=ended,
+        status="True",
+        reason="BackoffLimitExceeded" if ended == "Failed" else "Completed",
+        last_transition_time=datetime.now(UTC) - timedelta(seconds=age),
+    )
+    return SimpleNamespace(
+        metadata=SimpleNamespace(name="hub-123-guid", labels={"benchmark_index": "0"}),
+        status=SimpleNamespace(conditions=[condition] if ended else None),
+    )
+
+
+def k8s_pod(age=0, waiting=""):
+    from datetime import UTC, datetime, timedelta
+    from types import SimpleNamespace
+
+    reason = SimpleNamespace(reason=waiting, message="Back-off pulling image") if waiting else None
+    return SimpleNamespace(
+        metadata=SimpleNamespace(
+            name="hub-123-guid-x7k2p",
+            labels={"job-name": "hub-123-guid"},
+            creation_timestamp=datetime.now(UTC) - timedelta(seconds=age),
+        ),
+        status=SimpleNamespace(
+            init_container_statuses=None,
+            container_statuses=[SimpleNamespace(state=SimpleNamespace(waiting=reason))],
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_adapter_job_watch_reads_hubs_labels_and_waits_out_its_graces(monkeypatch):
+    from datetime import UTC, datetime
+
+    k8s = fake_k8s(monkeypatch)
+    execution = {"tenant": "user-namespace"}
+    pending = snapshot("pending")  # Hub created it days ago
+    k8s.jobs, k8s.pods = [k8s_job("Failed", age=120)], [k8s_pod()]
+    k8s.log = (
+        "INFO LMEval EvalHub Adapter\n"
+        "pydantic_core._pydantic_core.ValidationError: 1 validation error for JobSpec\n"
+        "benchmark_config\n  Field required"
+    )
+    reason = await lifecycle.adapter_stopped(execution, pending)
+    assert reason.startswith("The benchmark adapter failed (BackoffLimitExceeded)")
+    assert reason.endswith("ValidationError: 1 validation error for JobSpec")
+    assert k8s.selectors[0] == "app=evalhub,component=evaluation-job,job_id=hub-123"
+    # Hub may still be storing a report the adapter sent just before it exited.
+    k8s.jobs = [k8s_job("Failed", age=10)]
+    assert await lifecycle.adapter_stopped(execution, pending) == ""
+    k8s.jobs = [k8s_job("Complete", age=120)]
+    reported = snapshot("running")
+    reported["status"]["benchmarks"] = [{"benchmark_index": 0, "status": "completed"}]
+    assert await lifecycle.adapter_stopped(execution, reported) == ""
+    k8s.log = ""
+    assert await lifecycle.adapter_stopped(execution, pending) == (
+        "The benchmark adapter exited without reporting a result to Eval Hub"
+    )
+    k8s.jobs, k8s.pods = [k8s_job()], [k8s_pod(age=900, waiting="ImagePullBackOff")]
+    assert "cannot start: ImagePullBackOff: Back-off" in (
+        await lifecycle.adapter_stopped(execution, pending)
+    )
+    k8s.pods = [k8s_pod(age=60, waiting="ImagePullBackOff")]
+    assert await lifecycle.adapter_stopped(execution, pending) == ""
+    k8s.jobs, k8s.pods = [], []
+    assert "Job is gone" in await lifecycle.adapter_stopped(execution, pending)
+    pending["resource"]["created_at"] = datetime.now(UTC).isoformat()  # Hub creates it async
+    assert await lifecycle.adapter_stopped(execution, pending) == ""
+
+
+@pytest.mark.asyncio
+async def test_adapter_that_stops_without_reporting_fails_and_frees_the_model(monkeypatch):
+    store = MemoryStore("accepted")
+    monkeypatch.setattr(client, "observe", AsyncMock(return_value=snapshot("pending")))
+    cancel = AsyncMock(side_effect=httpx.ConnectError("hub busy"))
+    monkeypatch.setattr(client, "cancel", cancel)
+    stopped = "The benchmark adapter failed (BackoffLimitExceeded) without reporting a result"
+    monkeypatch.setattr(lifecycle, "adapter_stopped", AsyncMock(return_value=stopped))
+    await lifecycle.tick(store.job, store)
+    assert (store.job["status"], store.job["error"]) == ("failed", stopped)
+    assert store.execution["state"] == "cleanup"
+    cancel.assert_awaited_once()  # closes Hub's record; its failure does not matter
+    cleanup = AsyncMock()
+    monkeypatch.setattr(lifecycle.preparation, "cleanup", cleanup)
+    assert await lifecycle.tick(store.job, store)
+    cleanup.assert_awaited_once()  # the model server and its GPU go here
+
+
+@pytest.mark.asyncio
+async def test_job_watch_errors_leave_hub_authoritative(monkeypatch):
+    store = MemoryStore("accepted")
+    monkeypatch.setattr(client, "observe", AsyncMock(return_value=snapshot("running")))
+    watch = AsyncMock(side_effect=RuntimeError("jobs is forbidden"))
+    monkeypatch.setattr(lifecycle, "adapter_stopped", watch)
+    await lifecycle.tick(store.job, store)
+    assert (store.job["status"], store.execution["state"]) == ("running", "accepted")
+    store.execution["cancel_requested"] = True  # the cancel path owns this job now
+    monkeypatch.setattr(client, "cancel", AsyncMock())
+    await lifecycle.tick(store.job, store)
+    watch.assert_awaited_once()
+
+
+def test_the_catalog_metric_is_the_score_and_listed_first():
+    metrics = {"acc": 0.6, "acc_norm": 0.4, "acc_stderr": 0.11}
+    execution = {
+        "snapshot": snapshot("completed", metrics=metrics),
+        "request": {"benchmarks": [{"id": "task", "primary_score": {"metric": "acc_norm"}}]},
+    }
+    result = present(execution)
+    assert list(result["scores"]) == ["acc_norm", "acc", "acc_stderr"]
+    assert (result["primary_metric"], result["primary_score"]) == ("acc_norm", 0.4)
+    # Submitted before Amortized sent primary_score: the catalog Hub took it from.
+    catalog = {"benchmarks": [{"id": "task", "primary_score": {"metric": "acc_norm"}}]}
+    legacy = {**execution, "request": {}, "inputs": {"catalog": catalog}}
+    assert present(legacy)["primary_score"] == 0.4
+    # LightEval's arc:easy names acc_norm but reports only acc: no stand-in score.
+    only_acc = snapshot("completed", metrics={"all.acc": 0.5, "arc:easy.acc": 0.5})
+    result = present({**execution, "snapshot": only_acc})
+    assert (result["primary_metric"], result["primary_score"]) == ("acc_norm", None)
+    assert list(result["scores"]) == ["all.acc", "arc:easy.acc"]
+
+
 def test_partial_results_keep_raw_units_and_artifact_references():
     execution = {
         "remote_id": "hub-123",
@@ -940,3 +1101,64 @@ def test_numeric_overflow_is_counted_invalid_and_mean_stays_finite():
     assert results["scores"]["mae"] == 1e308
     assert results["scores_n"]["mae"] == 2
     assert results["metric_metadata"]["mae"]["num_invalid"] == 1
+
+
+ADAPTER_MAIN = """
+import json
+import sys
+from datetime import UTC, datetime
+
+from evalhub.adapter import EvaluationResult, FrameworkAdapter, JobResults
+
+
+class Adapter(FrameworkAdapter):
+    def run_benchmark_job(self, config, callbacks):
+        # As the TrustyAI lm-eval adapter: the first metric, and lm-eval's own first metric.
+        self._run_info = {"primary_metric": "acc", "zero_shot": 0.6, "alt_prompting": None,
+                          "alt_prompting_description": None}
+        results = [EvaluationResult(metric_name="acc", metric_value=0.6),
+                   EvaluationResult(metric_name="acc_norm", metric_value=0.4)]
+        return JobResults(id="j", benchmark_id="arc_easy", benchmark_index=0, model_name="m",
+                          results=results, overall_score=0.6, num_examples_evaluated=20,
+                          duration_seconds=1.0, completed_at=datetime.now(UTC),
+                          additional_info={"alt_prompting": 0.6,
+                                           "alt_prompting_description": "5-Shot"})
+
+
+def main():
+    adapter = Adapter.__new__(Adapter)
+    results = adapter.run_benchmark_job(None, None)
+    print(json.dumps({"score": results.overall_score, "run_info": adapter._run_info,
+                      "info": results.additional_info, "file": __file__, "argv": sys.argv}))
+    return 3
+
+
+if __name__ == "__main__":
+    raise SystemExit("main.py must be run through main(), not as __main__")
+"""
+
+
+@pytest.mark.parametrize("metric,score", [("acc_norm", 0.4), ("mc1", None), (None, None)])
+def test_adapter_launcher_scores_by_the_job_specs_primary_metric(tmp_path, metric, score):
+    import sys
+    from pathlib import Path
+
+    launcher = Path(__file__).parents[1] / "deploy/helm/amortized/files/evalhub/adapter_launcher.py"
+    (tmp_path / "main.py").write_text(ADAPTER_MAIN)
+    spec = {"id": "j", "primary_score": {"metric": metric} if metric else None}
+    (tmp_path / "job.json").write_text(json.dumps(spec))
+    done = subprocess.run(
+        [sys.executable, "-c", launcher.read_text(), str(tmp_path / "main.py")],
+        env={**os.environ, "EVALHUB_JOB_SPEC_PATH": str(tmp_path / "job.json")},
+        cwd=tmp_path.parent,
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 3, done.stderr  # main()'s own exit code
+    out = json.loads(done.stdout)
+    assert out["score"] == score
+    assert out["run_info"]["primary_metric"] == metric
+    assert (out["run_info"]["zero_shot"], out["run_info"]["alt_prompting"]) == (score, None)
+    assert out["info"]["alt_prompting"] == score  # few-shot runs carry it as alt_prompting
+    assert out["file"] == str(tmp_path / "main.py")  # main.py's output/ stays beside it
+    assert out["argv"] == [str(tmp_path / "main.py")]

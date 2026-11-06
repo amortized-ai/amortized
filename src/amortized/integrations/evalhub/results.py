@@ -9,11 +9,30 @@ from amortized.db.evalhub import EvalHubRepository
 from amortized.db.repository import Repository
 
 
+def primary_metric(execution: dict[str, Any], benchmark_id: str) -> str:
+    """The catalog metric that is the benchmark's score, as submitted to Hub.
+
+    Jobs submitted before Amortized sent primary_score fall back to the catalog Hub held
+    when the job was prepared, which is where Hub itself took it from.
+    """
+    sources = [
+        (execution.get("request") or {}).get("benchmarks") or [],
+        ((execution.get("inputs") or {}).get("catalog") or {}).get("benchmarks") or [],
+    ]
+    for benchmarks in sources:
+        for benchmark in benchmarks:
+            metric = (benchmark.get("primary_score") or {}).get("metric")
+            if benchmark.get("id") == benchmark_id and metric:
+                return str(metric)
+    return ""
+
+
 def present(execution: dict[str, Any]) -> dict[str, Any] | None:
     snapshot = execution.get("snapshot") or {}
     benchmarks = (snapshot.get("results") or {}).get("benchmarks") or []
     if not benchmarks:
         return None
+    primary: list[str] = []
     scores: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
     counts: dict[str, int] = {}
@@ -24,6 +43,9 @@ def present(execution: dict[str, Any]) -> dict[str, Any] | None:
         if summary:
             task_summary.update(summary)
         prefix = f"{benchmark['id']}/" if len(benchmarks) > 1 else ""
+        metric = primary_metric(execution, benchmark["id"])
+        if metric:
+            primary.append(prefix + metric)
         for name, raw in (benchmark.get("metrics") or {}).items():
             value = raw.get("value", raw.get("metric_value")) if isinstance(raw, dict) else raw
             if (
@@ -44,12 +66,18 @@ def present(execution: dict[str, Any]) -> dict[str, Any] | None:
             )
             if name in (summary.get("scores_n") or {}):
                 counts[key] = summary["scores_n"][name]
+    # Exact name only, as Hub scores it: a catalog metric the adapter did not report gives
+    # no score rather than a stand-in. Scores list the primary metric first.
+    reported = [key for key in primary if key in scores]
+    scores = {key: scores[key] for key in reported} | scores
     return {
         "num_records": task_summary.get("num_records"),
         "num_skipped": task_summary.get("num_skipped"),
         "model": task_summary.get("model") or {},
         **task_summary,
         "scores": scores,
+        "primary_metric": primary[0] if len(primary) == 1 else None,
+        "primary_score": scores.get(primary[0]) if len(primary) == 1 else None,
         "scores_n": counts,
         "metric_metadata": metadata,
         "benchmarks": benchmarks,

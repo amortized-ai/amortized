@@ -547,6 +547,21 @@ async def test_hub_job_is_built_only_from_an_unchanged_approved_recipe(hub):
         _approved_recipe(definition(), provider)
 
 
+async def test_hub_job_carries_the_cards_metric_as_its_primary_score(hub):
+    from evalhub.models import JobSubmissionRequest
+
+    from amortized.integrations.evalhub.preparation import benchmark_selection
+
+    recipe, _ = catalog.resolve_recipe(await entries(hub), ENDPOINT, definition(), {})
+    selected = benchmark_selection(recipe, definition())
+    metric = recipe["catalog_entry"]["primary_score"]["metric"]
+    assert selected["primary_score"] == {"metric": metric, "lower_is_better": False}
+    request = JobSubmissionRequest.model_validate(
+        {"name": "n", "model": {"url": "http://m/v1", "name": "m"}, "benchmarks": [selected]}
+    )
+    assert request.benchmarks[0].primary_score.metric == metric
+
+
 async def test_benchmark_comparisons_key_on_the_recipe_fingerprint(monkeypatch):
     from test_evalhub import snapshot
 

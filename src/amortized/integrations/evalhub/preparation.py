@@ -299,6 +299,26 @@ def _approved_recipe(definition: dict[str, Any], provider: dict[str, Any]) -> di
     return recipe
 
 
+def benchmark_selection(recipe: dict[str, Any], definition: dict[str, Any]) -> dict[str, Any]:
+    """Hub's benchmark entry, built from the recipe approved on the card, never later edits."""
+    selected: dict[str, Any] = {
+        "id": recipe["benchmark_id"],
+        "provider_id": recipe["provider_id"],
+        "parameters": dict(recipe["parameters"]),
+    }
+    # The card's metric is the score everywhere: Hub, the adapter (adapter_launcher.py),
+    # MLflow and Amortized's results all take it from the job's primary_score.
+    primary = (recipe.get("catalog_entry") or {}).get("primary_score")
+    if isinstance(primary, dict) and primary.get("metric"):
+        selected["primary_score"] = {
+            "metric": str(primary["metric"]),
+            "lower_is_better": bool(primary.get("lower_is_better")),
+        }
+    if definition.get("test_data_ref"):
+        selected["test_data_ref"] = definition["test_data_ref"]
+    return selected
+
+
 async def prepare(
     job: dict[str, Any], store: EvalHubRepository, execution: dict[str, Any]
 ) -> dict[str, Any]:
@@ -344,14 +364,7 @@ async def prepare(
         endpoint = await prepare_serving(job, store, execution)
     secret = await _credential_secret(job, store, endpoint, config.get("judge"))
     if benchmark:
-        # Built from the recipe approved on the card, never from later edits.
-        selected = {
-            "id": recipe["benchmark_id"],
-            "provider_id": recipe["provider_id"],
-            "parameters": dict(recipe["parameters"]),
-        }
-        if definition.get("test_data_ref"):
-            selected["test_data_ref"] = definition["test_data_ref"]
+        selected = benchmark_selection(recipe, definition)
         if (recipe.get("compatibility") or {}).get("settings_profile") == "lm-eval-completions-v1":
             # The adapter loads this to count tokens; the served model name may be a
             # tuned model's display name, so name the Hugging Face model explicitly.

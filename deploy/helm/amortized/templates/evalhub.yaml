@@ -74,14 +74,18 @@ data:
         description: Dataset snapshot, scorer versions and optional approved-rubric judge
 {{- /* The upstream Eval Hub catalogs, vendored verbatim at a pinned commit. Only the
 id and runtime are replaced, so each registered adapter is its pinned image. */}}
+{{- /* Both adapters run through files/evalhub/adapter_launcher.py, which makes their
+       overall_score the catalog's primary_score metric, the score Hub and Amortized use. */}}
+{{- $launcher := dict "name" "AMORTIZED_ADAPTER_LAUNCHER" "value" (.Files.Get "files/evalhub/adapter_launcher.py") }}
 {{- $adapters := list
       (dict "id" "amortized-lm-eval" "catalog" "lm_evaluation_harness.yaml" "value" "lmEvalImage"
             "image" .Values.evalhub.operator.lmEvalImage
-            "entrypoint" (list "/bin/sh" "-c" "mkdir -p /tmp/lmes && cp /opt/app-root/src/main.py /tmp/lmes/ && exec /opt/app-root/bin/python /tmp/lmes/main.py")
-            "env" (list (dict "name" "HF_HOME" "value" "/tmp/hf_home") (dict "name" "HOME" "value" "/tmp/lmes")))
+            "entrypoint" (list "/bin/sh" "-c" "mkdir -p /tmp/lmes && cp /opt/app-root/src/main.py /tmp/lmes/ && exec /opt/app-root/bin/python -c \"$AMORTIZED_ADAPTER_LAUNCHER\" /tmp/lmes/main.py")
+            "env" (list (dict "name" "HF_HOME" "value" "/tmp/hf_home") (dict "name" "HOME" "value" "/tmp/lmes") $launcher))
       (dict "id" "amortized-lighteval" "catalog" "lighteval.yaml" "value" "lightEvalImage"
             "image" .Values.evalhub.operator.lightEvalImage
-            "entrypoint" (list "python" "main.py")) }}
+            "entrypoint" (list "/bin/sh" "-c" "exec python -c \"$AMORTIZED_ADAPTER_LAUNCHER\" main.py")
+            "env" (list $launcher)) }}
 {{- range $adapters }}
 {{- if not (contains "@sha256:" .image) }}
 {{- fail (printf "evalhub.operator.%s must use an immutable digest" .value) }}
