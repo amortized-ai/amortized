@@ -134,4 +134,5 @@ async def test_create_job_rejects_unresolved_placeholders() -> None:
             object(),  # type: ignore[arg-type]
             job_type=JobType.sdg,
             config={"model_configs": [{"model": PLACEHOLDER_MODEL}]},
+            models_checked=True,  # placeholder rejection is core behavior, independent of admission
         )

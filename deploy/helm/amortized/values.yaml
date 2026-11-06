@@ -42,10 +42,30 @@ images:
     repository: ghcr.io/amortized-ai/studio
     tag: latest
     pullPolicy: ""
+  # Model-liveness check service: a small dedicated image (containers/model-check), built with
+  # the same tags as the server — pin it alongside images.server.tag.
+  modelCheck:
+    repository: ghcr.io/amortized-ai/model-check
+    tag: latest
+    pullPolicy: ""
   opencode:
     repository: ghcr.io/anomalyco/opencode
     tag: latest           # third-party (anomalyco); publishes only :latest, so not sha-pinned here
     pullPolicy: Always    # matches the base manifest
+
+# Model-liveness check service: verifies the LLM endpoints a job will call (eval judge,
+# SDG teacher models) at validate/create time, so a dead endpoint is rejected immediately
+# instead of failing a long-running job. Runs in the jobs namespace; only the server may
+# call it (NetworkPolicy). Disable to run the check in-process inside the server instead.
+modelCheck:
+  enabled: true
+  port: 7351
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
 
 server:
   # AMORTIZED_IMAGE_REGISTRY: registry the server composes job image refs from.

@@ -25,6 +25,7 @@ function ChatPanelContent() {
     thinkingStep,
     confirmAction,
     rejectAction,
+    retryBlockedNotice,
     notifyJobComplete,
   } = useChat()
 
@@ -73,6 +74,7 @@ function ChatPanelContent() {
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
+        onRetryBlockedNotice={retryBlockedNotice}
         onJobComplete={notifyJobComplete}
       />
       <ChatInput

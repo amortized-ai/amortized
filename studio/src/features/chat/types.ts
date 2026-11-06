@@ -1,3 +1,5 @@
+import type { ModelCheckResult } from "@/types/api"
+
 export interface OptionCard {
   title: string
   description: string
@@ -30,6 +32,19 @@ export interface ProposedAction {
   // Every reviewable system prompt in the recipe (input generators + output),
   // rendered verbatim so the user reviews all of them, not just the output.
   prompts?: PromptView[]
+  // Model-liveness results for the endpoints the job will call. Definite failures never
+  // reach a card, so these are passed or unverified; unverified ones render as warnings.
+  modelChecks?: ModelCheckResult[]
+}
+
+// A confirmed card whose job creation was blocked by the model check. Kept on the message
+// (persisted) so the explanation shows whether or not Morty could be told about it.
+export interface ActionBlocked {
+  message: string
+  jobType: string
+  // Delivery of the blocked notice to Morty: "sending" while in flight, "failed" after the
+  // automatic attempts (the bubble offers Retry), "delivered" once Morty has it.
+  notify: "sending" | "delivered" | "failed"
 }
 
 export interface ToolResult {
@@ -54,6 +69,8 @@ export interface ChatMessage {
   // current phase terminal even when the driver never emits a "complete" signal_phase
   // (observed with GLM) — otherwise the progress bar strands on the last step.
   terminal?: boolean
+  // Set when the user confirmed this message's card but the model check blocked the job.
+  actionBlocked?: ActionBlocked
 }
 
 export type ChatState =

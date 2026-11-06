@@ -70,8 +70,8 @@ class ApiError extends Error {
   declare statusText: string
   declare body: unknown
   // Stable provider-error classifier from the agent proxy (see _classify_provider_error):
-  // "model_unavailable" | "auth" | "tool_calling" | "rate_limit" | "unknown". Absent for
-  // non-agent errors.
+  // "model_unavailable" | "auth" | "tool_calling" | "rate_limit" | "unknown". From the API:
+  // the error envelope's `code` (e.g. "model_check_failed", "http_422").
   declare code?: string
 
   constructor(status: number, statusText: string, body: unknown, code?: string) {
@@ -108,6 +108,13 @@ function friendlyServiceError(path: string, status: number): string | null {
   if (path.startsWith("/mlflow/")) return "Cannot reach MLflow. Check the MLflow tracking server."
   if (path.startsWith("/agent/")) return "Cannot reach the agent service. Make sure OpenCode is running."
   return null
+}
+
+// The API's error envelope carries a stable `code` (e.g. "model_check_failed") clients branch on.
+function envelopeCode(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined
+  const code = (body as Record<string, unknown>).code
+  return typeof code === "string" && code ? code : undefined
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -149,7 +156,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (friendly) {
       throw new ApiError(response.status, response.statusText, friendly)
     }
-    throw new ApiError(response.status, response.statusText, body)
+    throw new ApiError(response.status, response.statusText, body, envelopeCode(body))
   }
 
   logger.info("request complete", { method, path, status: response.status, duration, requestId })
@@ -460,7 +467,22 @@ export function shouldKeepSessionOnError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 400 || error.status === 429)
 }
 
-export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string, event?: string, outcome?: string, jobType?: string, jobMode?: string): Promise<OpenCodeResponse> {
+// For an idempotent event the server remembers the event per session, so the session is the
+// dedup scope: abandoning it after an ambiguous failure (lost response, gateway error, failed or
+// timed-out turn) would let a retry — automatic or the user's — run the event again in a new one.
+// Only a 404 (the server no longer knows the session) means it is really gone.
+function sessionGone(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404
+}
+
+export interface SendOptions {
+  // Stable id for a system event that may be resent (e.g. "confirmation_blocked:<message id>").
+  // The server returns the turn it already started for a repeat, so retries are idempotent — and
+  // so a retry keeps the same session rather than resetting to one that never saw the event.
+  eventId?: string
+}
+
+export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string, event?: string, outcome?: string, jobType?: string, jobMode?: string, options: SendOptions = {}): Promise<OpenCodeResponse> {
   if (!conversationId) {
     throw new ApiError(400, "No active conversation", null)
   }
@@ -490,6 +512,9 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
   if (jobMode) {
     body.job_mode = jobMode
   }
+  if (options.eventId) {
+    body.event_id = options.eventId
+  }
   if (modelSelection) {
     const { parseModelSelection } = await import("@/features/chat/models")
     body.model = parseModelSelection(modelSelection)
@@ -506,6 +531,12 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       })
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err))
+      // The POST may have reached the server even though its response was lost. An idempotent
+      // event retries the SAME session (which dedupes it); a fresh session would run it again.
+      if (options.eventId) {
+        logger.warn("network error, retrying event on the same session", { attempt, error: lastError.message })
+        continue
+      }
       logger.warn("network error, resetting session", { attempt, error: lastError.message })
       useChatStore.getState().clearSessionId(conversationId)
       sessionId = await getOrCreateSession(conversationId)
@@ -529,6 +560,10 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
     } else {
       status = resp.status
       lastError = new ApiError(status, resp.statusText, null)
+    }
+    if (status === 500 && options.eventId && attempt < MAX_RETRIES) {
+      logger.warn("turn failed, retrying event on the same session", { sessionId, attempt: attempt + 1 })
+      continue
     }
     if ((status === 404 || status === 500) && attempt < MAX_RETRIES) {
       logger.warn("session error, creating new session with context replay", { conversationId, sessionId, status })
@@ -557,6 +592,12 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       continue
     }
     if (status === 502 && attempt < MAX_RETRIES) {
+      // A gateway error can also hide a request that reached the server: keep the session for an
+      // idempotent event so the retry is deduplicated.
+      if (options.eventId) {
+        logger.warn("transient error, retrying event on the same session", { sessionId, status, attempt: attempt + 1 })
+        continue
+      }
       logger.warn("transient error, resetting session", {
         sessionId, status, attempt: attempt + 1,
       })
@@ -569,7 +610,8 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
   // A provider/model error (400) means only the chosen model was rejected — the opencode session
   // is still healthy, so keep it: switching back to a working model then resumes this conversation
   // instead of starting a fresh one. Reset only when the session/upstream may be unusable.
-  if (!shouldKeepSessionOnError(lastError)) {
+  const keepForEvent = !!options.eventId && !sessionGone(lastError)
+  if (!keepForEvent && !shouldKeepSessionOnError(lastError)) {
     useChatStore.getState().clearSessionId(conversationId)
   }
   if (lastError instanceof ApiError && (lastError.status === 502 || lastError.status === 503)) {

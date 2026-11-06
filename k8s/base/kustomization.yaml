@@ -13,6 +13,9 @@ resources:
   - opencode-configmap.yaml
   - opencode-deployment.yaml
   - opencode-service.yaml
+  - model-check-deployment.yaml
+  - model-check-service.yaml
+  - model-check-networkpolicy.yaml
 
 configMapGenerator:
   - name: morty-config

@@ -3,7 +3,8 @@ import { Loader2, CircleCheck, XCircle } from "lucide-react"
 import { Link } from "react-router"
 import { cn } from "@/lib/utils"
 import { getJob, getJobDurationStats, getJobLogs } from "@/lib/api-client"
-import type { JobStatus } from "@/types/api"
+import type { JobStatus, ModelCheckResult } from "@/types/api"
+import { ModelCheckWarnings } from "./model-check-warnings"
 
 interface JobMonitorCardProps {
   jobId: string
@@ -95,6 +96,7 @@ function formatElapsed(ms: number): string {
 export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }: JobMonitorCardProps) {
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
+  const [modelChecks, setModelChecks] = useState<ModelCheckResult[]>([])
   const [mlflowRunId, setMlflowRunId] = useState<string>("")
   // Eval jobs that serve the model themselves print stage markers into the
   // job logs (=== EVAL-STAGE: serving | waiting-for-endpoint | evaluating ===)
@@ -131,6 +133,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       const job = await getJob(jobId)
       setStatus(job.status)
       if (job.error) setError(job.error)
+      if (job.model_checks) setModelChecks(job.model_checks)
       if (job.mlflow_run_id) setMlflowRunId(job.mlflow_run_id)
       if (job.started_at) {
         jobStartRef.current = new Date(job.started_at).getTime()
@@ -291,6 +294,9 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
           {error}
         </p>
       )}
+
+      {/* Endpoints the job calls that couldn't be verified when it was created */}
+      <ModelCheckWarnings checks={modelChecks} />
 
       {status === "succeeded" && (
         <div className="mt-3 flex items-center gap-3 text-xs">

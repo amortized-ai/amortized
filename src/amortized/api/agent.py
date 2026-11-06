@@ -20,7 +20,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from amortized.api.agent_parts import _get_tool_input, _part_errored, _tool_name
 from amortized.api.agent_sdg_prompt import (
@@ -132,6 +132,10 @@ class SessionState:
     # context already records a successful completion ack). Cleared on the next send so the
     # system prompt can correct the stale context — keeps AX = UX.
     suppressed_completion: bool = False
+    # Client event id -> the turn it started. Lets a retried system event (e.g. a blocked
+    # confirmation whose POST response was lost) return the turn already running instead of
+    # starting a second one. Pruned with the turns it points at.
+    event_turns: dict[str, str] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -260,6 +264,36 @@ _SUBAGENT_JOB_FAILED_PROMPT = (
     "the job ID. Do NOT retry, do NOT present_options or offer next steps, and do NOT start "
     "new work — hand control back now."
 )
+
+# A blocked confirmation: the user clicked Confirm on a job card, but creation was rejected
+# by the model-liveness check (an LLM endpoint the job would call can't answer, or isn't
+# configured). No job exists, so no job_complete event will ever arrive — the studio sends a
+# `confirmation_blocked` event instead. As with the job_complete hand-back, the imperative rides
+# the SYSTEM channel; the user part carries only the sanitized failure.
+_CONFIRMATION_BLOCKED_PROMPT = (
+    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but the model check"
+    " blocked it (the failure is in the user message). Explain the problem briefly, help the user"
+    " fix the endpoint or choose a different model, then call validate_{job_type}_job with the"
+    " updated configuration to present a new confirmation card. Do not say a job was submitted or"
+    " is running."
+)
+# Same event when no subagent is active: the orchestrator can't validate a job itself, so it
+# hands the fix back to the workflow agent that owns the job type, resuming its context.
+_ORCHESTRATOR_CONFIRMATION_BLOCKED_PROMPT = (
+    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but the model check"
+    " blocked it (the failure is in the user message). Your only move: delegate_to_subagent with"
+    ' target "{job_type}" and resume: true, passing the failure as context, so the {job_type}'
+    " workflow helps the user fix it and presents a new confirmation card."
+)
+
+
+def _confirmation_blocked_job_type(body: MessageRequest) -> str | None:
+    """The job type of a confirmation_blocked event, or None for any other turn."""
+    if body.event != "confirmation_blocked":
+        return None
+    job_type = (body.job_type or "").strip().lower()
+    return job_type if job_type in _VALID_TARGETS else None
+
 
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
 # a subagent (e.g. eval) needs a dataset it can't produce itself (e.g. a held-out set).
@@ -692,6 +726,10 @@ class MessageRequest(BaseModel):
     # older client — the deliverable check then falls back to the display text / create mode.
     job_type: str | None = None
     job_mode: str | None = None
+    # Stable id for a system event the client may resend (e.g. "confirmation_blocked:<msg id>").
+    # A resend while the first turn is running or after it succeeded gets that same turn back,
+    # so Morty processes the event once.
+    event_id: str | None = Field(None, max_length=200)
 
 
 def _extract_user_text(body: MessageRequest) -> str:
@@ -785,6 +823,8 @@ def _evict_finished_turns(state: SessionState) -> None:
                 keep_hard.append(tid)
         state.turn_order = keep_hard
 
+    state.event_turns = {e: t for e, t in state.event_turns.items() if t in state.turns}
+
 
 @router.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
@@ -805,6 +845,13 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
     state.last_activity = datetime.now(UTC)
 
+    if body.event_id:
+        existing_id = state.event_turns.get(body.event_id)
+        existing = state.turns.get(existing_id) if existing_id else None
+        # A turn that failed may run again; one still running or done is the same event.
+        if existing_id and existing is not None and (existing.active or existing.error is None):
+            return {"turn_id": existing_id, "status": "processing" if existing.active else "done"}
+
     # Bound pending work per session: active turns are never evicted, so without an
     # admission limit a client could queue unboundedly (state.turns / _background_tasks).
     if sum(1 for t in state.turns.values() if t.active) >= MAX_ACTIVE_TURNS:
@@ -818,6 +865,8 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     state.turns[turn_id] = turn
     state.turn_order.append(turn_id)
     _evict_finished_turns(state)
+    if body.event_id:
+        state.event_turns[body.event_id] = turn_id
     task = asyncio.create_task(_run_turn(state, session_id, turn_id, user_text, body))
     turn.task = task
     _background_tasks.add(task)
@@ -1087,8 +1136,9 @@ async def _maybe_nudge_subagent_stall(
     delegation or RESUME turn (the `_maybe_delegate` exit) does NOT — the subagent is (re)entering,
     and a first clarifying turn without a signal is legitimate, so only the owed-edge STALL check
     applies there (the #534 P2c path: a narrated hand-off on a delegate/resume turn)."""
-    if body.event == "job_complete":
-        return latest_parts  # carries its own terminal hand-back steer; not a stall
+    if body.event in ("job_complete", "confirmation_blocked"):
+        # Both carry their own steer; not a stall
+        return latest_parts
     if not state.subagent_id or not state.subagent_target:
         return latest_parts
     target = state.subagent_target
@@ -1179,9 +1229,13 @@ async def _handle_subagent_message(
         succeeded = _job_succeeded(body, user_text)
         job_failed = not succeeded
         steer_system = _SUBAGENT_JOB_DONE_PROMPT if succeeded else _SUBAGENT_JOB_FAILED_PROMPT
+    blocked_job_type = _confirmation_blocked_job_type(body)
+    if blocked_job_type:
+        steer_system = _CONFIRMATION_BLOCKED_PROMPT.format(job_type=blocked_job_type)
     # On a job_complete turn the terminal hand-back steer owns the system channel (it tells the
-    # finishing subagent to signal completion now). On every other turn, re-anchor the driver to
-    # its resident workflow section with the pointer (see phases.subagent_pointer).
+    # finishing subagent to signal completion now); a blocked confirmation's steer does the same.
+    # On every other turn, re-anchor the driver to its resident workflow section with the pointer
+    # (see phases.subagent_pointer).
     system = steer_system or _pointer_for(state, state.subagent_target)
     if state.suppressed_completion:
         if not steer_system:
@@ -1473,7 +1527,13 @@ async def _handle_orchestrator_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    morty_result = await _orchestrator_turn(state, user_text, body)
+    blocked_job_type = _confirmation_blocked_job_type(body)
+    system = (
+        _ORCHESTRATOR_CONFIRMATION_BLOCKED_PROMPT.format(job_type=blocked_job_type)
+        if blocked_job_type
+        else None
+    )
+    morty_result = await _orchestrator_turn(state, user_text, body, system=system)
     delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
     return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
 

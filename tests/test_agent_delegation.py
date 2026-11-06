@@ -914,3 +914,143 @@ class TestDelegationStallCheck:
         assert redrive and "request_orchestrator_help" in redrive[0]
         fetched = _run(agent._fetch_all_assistant_parts(eval_id))
         assert any(agent._tool_name(p) == "request_orchestrator_help" for p in fetched)
+
+
+class TestConfirmationBlocked:
+    """A confirmed card whose creation was blocked by the model check: no job exists, so no
+    job_complete will come. The studio sends a confirmation_blocked event; the proxy steers the
+    owner of the job type to help fix it and re-validate."""
+
+    FAILURE = (
+        "Eval submission was blocked before creating a job. judge model 'gpt-oss' at"
+        " 'http://gw/v1' did not answer a test request (unreachable: connection refused)"
+    )
+
+    def test_active_subagent_gets_the_steer_on_the_system_channel(self, router: _Router) -> None:
+        state = _make_state(router)
+        sub = router.add_session([[_text_part("The judge endpoint is down — let's fix it.")]])
+        state.subagent_id = sub
+        state.subagent_target = "eval"
+
+        _run(agent._handle_subagent_message(
+            state, "s1", self.FAILURE,
+            _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval"),
+        ))
+
+        (session, text, agent_name, system) = router.sent[-1]
+        assert session == sub and agent_name == "eval"
+        assert text == self.FAILURE  # the user part carries only the sanitized failure
+        assert system is not None
+        assert "NOT created" in system and "validate_eval_job" in system
+        assert state.subagent_id == sub  # still owns the fix
+
+    def test_without_a_subagent_the_orchestrator_delegates_with_resume(
+        self, router: _Router
+    ) -> None:
+        state = _make_state(
+            router,
+            orchestrator_script=[[
+                _tool_part("delegate_to_subagent",
+                           {"target": "eval", "context": "judge unreachable", "resume": True})
+            ]],
+        )
+        eval_session = router.queue_session([[_text_part("Let's pick a working judge.")]])
+
+        _run(agent._handle_orchestrator_message(
+            state, "s1", self.FAILURE,
+            _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval"),
+        ))
+
+        orch_send = router.sent[0]
+        assert orch_send[0] == state.orchestrator_id
+        assert orch_send[3] is not None and "delegate_to_subagent" in orch_send[3]
+        assert 'target "eval"' in orch_send[3] and "resume: true" in orch_send[3]
+        assert state.subagent_target == "eval" and state.subagent_id == eval_session
+
+    def test_unknown_job_type_gets_no_blocked_steer(self, router: _Router) -> None:
+        state = _make_state(router, orchestrator_script=[[_text_part("ok")]])
+        _run(agent._handle_orchestrator_message(
+            state, "s1", "x", _body(text="x", event="confirmation_blocked", job_type="serve"),
+        ))
+        assert router.sent[0][3] is None
+
+    def test_blocked_turn_is_not_re_driven_by_the_stall_nudge(self, router: _Router) -> None:
+        # A prose reply (explain + ask) is the right response; it must not be nudged toward an
+        # "owed" edge such as re-validating before the user fixed anything.
+        state = _make_state(router)
+        sub = router.add_session(
+            [[_text_part("The judge is unreachable. Which judge should we use?")]]
+        )
+        state.subagent_id = sub
+        state.subagent_target = "eval"
+        _run(agent._handle_subagent_message(
+            state, "s1", self.FAILURE,
+            _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval"),
+        ))
+        assert [s for s in router.sent if s[0] == sub] == router.sent[-1:]  # exactly one send
+
+
+class TestEventIdempotency:
+    """A resent system event (same event_id) returns the turn it already started, so a lost POST
+    response can't make Morty process a blocked confirmation twice."""
+
+    @pytest.fixture
+    def session(self, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+        started: list[str] = []
+
+        async def fake_run_turn(state, session_id, turn_id, user_text, body):  # type: ignore[no-untyped-def]
+            started.append(turn_id)
+
+        monkeypatch.setattr(agent, "_run_turn", fake_run_turn)
+        state = agent.SessionState(orchestrator_id="orch")
+        agent._sessions["s-idem"] = state
+        yield state, started
+        agent._sessions.pop("s-idem", None)
+
+    def _send(self, event_id: str | None) -> dict[str, Any]:
+        import asyncio
+
+        body = agent.MessageRequest(
+            parts=[agent.MessagePart(type="text", text="blocked")],
+            event="confirmation_blocked",
+            job_type="eval",
+            event_id=event_id,
+        )
+
+        async def go() -> dict[str, Any]:
+            result = await agent.send_message("s-idem", body)
+            await asyncio.sleep(0)  # let the background turn task start
+            return result
+
+        return asyncio.new_event_loop().run_until_complete(go())
+
+    def test_resend_while_running_or_done_returns_the_same_turn(self, session) -> None:
+        state, _ = session
+        first = self._send("confirmation_blocked:m1")
+        again = self._send("confirmation_blocked:m1")
+        assert again["turn_id"] == first["turn_id"]
+        assert len(state.turns) == 1
+
+        turn = state.turns[first["turn_id"]]
+        turn.active = False  # finished successfully
+        done = self._send("confirmation_blocked:m1")
+        assert done == {"turn_id": first["turn_id"], "status": "done"}
+        assert len(state.turns) == 1
+
+    def test_a_failed_turn_can_run_again(self, session) -> None:
+        state, _ = session
+        first = self._send("confirmation_blocked:m2")
+        turn = state.turns[first["turn_id"]]
+        turn.active = False
+        turn.error = "provider error"
+        retry = self._send("confirmation_blocked:m2")
+        assert retry["turn_id"] != first["turn_id"]
+        assert len(state.turns) == 2
+
+    def test_distinct_or_missing_event_ids_are_separate_turns(self, session) -> None:
+        state, _ = session
+        self._send("confirmation_blocked:a")
+        self._send("confirmation_blocked:b")
+        self._send(None)
+        self._send(None)
+        assert len(state.turns) == 4
