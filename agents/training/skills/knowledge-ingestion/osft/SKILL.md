@@ -74,11 +74,18 @@ Ask the user:
    The model choice affects all downstream hyperparameters — gather
    them after.
 
-2. **GPUs** — Estimate the number of GPUs needed based on the model
-   size and available VRAM. Default to 1 GPU (`nproc_per_node: 1`)
-   for models that fit in a single GPU's memory. For larger models
-   (e.g. 14B+ parameters), recommend additional GPUs as needed and
-   explain the reasoning.
+2. **GPUs** — Estimate the number of GPUs needed from the estimated
+   VRAM. Call `estimate_training_resources` with the chosen model id,
+   method, and the config's `effective_batch_size`, `max_length` (as
+   `max_seq_len`), `max_tokens_per_gpu` and `unfreeze_rank_ratio`. Then
+   set `nproc_per_node` to the smallest GPU count within the compute budget
+   (gathered in the workflow; H100 80 GB by default) in
+   `per_gpu_vram_gb_by_gpu_count` whose value is at most ~90% of one
+   GPU's memory. Do NOT divide `vram_gb` by the GPU
+   memory: only part of the memory splits across GPUs. Briefly explain
+   the numbers behind the choice.
+
+   If no count fits, follow the workflow's When the Config Doesn't Fit.
 3. **Training data** — Should come from a completed SDG job. Use
    `parent_job_id` to chain SDG → Training automatically. Ask the user
    for the SDG job ID if not already in the conversation.

@@ -48,7 +48,8 @@ about internal delegation.
   internal rendering rule — never mention tiles, ordering, or this rule to the user.
 - **Be conversational, not robotic.** Brief natural transitions.
 - **Use sensible defaults.** Don't ask about learning_rate, warmup_steps,
-  or batch_size unless the user brings them up.
+  or batch_size unless the user brings them up — or the config doesn't
+  fit (see When the Config Doesn't Fit).
 - **Show results in markdown tables** when listing jobs or configs.
 
 ## Sub-Skills
@@ -90,7 +91,9 @@ Read `supported_models.json` (bundled with the `training-knowledge-ingestion-osf
 list of recommended models. You MUST show VRAM estimates before presenting model
 options.
 
-1. Estimate training resources for EACH model size from the file
+1. Estimate training resources for EACH model in the file — pass the
+   model's `id` as `model_name_or_path` (not its size label), so the
+   estimate uses that model's real architecture
 2. Show a VRAM comparison card with ALL collected estimates
 3. THEN present the models as options and wait for the user to choose —
    never auto-select a model, even if you have a recommended default
@@ -102,16 +105,41 @@ Requirement Gathering section describes the validation flow — follow it.
 
 You MUST show VRAM estimates before presenting method options.
 
-1. Estimate training resources with the selected model size for EACH
-   method (lora, qlora, osft, sft)
+1. Estimate training resources with the selected model's
+   `model_name_or_path` for EACH method (lora, qlora, osft, sft)
 2. Show a VRAM comparison card with ALL collected estimates
 3. THEN present method options
 
 ## Training Confirmation
 
-Before submitting, estimate training resources with the final model
-size and method, then show the VRAM card so the user sees what they
+Before submitting, estimate training resources with the final model,
+method, and the same `effective_batch_size`,
+`max_length` (as `max_seq_len`), `max_tokens_per_gpu` and (lora/qlora)
+`gradient_accumulation_steps` as the config,
+then show the VRAM card so the user sees what they
 are committing to.
+
+## When the Config Doesn't Fit
+
+It doesn't fit when no GPU count within the compute budget brings per-GPU
+VRAM under ~90% of one GPU's memory. Use the branch for the chosen
+method, re-estimate each option, and present them as choices for the
+user (alongside the "any method" options):
+
+- **If lora/qlora:**
+  - raise `gradient_accumulation_steps` — each step runs
+    `effective_batch_size // gradient_accumulation_steps` samples; same
+    training result, just slower
+  - lower `effective_batch_size` — scale `learning_rate` down with it
+- **If sft/osft:**
+  - lower `max_tokens_per_gpu` — same training result, just slower
+  - lower `effective_batch_size` — only when
+    `effective_batch_size × max_length / nproc_per_node` <
+    `max_tokens_per_gpu`; otherwise it saves nothing, so don't offer it
+- **Any method:**
+  - lower `max_length` — only if the longest example still fits
+  - switch to a lighter method (osft/sft → lora → qlora)
+  - pick a smaller model
 
 ## Job Chaining
 
@@ -197,6 +225,13 @@ care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
 
 Key decisions to gather:
+- **Compute budget** (ask first) — which GPU type and how many GPUs the
+  job may use. If the user doesn't know or skips, assume H100 (80 GB) and
+  up to the estimate's `gpu_budget` GPUs, and say so. Never go above
+  `gpu_budget` — the server rejects it. If `gpu_budget` is 0, only CPU
+  training is possible: explain that LLM methods (lora/qlora/osft/sft)
+  need a GPU, and offer the embedding classifier if it fits the task or
+  ask the user to get a GPU budget — don't suggest config changes.
 - **Model** — present options with VRAM estimates
 - **Training data** — should come from a completed SDG job via
   `parent_job_id`. If not provided in context, ask for the SDG job ID.
