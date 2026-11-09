@@ -177,147 +177,164 @@ lists benchmarks.
 
 ## Rebuilding the benchmark contract
 
-The contract describes the providers that are already set up (`amortized-lm-eval`,
-`amortized-lighteval`). What to run depends on what changed:
+What the three steps do is explained above. This section says what to run. Paths
+`described/`, `conformance/`, `compat/` and `REPORT.md` are under
+`deploy/helm/amortized/files/evalhub/`.
 
-| What changed | Example | Run | Why |
-|---|---|---|---|
-| An adapter image pin (`evalhub.operator.lmEvalImage` or `lightEvalImage`) | lm-eval moves from `odh-3.6.0` to a newer image | describe, conform, contract | the new image may name metrics differently or fail on tasks that ran before |
-| The catalog commit (`EVALHUB_CATALOG_COMMIT`) | upstream Eval Hub adds 20 benchmarks | `make evalhub-catalog`, then describe, conform, contract | the new entries have never run |
-| How Amortized scores or shows results (`results.present()`, the card) | a new field in the results view | `make evalhub-contract` only (no GPU) | the evidence is still valid; only the Studio fixture and REPORT.md are rebuilt |
-| A new provider (another framework) | a third evaluation framework next to lm-eval and LightEval | one-time setup first ([Adding a provider](#adding-a-provider)), then describe, conform, contract | nothing describes or names its metrics yet |
+### When something changes
 
-Nothing needs to run when users run benchmarks, or when other server or Studio code
-changes. CI fails when the files no longer match the pins, the catalog or the code,
-so it tells you when a rebuild is due.
+Find what changed, then run the steps listed. The steps are numbered in
+[The steps](#the-steps) below.
 
-**Before you start.** `make evalhub-conform` drives a running deployment, so you
-need one where:
-
-- the server image contains this checkout's `amortized.integrations.evalhub`
-  (the runner runs inside the server pod);
-- Hub registers the adapter images you pinned (provider ConfigMaps, step 4 of
-  [Deployment and activation](#deployment-and-activation)). Hub reads providers only
-  when it starts, so recreate its pod after changing them;
-- one GPU is free in the jobs namespace: the runner serves the model there for the
-  whole run, so users' GPU jobs wait meanwhile.
-
-**Run it** from the repository root, with the dev environment active. On the KIND
-devbox, run from the `evalhub-test/` checkout:
-
-```bash
-make evalhub-describe        # no GPU; needs network and docker
-make evalhub-conform EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-xyang"
-make evalhub-contract
-pytest tests/test_evalhub_contract.py tests/test_evalhub_catalog.py
-(cd studio && npm test)
-```
-
-Run `evalhub-conform` detached, so a dropped SSH session doesn't stop it:
-
-```bash
-setsid nohup make evalhub-conform EVALHUB_KUBECTL="..." > conform.log 2>&1 < /dev/null &
-```
-
-Each Hub job logs one line per entry, for example
-`[4] pile_arxiv: failed, 0 metrics, 200 s Evaluation failed: The repository for EleutherAI/pile contains custom code ...`.
-
-**Options**, passed as `EVALHUB_CONFORM_ARGS="..."`:
-
-| Option | Default | Use |
+| What changed | Example | Run |
 |---|---|---|
-| `--only a,b` | all | run only these entry ids (both providers' ids may be mixed) |
-| `--limit N` | 0 = all | run at most N entries |
-| `--rerun` | off | run entries that already have a result (with `--only` to retry a few) |
-| `--questions N` | 10 | questions per entry; 0 = all of them |
-| `--chunk N` | 8 | entries per Hub job; Hub starts one adapter pod per entry at once |
-| `--model ID` | `Qwen/Qwen3-0.6B` | the model to serve |
-| `--timeout S` | 2400 | seconds before a Hub job is cancelled and its open entries recorded as `timed_out` |
+| An adapter image pin (`lmEvalImage` or `lightEvalImage` in `values.yaml`) | lm-eval moves from `odh-3.6.0` to a newer image | steps 1–6. Conform re-runs every entry of that provider by itself, because the digest changed |
+| The catalog commit (`EVALHUB_CATALOG_COMMIT` in the Makefile) | upstream adds 20 benchmarks | `make evalhub-catalog`, then steps 1–6 |
+| The Hub version | Hub 1.0.3 → a newer Hub | steps 2–6, with `EVALHUB_CONFORM_ARGS="--rerun"` in step 3. CI won't remind you: the record doesn't keep the Hub version |
+| How Amortized shows results (`results.present()`, the card) | a new field in the results view | steps 4–6 only, no GPU. The run records are still valid; only `REPORT.md` and the Studio fixture change |
+| One entry failed only because 10 questions were too few | `tinyTruthfulQA` ("index 10 is out of bounds") | step 3 for that entry with all its questions (example below), then steps 4–6 |
+| A new provider | a third framework next to lm-eval and LightEval | [Adding a provider](#adding-a-provider) |
+| Anything else: other server or Studio code, users running benchmarks | | nothing |
 
-**Stopping and resuming.** Results are saved after every Hub job, in the server pod
-(`/data/conformance/<provider>.json`) and copied back to `files/evalhub/conformance/`
-when the command ends. Run the same command again to continue; recorded entries are
-skipped. The record is discarded, and every entry runs again, when the adapter
-digest or the model changes. Only one run per provider at a time.
+Not sure? Run `pytest tests/test_evalhub_contract.py`. It fails when the files no longer
+match the pins, the catalog or the code.
 
-**An entry that needs more questions.** Each entry's record keeps the question count
-it ran with, so one entry can run again with another count without touching the
-rest. For example, `tinyTruthfulQA` fails with 10 questions ("index 10 is out of
-bounds") because its scoring needs all 100. Run it again with all its questions:
+### The steps
+
+Run them from the repository root, with the dev environment active. On the KIND
+devbox, run from the `evalhub-test/` checkout.
+
+1. **Describe** (no GPU; needs docker and network):
+
+   ```bash
+   make evalhub-describe              # both providers
+   make evalhub-describe-lm-eval      # or just one
+   ```
+
+2. **Deploy what you want to check.** Conform drives a running deployment, so it must have:
+   - a server image built from this checkout (the runner runs inside the server pod);
+   - Hub registering the adapter images you pinned (step 4 of
+     [Deployment and activation](#deployment-and-activation)). Hub reads providers
+     only when it starts, so recreate its pod after changing them;
+   - one free GPU in the jobs namespace. The model is served there for the whole run,
+     so users' GPU jobs wait meanwhile.
+
+3. **Conform** (one GPU; both providers took 26 minutes on the devbox):
+
+   ```bash
+   setsid nohup make evalhub-conform \
+     EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-xyang" \
+     > conform.log 2>&1 < /dev/null &
+   ```
+
+   - On OpenShift, use `EVALHUB_KUBECTL="oc -n <namespace>"`.
+   - `setsid nohup` keeps it running if your SSH session drops.
+   - `conform.log` gets one line per entry, for example
+     `[4] pile_arxiv: failed, 0 metrics, 200 s Evaluation failed: The repository for EleutherAI/pile contains custom code ...`.
+   - If it stops, run the same command again. It skips entries already on record.
+   - Only one run per provider at a time.
+
+4. **Contract** (no GPU): `make evalhub-contract`. It stops with a list of problems if
+   the card, Hub, MLflow and the results API disagree on any score.
+
+5. **Test:**
+
+   ```bash
+   pytest tests/test_evalhub_contract.py tests/test_evalhub_catalog.py
+   (cd studio && npm test)
+   ```
+
+6. **Review, commit, deploy.**
+   - Read `git diff deploy/helm/amortized/files/evalhub/REPORT.md`. Each entry has one
+     row: whether it runs (or why not), its score and why, its copies, the suites that
+     contain it.
+   - Commit together: `described/`, `conformance/`, `compat/`, `REPORT.md` and
+     `studio/src/test/fixtures/evalhub-results.json`.
+   - Redeploy the chart, so the server gets the new ConfigMap `amortized-evalhub-compat`.
+
+**Re-running chosen entries.** Example: run `tinyTruthfulQA` again with all its
+questions, leaving the rest alone:
 
 ```bash
 make evalhub-conform EVALHUB_KUBECTL="..." EVALHUB_PROVIDERS=amortized-lm-eval \
   EVALHUB_CONFORM_ARGS="--only tinyTruthfulQA --rerun --questions 0"
 ```
 
-`REPORT.md` then shows it as `yes (all questions)`, and its card in the Studio
-fixture has no question limit.
+Each entry keeps the question count it ran with, so `REPORT.md` then shows it as
+`yes (all questions)`.
+
+**Conform options**, passed as `EVALHUB_CONFORM_ARGS="..."`:
+
+| Option | Default | Use |
+|---|---|---|
+| `--only a,b` | all | run only these entry ids |
+| `--rerun` | off | run entries already on record too (with `--only`, just those) |
+| `--questions N` | 10 | questions per entry; 0 = all of them |
+| `--limit N` | 0 = all | run at most N entries |
+| `--chunk N` | 8 | entries per Hub job; Hub starts one adapter pod per entry at once |
+| `--model ID` | `Qwen/Qwen3-0.6B` | the model to serve. Changing it re-runs every entry |
+| `--timeout S` | 2400 | seconds before a Hub job is cancelled; its open entries are recorded as `timed_out` |
+
+**Where the run records live.** In the server pod (`/data/conformance/<provider>.json`),
+saved after every Hub job, and copied back to `conformance/` when the command ends.
 
 **How long it takes** (2026-11-09, KIND devbox, Qwen/Qwen3-0.6B, 10 questions per entry):
 
-- the full run: 146 entries in 26 minutes (133 lm-eval in 15, 13 LightEval in 11;
-  the pilot's 15 were already on record);
 - starting the model server: 2.5 minutes per provider (5 the first time, pulling the image);
-- a Hub job of 8 entries: 30 to 45 seconds once the adapter image is on the node,
-  2.5 minutes more on first use. A Hub job lasts as long as its slowest entry; LightEval
-  jobs with `aime24`, `aime25` or `lcb:codegeneration_v6`, which generate long answers,
-  take about 5 minutes;
-- re-running entries whose score the adapter names differently: under a minute.
-
-**Review and commit.** `make evalhub-contract` stops with a list of problems if the
-card, Hub, MLflow and the results API disagree on any score, or if `SAME_SCORING`
-names entries that no longer ask the same questions. Otherwise, read the diff of
-`files/evalhub/REPORT.md`: one row per entry with whether it runs (or why not), its
-score and why, its copies and the suites that contain it. Commit together:
-`files/evalhub/{described,conformance,compat}/`, `files/evalhub/REPORT.md` and
-`studio/src/test/fixtures/evalhub-results.json`. Then redeploy the chart, so the
-server mounts the new files (ConfigMap `amortized-evalhub-compat`).
+- a Hub job of 8 entries: 30 to 45 seconds once the adapter image is on the node, 2.5
+  minutes more on first use. A job lasts as long as its slowest entry: LightEval's
+  `aime24`, `aime25` and `lcb:codegeneration_v6` generate long answers and take about
+  5 minutes.
 
 ### Adding a provider
 
-The commands work per provider, but each framework needs a one-time setup so they
-know how to read its tasks and its metric names. For a provider `amortized-<x>`:
+Example: a framework `<x>`, registered as provider `amortized-<x>`. First teach
+Amortized the framework (code changes, once). Then build its contract.
 
-1. **Its catalog.** Add its Eval Hub catalog file to `make evalhub-catalog` (the
-   `for name in ...` list), so it is vendored at `EVALHUB_CATALOG_COMMIT` like the
-   other two.
-2. **A describe helper.** Write `scripts/evalhub/<x>_compat.py`, which runs inside
-   the pinned adapter image and writes `described/amortized-<x>.json` with schema
-   `amortized.evalhub.described/v1`: per entry its tasks, datasets, scoring, settings
-   profile and metric directions, or `unknown` with a reason. Copy
-   `lm_eval_compat.py`; add an `evalhub-describe-<x>` target and its image variable
-   to the Makefile.
-3. **A settings profile**: what users may change and what the model must support.
-   - its parameter model goes in `catalog.SETTINGS_PROFILES` and
-     `evaluation/spec.py`;
-   - its model needs (for example completions with logprobs) go in
+**Part 1: code changes, once**
+
+1. **Its catalog.** Add its Eval Hub catalog file to the `for name in ...` list of
+   `make evalhub-catalog` and to `contract.CATALOGS`. Then run `make evalhub-catalog`.
+2. **A describe helper**, `scripts/evalhub/<x>_compat.py`. Start from
+   `lm_eval_compat.py`. It runs inside the adapter image, so it can't import Amortized.
+   For each entry it writes its tasks, dataset (name, subset, split), scoring type,
+   settings profile and metric directions, or `unknown` with a reason (schema
+   `amortized.evalhub.described/v1`). In the Makefile, add an image variable and an
+   `evalhub-describe-<x>` target, and add that target to `evalhub-describe`.
+3. **Its settings**: what users may change, and what the model must support.
+   - its parameter model goes in `spec.PROVIDER_PARAMETERS` and `catalog.SETTINGS_PROFILES`;
+   - what it needs from the model (for example completions with logprobs) goes in
      `catalog._PROFILE_NEEDS`;
-   - if its adapter needs the model's tokenizer, add it to
-     `preparation.needs_tokenizer`.
-4. **Registration.** Add the id to:
-   - `EVALHUB_PROVIDERS` (Makefile) and `contract.CATALOGS`;
-   - the chart: the Hub `providers` list and a provider entry in
-     `templates/evalhub.yaml`, `values.yaml` `providers` and its image value;
-   - `config.evalhub_providers`.
-
-   The provider entry's `entrypoint` must run the adapter's main script through
-   `files/evalhub/adapter_launcher.py`, as the two existing entries do. Where the
-   script and its Python live differs per image.
-
-   The order of `providers` decides which copy Morty offers first.
-5. **Its metric names, if it renames them.** The score rule matches the catalog's
-   metric against the names the adapter reports. If the adapter prefixes the task
+   - if its adapter needs the model's tokenizer, add it to `preparation.needs_tokenizer`.
+4. **Register it.**
+   - `EVALHUB_PROVIDERS` in the Makefile;
+   - `config.evalhub_providers`. The order decides which copy Morty offers first;
+   - the chart: a provider entry in `templates/evalhub.yaml`, plus `providers` and its
+     image value in `values.yaml`. The entry's `entrypoint` must run the adapter's main
+     script through `files/evalhub/adapter_launcher.py`, as the two existing entries do.
+     Where the script and its Python live differs per image.
+5. **Its metric names**, only if the adapter renames them. If it puts the task in front
    (LightEval reports `arc:easy.acc` for `acc`), add its settings profile to
-   `contract.PREFIXED`. If it uses other names for the same metric (LightEval's
-   `mcc` for `matthews_correlation`), add them to `contract.ALIASES`. When unsure,
-   run conform first: REPORT.md shows every entry whose score was not found and the
-   names the adapter reported instead.
-6. **Copies.** If an entry asks the same questions as another provider's entry and
-   scores them the same way, list the pair in `contract.SAME_SCORING`; otherwise both
-   are offered separately.
+   `contract.PREFIXED`. If it uses another name for the same metric (LightEval's `mcc`
+   for `matthews_correlation`), add it to `contract.ALIASES`. Not sure? Skip this, run
+   Part 2, and read `REPORT.md`: it lists each entry whose score wasn't found, with the
+   names the adapter reported instead. Then add the names, and re-run those entries with
+   `--only <ids> --rerun`.
+6. **Copies**, optional. If one of its entries asks the same questions as another
+   provider's entry and scores them the same way, add the pair to
+   `contract.SAME_SCORING`. Otherwise Morty offers both separately.
 
-Then run describe, conform and contract as above. The launcher's code needs no
-change: it reads the score metric from the Hub job, whatever the framework.
+**Part 2: build its contract.** Do steps 1–6 of [The steps](#the-steps) for the new
+provider only:
+
+```bash
+make evalhub-describe-<x>
+make evalhub-conform EVALHUB_PROVIDERS=amortized-<x> EVALHUB_KUBECTL="..."
+make evalhub-contract
+```
+
+The launcher needs no change: it reads the score metric from the Hub job, whatever
+the framework.
 
 ## Components and images
 
