@@ -656,6 +656,18 @@ class TestTrainingHubConfig:
         ]
         assert "def normalize(" in result.config_files["normalize_parquet_strings.py"]
 
+    async def test_embedding_sft_leaves_caller_data_path_alone(self) -> None:
+        from amortized.jobs.training import build
+
+        # Only the job's own downloaded copy is rewritten, never a caller's dataset.
+        cfg = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.parquet",
+        }
+        result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
+        assert result.pre_commands == []
+
     async def test_other_algorithms_skip_data_normalization(self) -> None:
         from amortized.jobs.training import build
 

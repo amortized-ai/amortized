@@ -7,6 +7,7 @@ encoding keeps the label column a string and training crashes with
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import subprocess
 import sys
@@ -80,3 +81,59 @@ def test_non_local_path_is_skipped() -> None:
     )
     assert proc.returncode == 0
     assert "skipping" in proc.stdout
+
+
+def test_streams_multiple_row_groups_and_leaves_no_temp_file(tmp_path: Path) -> None:
+    data_dir = tmp_path / "generated_data"
+    data_dir.mkdir()
+    path = data_dir / "batch_00000.parquet"
+    labels = ["access", "network", "software", "hardware"] * 5
+    table = pa.table(
+        {
+            "category": pa.array(labels, pa.large_string()),
+            "text": pa.array([f"ticket {i}" for i in range(len(labels))], pa.large_string()),
+        }
+    )
+    pq.write_table(table, path, row_group_size=3)
+    _asset().normalize(str(data_dir))
+    out = pq.read_table(path)
+    assert out.schema.field("category").type == pa.string()
+    assert out.column("category").to_pylist() == labels
+    assert sorted(p.name for p in data_dir.iterdir()) == ["batch_00000.parquet"]
+
+
+async def test_runs_through_local_backend(tmp_path: Path) -> None:
+    # The local backend rewrites /amortized/<asset> and /amortized/work into the job's
+    # work dir; the embedding_sft pre-step must resolve there like the other assets.
+    from amortized.backends import JobSpec
+    from amortized.backends.local import LocalBackend
+    from amortized.jobs.training import build
+
+    path = _write_sdg_like_at(tmp_path / "data" / "generated_data")
+    cfg = {
+        "algorithm": "embedding_sft",
+        "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+        "data_path": "/amortized/work/data/generated_data",
+    }
+    result = await build({"id": "job-local", "config": cfg}, dict(cfg), {})
+    backend = LocalBackend()
+    handle = await backend.submit(
+        JobSpec(
+            job_id="job-local",
+            command=["sh", "-c", " && ".join(result.pre_commands)],
+            work_dir=str(tmp_path),
+            config_files=result.config_files,
+        )
+    )
+    for _ in range(100):
+        status = await backend.status(handle)
+        if not status.running:
+            break
+        await asyncio.sleep(0.1)
+    assert status.exit_code == 0, (tmp_path / "stderr.log").read_text()
+    assert pq.read_schema(path).field("category").type == pa.string()
+
+
+def _write_sdg_like_at(data_dir: Path) -> Path:
+    data_dir.parent.mkdir(parents=True)
+    return _write_sdg_like(data_dir)

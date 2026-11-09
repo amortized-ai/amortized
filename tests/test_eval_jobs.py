@@ -783,6 +783,28 @@ class TestRetryEvalJob:
         assert config["topic"] == "rfe"
 
     @pytest.mark.asyncio
+    async def test_retry_rejects_unresolvable_endpoint_base_url(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A job stored before endpoint validation existed can carry base_url "gateway";
+        # retrying it hits the same 422 as create instead of failing every sample.
+        job_id = await self._seed_failed_eval(client)
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE jobs
+                      SET request_config = jsonb_set(
+                          request_config, '{judge}',
+                          '{"base_url": "gateway", "model": "judge-model"}'::jsonb)
+                    WHERE id = $1""",
+                job_id,
+            )
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert response.status_code == 422
+        assert "judge.base_url 'gateway' is neither" in response.text
+
+    @pytest.mark.asyncio
     async def test_retry_legacy_row_strips_runtime_keys(
         self, client: httpx.AsyncClient
     ) -> None:

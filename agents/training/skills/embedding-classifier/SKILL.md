@@ -38,7 +38,8 @@ Follow the workflow's one-question-per-turn rules. Gather:
 
 1. **Training data** — should come from a completed classification SDG job via
    `parent_job_id` (or a dataset `data_run_id`). If the orchestrator passed an SDG
-   job ID, use it without asking. Set `label_column` to the category column name
+   job ID, use it without asking. Set one of the two, never both: to train on a
+   split or an uploaded dataset, set only `data_run_id`. Set `label_column` to the category column name
    (`category` for the SDG skill) and `text_column` to the text column (`text`).
    String categories are label-encoded to integers automatically.
 2. **Base model** — default `sentence-transformers/all-MiniLM-L6-v2` (small, fast,

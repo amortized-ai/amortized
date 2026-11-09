@@ -885,6 +885,7 @@ async def retry_job(
             raise HTTPException(status_code=422, detail=errors)
     elif job_type == JobType.eval.value:
         errors = await _validate_eval_data(config, parent_job_id, db)
+        errors.extend(_validate_eval_endpoints(config))
         if errors:
             raise HTTPException(status_code=422, detail=errors)
         await _persist_metric_set(config, parent_job_id, db)

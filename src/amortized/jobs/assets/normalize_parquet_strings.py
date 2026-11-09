@@ -28,21 +28,29 @@ def _parquet_files(path: str) -> list[str]:
 
 
 def normalize(path: str) -> list[str]:
-    """Cast top-level large_string columns to string in place; return the rewritten files."""
+    """Cast top-level large_string columns to string in place; return the rewritten files.
+
+    Streams record batches into a temporary file and swaps it in atomically, so a
+    large file never has to fit in memory and an interrupted run leaves it intact."""
     rewritten = []
     for file in _parquet_files(path):
-        table = pq.read_table(file)
-        if not any(pa.types.is_large_string(field.type) for field in table.schema):
+        source = pq.ParquetFile(file)
+        arrow_schema = source.schema_arrow
+        if not any(pa.types.is_large_string(field.type) for field in arrow_schema):
             continue
         schema = pa.schema(
             [
                 pa.field(field.name, pa.string(), field.nullable)
                 if pa.types.is_large_string(field.type)
                 else field
-                for field in table.schema
+                for field in arrow_schema
             ]
         )
-        pq.write_table(table.cast(schema), file)
+        tmp = f"{file}.normalizing"
+        with pq.ParquetWriter(tmp, schema) as writer:
+            for batch in source.iter_batches():
+                writer.write_table(pa.Table.from_batches([batch]).cast(schema))
+        os.replace(tmp, file)
         rewritten.append(file)
     return rewritten
 
