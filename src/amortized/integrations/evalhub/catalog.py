@@ -32,11 +32,11 @@ SCHEMA = "amortized.evalhub.compat/v2"
 DESCRIBED = "amortized.evalhub.described/v1"
 # present_options renders at most 4 choices (api/ui.py); more become a typed question.
 CARD_LIMIT = 4
-FACETS = ("area", "kind", "provider")
+# The user picks a benchmark, never a framework: each entry carries its provider.
+FACETS = ("area", "kind")
 QUESTIONS = {
     "area": "Which area should the benchmark cover?",
     "kind": "Which kind of benchmark?",
-    "provider": "Which evaluation framework?",
 }
 COMPLETIONS_LOGPROBS = "completions_logprobs"
 HF_TOKENIZER = "hf_tokenizer"
@@ -116,9 +116,7 @@ class Entry:
     def facet(self, facet: str) -> tuple[str, ...]:
         if facet == "area":
             return self.areas or ("",)
-        if facet == "kind":
-            return (self.kind,)
-        return (self.provider.id,)
+        return (self.kind,)
 
 
 _HF_ID = re.compile(r"^[\w.-]+/[\w.-]+$")
@@ -424,8 +422,6 @@ def view(
 
 
 def _label(facet: str, value: str, pool: list[Entry]) -> str:
-    if facet == "provider":
-        return next((e.provider.name for e in pool if e.provider.id == value), value)
     if not value:
         return "Other"
     return value.replace("_and_", " & ").replace("_", " ").capitalize()
@@ -528,8 +524,20 @@ def find(
     if answer:
         step = _question(pool, picks, shortlists)
         if step is None:
-            chosen = [e for e in pool if _matches(answer, e.id, e.name)]
-            if len(chosen) != 1:
+            # An exact id first: lm-eval arc_easy and LightEval arc:easy normalize alike.
+            chosen = [e for e in pool if answer.strip() == e.id] or [
+                e for e in pool if _matches(answer, e.id, e.name)
+            ]
+            if len(chosen) > 1:
+                which = "; ".join(
+                    f"{e.id} (scored by {view(e, capability, groups)['metric'] or 'no score'})"
+                    for e in chosen
+                )
+                raise ChoiceError(
+                    f"{answer!r} matches {len(chosen)} benchmarks: {which}."
+                    " Ask the user which one, then send its id."
+                )
+            if not chosen:
                 ids = ", ".join(e.id for e in pool)
                 raise ChoiceError(f"{answer!r} is not one of the listed benchmarks: {ids}")
             return {

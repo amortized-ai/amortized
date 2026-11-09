@@ -285,7 +285,7 @@ async def test_unknown_name_offers_no_substitute(hub):
 
 
 # --------------------------------------------------------------------------- #
-# Browsing: area -> kind -> provider; card when <= 4, typed question otherwise
+# Browsing: area -> kind, never the framework; card when <= 4, typed question otherwise
 # --------------------------------------------------------------------------- #
 
 
@@ -324,6 +324,49 @@ async def test_more_than_four_benchmarks_become_a_typed_list(hub):
     assert "options" not in reasoning
     chosen = catalog.find(loaded, SERVED, picks=reasoning["picks"], answer="ARC challenge")
     assert chosen["benchmark"]["id"] == "arc:challenge"
+
+
+async def test_browsing_never_asks_for_the_framework(both):
+    loaded = await entries(both)
+
+    def walk(result, path):
+        if result["step"] != "question":
+            assert result["step"] == "benchmarks", path
+            return [result]
+        assert result["facet"] in ("area", "kind"), path
+        found = []
+        for choice in result.get("options") or result.get("choices"):
+            label = choice.get("title") or choice.get("label")
+            found += walk(
+                catalog.find(loaded, SERVED, picks=result["picks"], answer=label), [*path, label]
+            )
+        return found
+
+    lists = walk(catalog.find(loaded, SERVED), [])
+    assert sum(len(r["benchmarks"]) for r in lists) == catalog.find(loaded, SERVED)["available"]
+
+
+async def test_two_frameworks_benchmarks_in_one_list_are_told_apart_by_id(both):
+    loaded = await entries(both)
+    reasoning = catalog.find(
+        loaded, SERVED, picks={"area": "knowledge_and_reasoning"}, answer="Reasoning"
+    )
+    listed = {(b["provider_id"], b["id"]) for b in reasoning["benchmarks"]}
+    assert {("amortized-lm-eval", "arc_easy"), ("amortized-lighteval", "arc:easy")} <= listed
+    for answer, provider_id in (
+        ("arc_easy", "amortized-lm-eval"),
+        ("arc:easy", "amortized-lighteval"),
+    ):
+        chosen = catalog.find(loaded, SERVED, picks=reasoning["picks"], answer=answer)
+        assert (chosen["benchmark"]["provider_id"], chosen["benchmark"]["id"]) == (
+            provider_id,
+            answer,
+        )
+    # Same name, both runnable: Morty asks which one by id and score, never by framework.
+    with pytest.raises(catalog.ChoiceError) as ask:
+        catalog.find(loaded, SERVED, picks=reasoning["picks"], answer="Basic science Q&A")
+    assert "arc_easy (scored by acc_norm); arc:easy (scored by arc:easy.acc)" in str(ask.value)
+    assert "framework" not in str(ask.value).lower()
 
 
 def test_more_than_four_choices_become_a_typed_question():

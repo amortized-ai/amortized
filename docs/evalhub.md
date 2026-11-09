@@ -132,10 +132,14 @@ Morty uses two read-only tools, never a provider list:
 
 - `find_benchmarks` (`POST /api/v1/evaluations/benchmarks/find`) looks a benchmark
   up by exact normalized name, or browses. Browsing asks one question at a time in
-  the fixed order area → kind → provider, picking the first that splits the list.
-  Four or fewer choices come back as a card (`present_options`); more come back as
-  a typed question. The user's reply goes back as `answer` with the returned
-  `picks`; an off-list reply is a 422 listing the allowed values. Hub collections
+  the fixed order area → kind, picking the first that splits the list, then lists
+  the benchmarks. It never asks for the framework: each benchmark carries its
+  provider. Four or fewer choices come back as a card (`present_options`); more
+  come back as a typed question. The user's reply goes back as `answer` with the
+  returned `picks`; an off-list reply is a 422 listing the allowed values. A
+  benchmark is chosen by its exact id first (lm-eval `arc_easy` and LightEval
+  `arc:easy` are both listed under Reasoning); a reply that still matches two is a
+  422 naming each id with its score. Hub collections
   are offered as shortlists at the first question, for navigation only.
 - `get_benchmark` (`POST /api/v1/evaluations/benchmarks/get`) returns one entry's
   details, compatibility and the only settings the user may change, with bounds and
