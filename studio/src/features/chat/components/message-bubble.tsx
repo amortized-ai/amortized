@@ -13,7 +13,13 @@ import { PromptReviewCard } from "./prompt-review-card"
 import { JobMonitorCard } from "./job-monitor-card"
 import { ThinkingSteps } from "./thinking-steps"
 import { extractJobInfo } from "../utils/parse-tool-result"
+import { rehypeBreakIds } from "../utils/break-ids"
 import { modelDisplayName } from "../models"
+
+// Morty's markdown. Tables stay inside the bubble: long ids wrap at their separators
+// (rehypeBreakIds), and a table still too wide scrolls instead of spilling out.
+const MARKDOWN_CLASS =
+  "prose prose-sm dark:prose-invert max-w-none [&_strong]:text-foreground [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:text-xs [&_table]:rounded-lg [&_th]:px-3 [&_th]:py-1.5 [&_td]:px-3 [&_td]:py-1.5 [&_thead]:bg-muted/50"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
@@ -204,7 +210,7 @@ export function MessageBubble({
       )}
       <div
         className={cn(
-          "rounded-2xl px-4 py-3 transition-colors duration-200",
+          "min-w-0 rounded-2xl px-4 py-3 transition-colors duration-200",
           (parsedOptions.length > 0 || message.optionCards.length > 0 || jobSubmissions.length > 0) ? "max-w-3xl" : "max-w-2xl",
           isUser
             ? "bg-primary text-primary-foreground rounded-br-md hover:bg-primary/90"
@@ -222,16 +228,16 @@ export function MessageBubble({
           </div>
         )}
         {!isUser && !displayContent && optionsQuestion && (
-          <div className="prose prose-sm dark:prose-invert max-w-none [&_strong]:text-foreground">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{optionsQuestion}</ReactMarkdown>
+          <div className={MARKDOWN_CLASS}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBreakIds]}>{optionsQuestion}</ReactMarkdown>
           </div>
         )}
         {displayContent && (
           isUser ? (
             <div className="whitespace-pre-wrap text-sm">{displayContent}</div>
           ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none [&_table]:text-xs [&_th]:px-3 [&_th]:py-1.5 [&_td]:px-3 [&_td]:py-1.5 [&_table]:rounded-lg [&_table]:overflow-hidden [&_thead]:bg-muted/50 [&_strong]:text-foreground">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <div className={MARKDOWN_CLASS}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBreakIds]}>
                 {displayContent}
               </ReactMarkdown>
             </div>
