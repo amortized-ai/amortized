@@ -466,7 +466,8 @@ def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
             errors.append(
                 f"{key}.base_url {base_url!r} is neither an http(s) URL nor a configured"
                 f" provider — set it to the model's provider name (one of: {names}) or to"
-                " the endpoint's full URL"
+                " the endpoint's full URL (get_eval_endpoint_suggestions lists the URLs of"
+                " pre-registered endpoints in known_endpoints)"
             )
     return errors
 

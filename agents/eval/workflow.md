@@ -298,9 +298,11 @@ When the user picked a training job or named their fine-tuned model, the
 source is resolved: set `training_job_id` (or `model_name_or_path` for a
 named HF model) and go straight to Step 3. If they named a model from one
 of their providers (no endpoint URL), resolve it WITHOUT re-asking which
-model: call `list_models`, find it, and set the eval's `endpoint` to
-`base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` = its
-id — then go to Step 3. Only
+model and set the eval's `endpoint` — then go to Step 3. If the model is in
+`known_endpoints` (from `get_eval_endpoint_suggestions`), use the
+`base_url` it gives; otherwise find it with `list_models` and set
+`base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` =
+its id. Only
 present the options below when the subject is still open — the user said
 "evaluate a model" without naming one, or wants a non-trained endpoint.
 
@@ -313,11 +315,11 @@ Present the model-source options as clickable choices:
 2. **A model by name** — any HF hub id (e.g. Qwen/Qwen3.5-4B): the
    config gets `model_name_or_path` set.
 3. **A provider model** — a model from the user's configured providers
-   (`list_models`), e.g. "gpt-4o-mini (openai)" — selecting one sets the
-   eval's `endpoint` to `base_url` = the provider name and `model` = the
-   model id; the platform resolves the URL and key. If
-   `get_eval_endpoint_suggestions` returns `known_endpoints`, offer those
-   too, with the `base_url` each one gives. These evals need no GPU.
+   (`list_models`), e.g. "gpt-4o-mini (openai)". For a model listed in
+   `known_endpoints` (from `get_eval_endpoint_suggestions`), set the eval's
+   `endpoint` to the `base_url` it gives; for any other model, set
+   `base_url` = its provider name and `model` = its id — the platform
+   resolves the URL and key. These evals need no GPU.
 4. "I'll give the endpoint URL" — an external OpenAI-compatible
    endpoint: ask for the URL and the model name it serves.
 
