@@ -61,6 +61,16 @@ class TestMetricSetSignature:
         names = evals_api._signature_names(sig)
         assert set(names) == {"exact_match", "accuracy"}
 
+    def test_classification_eval_reports_its_metrics(self) -> None:
+        # Classification evals list no metrics in the config but always score these;
+        # the Evaluation page header used to say "0 metrics" for them.
+        sig = evals_api._metric_set_signature({"eval_mode": "classification"})
+        assert evals_api._signature_names(sig) == ["accuracy", "macro_f1"]
+
+    def test_generative_eval_without_metrics_stays_empty(self) -> None:
+        sig = evals_api._metric_set_signature({"eval_mode": "generative"})
+        assert evals_api._signature_names(sig) == []
+
 
 class TestEntryFromJob:
     def test_scores_from_tags(self) -> None:

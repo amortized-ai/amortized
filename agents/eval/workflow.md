@@ -125,8 +125,9 @@ Two legitimate entries:
   If there are no trained models at all, go straight to evaluating an
   arbitrary endpoint.
 
-The model does NOT have to come from training. Any HF model or
-OpenAI-compatible endpoint can be evaluated (e.g. a gateway model).
+The model does NOT have to come from training. Any HF model, a model
+from one of the user's configured providers, or an OpenAI-compatible
+endpoint can be evaluated.
 
 **Once the subject is settled, your next step is the eval dataset
 (Step 1).** If no eval dataset exists in this conversation, you cannot
@@ -295,10 +296,11 @@ nothing to poll, no endpoint URLs involved.
 **If Step 0 already settled the subject, do NOT re-ask the model source.**
 When the user picked a training job or named their fine-tuned model, the
 source is resolved: set `training_job_id` (or `model_name_or_path` for a
-named HF model) and go straight to Step 3. If they named a gateway model
-(no endpoint URL), resolve it WITHOUT re-asking which model: call
-`get_eval_endpoint_suggestions`, match the name against `known_endpoints`,
-and set the eval's `endpoint` (base_url + model) — then go to Step 3. Only
+named HF model) and go straight to Step 3. If they named a model from one
+of their providers (no endpoint URL), resolve it WITHOUT re-asking which
+model: call `list_models`, find it, and set the eval's `endpoint` to
+`base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` = its
+id — then go to Step 3. Only
 present the options below when the subject is still open — the user said
 "evaluate a model" without naming one, or wants a non-trained endpoint.
 
@@ -310,10 +312,12 @@ Present the model-source options as clickable choices:
    minutes; the job's monitor card shows the progress).
 2. **A model by name** — any HF hub id (e.g. Qwen/Qwen3.5-4B): the
    config gets `model_name_or_path` set.
-3. **A gateway model** — models served through the platform gateway
-   (from `get_eval_endpoint_suggestions` → `known_endpoints`), e.g.
-   "gpt-oss (openai/gpt-oss-120b) via gateway" — selecting one fills in
-   the eval's `endpoint` (base_url + model). Gateway evals need no GPU.
+3. **A provider model** — a model from the user's configured providers
+   (`list_models`), e.g. "gpt-4o-mini (openai)" — selecting one sets the
+   eval's `endpoint` to `base_url` = the provider name and `model` = the
+   model id; the platform resolves the URL and key. If
+   `get_eval_endpoint_suggestions` returns `known_endpoints`, offer those
+   too, with the `base_url` each one gives. These evals need no GPU.
 4. "I'll give the endpoint URL" — an external OpenAI-compatible
    endpoint: ask for the URL and the model name it serves.
 

@@ -40,6 +40,31 @@ class SDGBuildError(JobBuildError):
     """Raised when SDG config building fails and the job should be marked failed."""
 
 
+def sdg_output_dir(config: dict[str, Any]) -> str:
+    """Directory holding the dataset Data Designer produced for this config.
+
+    Only a schema_transform processor writes a new dataset (to
+    ``processors-files/<name>/``); drop_columns edits the main dataset in place and
+    leaves its processor folder empty, so it must not redirect the upload.
+    """
+    transforms = [
+        p.get("name", "")
+        for p in config.get("processors", [])
+        if p.get("processor_type") == "schema_transform" and p.get("name")
+    ]
+    if transforms:
+        return f"/amortized/work/dataset/processors-files/{transforms[-1]}"
+    return "/amortized/work/dataset/parquet-files"
+
+
+def require_nonempty_dir_cmd(path: str) -> str:
+    """Shell step that fails the job when ``path`` is missing or empty, instead of
+    letting the upload succeed with nothing and the job report success."""
+    quoted = shlex.quote(path)
+    message = shlex.quote(f"SDG produced no output files in {path}")
+    return f'[ -n "$(ls -A {quoted} 2>/dev/null)" ] || {{ echo {message} >&2; false; }}'
+
+
 async def build(
     job: dict[str, Any],
     config: dict[str, Any],
@@ -185,17 +210,12 @@ async def build(
         " --artifact-path /amortized/work"
         " --no-tui"
     )
-    processor_names = [p.get("name", "") for p in config.get("processors", [])]
-    proc_dir = f"processors-files/{processor_names[-1]}" if processor_names else ""
-    upload_dir = (
-        f"/amortized/work/dataset/{proc_dir}"
-        if proc_dir
-        else "/amortized/work/dataset/parquet-files"
-    )
+    upload_dir = sdg_output_dir(config)
 
     all_cmds = [*doc_setup_cmds, dd_cmd]
     cmd = ["sh", "-c", " && ".join(all_cmds)]
 
+    check_cmd = require_nonempty_dir_cmd(upload_dir)
     post_cmd = (
         f"mlflow artifacts log-artifacts"
         f" -l {shlex.quote(upload_dir)}"
@@ -224,7 +244,7 @@ async def build(
         config_files=config_files,
         env=env,
         pre_commands=pre_commands,
-        post_commands=[post_cmd],
+        post_commands=[check_cmd, post_cmd],
         resources=Resources(gpus=0),
         image=config_mod.job_image("data-designer"),
         resolved_config=resolved_config,

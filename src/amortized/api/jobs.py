@@ -19,6 +19,7 @@ from amortized.core.jobs import (
     InvalidJobStateError,
     JobNotFoundError,
     deserialize_handle,
+    gpu_budget_error,
 )
 from amortized.core.jobs import (
     cancel_job as core_cancel_job,
@@ -35,6 +36,7 @@ from amortized.core.jobs import (
 from amortized.core.jobs import (
     list_jobs as core_list_jobs,
 )
+from amortized.core.model_catalog import enabled_provider_defs, resolve_provider
 from amortized.core.placeholders import (
     PROMPT_ID_PREFIX,
     find_prompt_refs,
@@ -241,6 +243,15 @@ async def _validate_training_data(
     data_path = config.get("data_path", "")
     data_run_id = str(config.get("data_run_id", "") or "")
 
+    if parent_job_id and data_run_id:
+        errors.append(
+            "set only one training data source, not both parent_job_id and data_run_id:"
+            f" keep data_run_id ({data_run_id}) — the dataset to train on, e.g. the train"
+            " split — and remove parent_job_id. The parent SDG job's full output also"
+            " holds any rows a split set aside for evaluation."
+        )
+        return errors
+
     if not parent_job_id and not data_path and not data_run_id:
         errors.append(
             "training jobs require parent_job_id (to chain from an SDG"
@@ -436,6 +447,28 @@ def _validate_eval_rubric_judge(config: dict[str, Any]) -> list[str]:
             " explicitly (there is no default judge)"
         ]
     return []
+
+
+def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
+    """Each endpoint's base_url must be an http(s) URL or a configured provider's name.
+
+    Anything else is called as a literal URL at runtime and fails every sample."""
+    errors: list[str] = []
+    for key in ("endpoint", "endpoint_base", "endpoint_tuned", "judge"):
+        endpoint = config.get(key)
+        if not isinstance(endpoint, dict):
+            continue
+        base_url = str(endpoint.get("base_url") or "").strip()
+        if not base_url or base_url.lower().startswith(("http://", "https://")):
+            continue
+        if resolve_provider(base_url) is None:
+            names = ", ".join(p["name"] for p in enabled_provider_defs()) or "none configured"
+            errors.append(
+                f"{key}.base_url {base_url!r} is neither an http(s) URL nor a configured"
+                f" provider — set it to the model's provider name (one of: {names}) or to"
+                " the endpoint's full URL"
+            )
+    return errors
 
 
 async def _validate_eval_data(
@@ -734,6 +767,7 @@ async def create_eval_job(
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
+    errors.extend(_validate_eval_endpoints(config))
     if config.get("eval_mode") != "classification" and not [
         c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
     ]:
@@ -1202,7 +1236,8 @@ async def clone_sdg_config_for_eval(
         "Any hyperparameter you mention to the user must be an explicit field in "
         "this config; fields you leave unset use the trainer default and the card "
         "shows them as such — do not state a value you did not set. "
-        "Set parent_job_id to chain from a completed SDG job."
+        "Set parent_job_id to chain from a completed SDG job, or data_run_id to train"
+        " on a dataset run (upload or split) — never both."
     ),
 )
 async def validate_training_job(
@@ -1216,6 +1251,9 @@ async def validate_training_job(
     errors = await _validate_training_data(config, parent_job_id, db)
     model_errors, model_warnings = await _validate_model_source(config, db)
     errors.extend(model_errors)
+    budget_error = gpu_budget_error(JobType.training, config)
+    if budget_error:
+        errors.append(budget_error)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -1301,6 +1339,10 @@ async def validate_eval_job(
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
+    errors.extend(_validate_eval_endpoints(config))
+    budget_error = gpu_budget_error(JobType.eval, config)
+    if budget_error:
+        errors.append(budget_error)
     if config.get("eval_mode") != "classification" and not [
         c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
     ]:

@@ -642,6 +642,28 @@ class TestTrainingHubConfig:
             result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
             assert result.command == ["thub", "embedding-sft", "--config", "/amortized/config.yaml"]
 
+    async def test_embedding_sft_normalizes_data_before_training(self) -> None:
+        from amortized.jobs.training import build
+
+        cfg = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/amortized/work/data/generated_data",
+        }
+        result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
+        assert result.pre_commands == [
+            "python3 /amortized/normalize_parquet_strings.py /amortized/work/data/generated_data"
+        ]
+        assert "def normalize(" in result.config_files["normalize_parquet_strings.py"]
+
+    async def test_other_algorithms_skip_data_normalization(self) -> None:
+        from amortized.jobs.training import build
+
+        cfg = {"algorithm": "sft", "model_name_or_path": "m", "data_path": "/data/train.jsonl"}
+        result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
+        assert result.pre_commands == []
+        assert "normalize_parquet_strings.py" not in result.config_files
+
 
 class TestResolveParentArtifacts:
     @pytest.mark.asyncio
@@ -706,6 +728,25 @@ class TestResolveParentArtifacts:
         assert pre_commands[0] == (
             "mlflow artifacts download -r dataset-run-xyz -a generated_data -d /amortized/work/data"
         )
+
+    @pytest.mark.asyncio
+    async def test_data_run_id_wins_over_parent(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # The split's data_run_id is what the job trains on; the parent SDG run also
+        # holds the held-out rows. The parent is never looked up (no DB pool here).
+        training_job = {"id": "training-1", "type": "training", "parent_job_id": "sdg-1"}
+        config: dict[str, object] = {
+            "algorithm": "embedding_sft",
+            "data_run_id": "split-train-run",
+        }
+
+        result_config, pre_commands = await _resolve_parent_artifacts(training_job, config)
+
+        assert result_config["data_path"] == "/amortized/work/data/generated_data"
+        assert pre_commands == [
+            "mlflow artifacts download -r split-train-run -a generated_data -d /amortized/work/data"
+        ]
 
     @pytest.mark.asyncio
     async def test_explicit_data_path_wins_over_data_run_id(self) -> None:

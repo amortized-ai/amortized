@@ -228,6 +228,63 @@ class TestUpstreamDependencyPrecondition:
         assert "succeeded" in str(resp.json()).lower()
 
     @pytest.mark.asyncio
+    async def test_validate_training_rejects_gpu_over_budget(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The budget check used to run only at create (the user's Confirm click), so the
+        # agent never saw it; the validate tool now 422s and names the knob to change.
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        body = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "./data.parquet",
+            "train_on_gpu": True,
+        }
+        resp = await client.post("/api/v1/jobs/training/validate", json=body)
+        assert resp.status_code == 422
+        assert "set train_on_gpu=false" in str(resp.json())
+
+        resp = await client.post(
+            "/api/v1/jobs/training/validate", json={**body, "train_on_gpu": False}
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_gpu_over_budget(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An eval that serves its model in-pod needs a GPU; with none in the budget the
+        # validate tool must say so instead of the create call failing at Confirm.
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        body = {"model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct", "eval_data_path": "./e.jsonl"}
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        assert "per-user GPU budget is 0" in str(resp.json())
+
+    @pytest.mark.asyncio
+    async def test_training_rejects_parent_and_data_run_together(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Both set once trained on the parent's full SDG output, held-out rows included.
+        # The agent-facing validate tool and create both 422 and name the one to keep.
+        body = {
+            **TRAINING_BODY,
+            "data_path": "",
+            "parent_job_id": "abc-123",
+            "data_run_id": "d" * 32,
+        }
+        for path in ("/api/v1/jobs/training/validate", "/api/v1/jobs/training"):
+            resp = await client.post(path, json=body)
+            assert resp.status_code == 422
+            detail = str(resp.json())
+            assert "keep data_run_id" in detail
+            assert "remove parent_job_id" in detail
+
+    @pytest.mark.asyncio
     async def test_validate_eval_rejects_unsucceeded_dataset_parent(
         self, client: httpx.AsyncClient
     ) -> None:
@@ -440,3 +497,39 @@ class TestJobLogs:
     async def test_logs_nonexistent_job(self, client: httpx.AsyncClient) -> None:
         response = await client.get("/api/v1/jobs/nonexistent/logs")
         assert response.status_code == 404
+
+
+class TestEvalEndpointBaseUrl:
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_unknown_base_url(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # "gateway" is neither a URL nor a configured provider: the eval pod called it as
+        # a URL and every sample errored. The validate tool now 422s with usable names.
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        body = {
+            "eval_data_path": "./e.jsonl",
+            "endpoint": {"base_url": "gateway", "model": "gpt-4o-mini"},
+            "judge": {"base_url": "gateway", "model": "gpt-4o-mini"},
+            "rubric": [{"name": "relevance", "description": "stays on topic"}],
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        detail = str(resp.json())
+        assert "endpoint.base_url 'gateway' is neither" in detail
+        assert "judge.base_url 'gateway' is neither" in detail
+        assert "openai" in detail
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_accepts_provider_name_and_url(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        body = {
+            "eval_data_run_id": "e" * 32,
+            "endpoint": {"base_url": "openai", "model": "gpt-4o-mini"},
+            "judge": {"base_url": "https://llm.example.com/v1", "model": "judge-model"},
+            "rubric": [{"name": "relevance", "description": "stays on topic"}],
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 200, resp.json()
