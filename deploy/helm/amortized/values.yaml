@@ -83,9 +83,10 @@ evalhub:
   pollInterval: 3
   preparationTimeout: 1800
   # Benchmark providers Morty may browse, in default order: when two providers carry the
-  # same questions (same Hugging Face dataset, subset and split), the first that can run
-  # them is the default. Catalogs are Eval Hub's own (files/evalhub/<provider>.yaml);
-  # compatibility comes from files/evalhub/compat/.
+  # same questions (same Hugging Face dataset, subset and split) and score them the same
+  # way, the first that can run them is the default. Catalogs are Eval Hub's own
+  # (files/evalhub/<provider>.yaml); each benchmark's needs and score come from the
+  # contract in files/evalhub/compat/ (make evalhub-contract).
   providers: [amortized-lm-eval, amortized-lighteval]
   taskProvider: amortized
   experiment: amortized/evaluation

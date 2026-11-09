@@ -533,13 +533,15 @@ def _benchmark_view(recipe: dict[str, Any] | None, config: dict[str, Any]) -> Be
     if recipe is None:
         return None
     from amortized.evaluation.spec import benchmark_limit
+    from amortized.integrations.evalhub.catalog import no_score_reason, recipe_score
 
     entry = recipe.get("catalog_entry") or {}
     parameters = recipe.get("parameters") or {}
     return BenchmarkView(
         id=str(recipe["benchmark_id"]),
         name=str(entry.get("name") or recipe["benchmark_id"]),
-        metric=str((entry.get("primary_score") or {}).get("metric") or ""),
+        metric=str((recipe_score(recipe) or {}).get("metric") or ""),
+        no_score=no_score_reason(recipe.get("compatibility")),
         num_few_shot=parameters.get("num_few_shot"),
         max_samples=benchmark_limit(parameters),
         recipe_fingerprint=str((config.get("evaluation") or {}).get("recipe_fingerprint") or ""),
@@ -1961,7 +1963,7 @@ async def get_eval_results(
         return {
             "job_id": job_id,
             "mlflow_run_id": row.get("mlflow_run_id", ""),
-            "results": present(execution) if execution else None,
+            "results": present(execution, row) if execution else None,
         }
 
     mlflow_run_id = row.get("mlflow_run_id", "")

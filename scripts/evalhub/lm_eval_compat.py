@@ -2,8 +2,9 @@
 
 Runs INSIDE the pinned TrustyAI lm-eval adapter image, so every answer comes from the
 lm-eval task configs that will run the benchmark, never from a benchmark's name or
-category. See `make evalhub-compat`. Writes JSON to stdout. Anything it cannot
-establish is recorded as "unknown" with a reason.
+category. See `make evalhub-describe`. Writes JSON to stdout. Anything it cannot
+establish is recorded as "unknown" with a reason. Metric names are not predicted here:
+`make evalhub-conform` records what the adapter reports.
 
 The adapter (main.py) always uses lm-eval's `local-completions` backend: every request
 goes to /v1/completions, and it loads the model's Hugging Face tokenizer. Benchmark IDs are
@@ -21,7 +22,7 @@ from typing import Any
 
 from hf_identity import dataset
 
-SCHEMA = "amortized.evalhub.compat/v1"
+SCHEMA = "amortized.evalhub.described/v1"
 # Names the parameter contract Amortized implements for this adapter
 # (amortized.evaluation.spec.LMEvalParameters). Bump it when the adapter's accepted
 # parameters change, so a stale Amortized treats entries as unknown.
@@ -40,6 +41,45 @@ def _subtasks(config: dict[str, Any]) -> list[str]:
     if isinstance(tasks, str):
         tasks = [tasks]
     return [t if isinstance(t, str) else str(t.get("task") or t.get("group")) for t in tasks]
+
+
+def directions(config: dict[str, Any]) -> dict[str, bool]:
+    """higher_is_better per metric the task config computes, under the config's own names."""
+    from lm_eval.api.registry import DEFAULT_METRIC_REGISTRY, is_higher_better
+
+    items = (
+        config.get("metric_list")
+        or DEFAULT_METRIC_REGISTRY[config.get("output_type") or "generate_until"]
+    )
+    found: dict[str, bool] = {}
+    for item in items:
+        metric = item.get("metric") if isinstance(item, dict) else item
+        name = str(getattr(metric, "__name__", None) or metric)
+        higher = item.get("higher_is_better") if isinstance(item, dict) else None
+        if higher is None:
+            try:
+                higher = is_higher_better(name)
+            except Exception:
+                higher = None
+        if higher is not None:
+            found[name] = bool(higher)
+    return found
+
+
+def max_few_shot(config: dict[str, Any]) -> int | None:
+    """How many worked examples the task config holds, when it lists them itself.
+
+    BBH's chain-of-thought tasks list 3, so asking for more fails in lm-eval ("number of
+    fewshot samples requested exceeds the 3 that are available"). None when the examples
+    come from a dataset split.
+    """
+    samples = (config.get("fewshot_config") or {}).get("samples")
+    if callable(samples):
+        try:
+            samples = samples()
+        except Exception:
+            return None
+    return len(samples) if isinstance(samples, list) else None
 
 
 def load_adapter(path: str) -> Any:
@@ -86,11 +126,13 @@ def describe(benchmark_id: str, manager: Any, adapter: Any) -> dict[str, Any]:
     if not split:
         return {**record, "status": "unknown", "reason": "the task config names no test split"}
     kwargs = config.get("dataset_kwargs") or {}
+    examples = max_few_shot(config)
     return {
         **record,
         "status": "known",
         "scoring": scoring,
         "answers_per_question": int(config.get("repeats") or 1),
+        **({"max_few_shot": examples} if examples is not None else {}),
         "settings_profile": SETTINGS_PROFILE,
         "datasets": [
             dataset(
@@ -101,6 +143,7 @@ def describe(benchmark_id: str, manager: Any, adapter: Any) -> dict[str, Any]:
                 kwargs.get("revision") if isinstance(kwargs, dict) else None,
             )
         ],
+        "directions": directions(config),
     }
 
 

@@ -1,12 +1,15 @@
-"""Benchmark catalog: Eval Hub's provider catalogs joined with the release helpers' files.
+"""Benchmark catalog: Eval Hub's provider catalogs joined with each adapter's contract.
 
-Each helper (scripts/evalhub/*_compat.py) runs inside its pinned adapter image and records
-what each benchmark needs. Everything here is read-only and deterministic: exact name
-matching and fixed-order narrowing questions; no ranking, embeddings or paging.
+The contract (files/evalhub/compat/<provider>.json, written by `make evalhub-contract`) says
+what each benchmark needs, read from the task configs in the pinned adapter image, and which
+metrics the adapter really reported when the benchmark ran through Eval Hub, including the
+one that is its score. Everything here is read-only and deterministic: exact name matching
+and fixed-order narrowing questions; no ranking, embeddings or paging.
 
-When two providers score the same questions (same Hugging Face dataset, subset and split),
-Morty sees one entry: the copy from the first provider in settings.evalhub_providers that
-can run for this model. The other copy is listed under "also_in" and can still be named.
+When two providers ask the same questions (same Hugging Face dataset, subset and split) and
+the contract confirms they score them the same way, Morty sees one entry: the copy from the
+first provider in settings.evalhub_providers that can run for this model. The other copy is
+listed under "also_in" and can still be named.
 """
 
 from __future__ import annotations
@@ -24,7 +27,9 @@ from pydantic import BaseModel, ValidationError
 import amortized.config as config_mod
 from amortized.evaluation.spec import LightEvalParameters, LMEvalParameters
 
-SCHEMA = "amortized.evalhub.compat/v1"
+SCHEMA = "amortized.evalhub.compat/v2"
+# What the release helpers read from the pinned image, before any run (make evalhub-describe).
+DESCRIBED = "amortized.evalhub.described/v1"
 # present_options renders at most 4 choices (api/ui.py); more become a typed question.
 CARD_LIMIT = 4
 FACETS = ("area", "kind", "provider")
@@ -100,7 +105,7 @@ class Entry:
 
     @property
     def metric(self) -> str:
-        return str((self.raw.get("primary_score") or {}).get("metric") or "")
+        return str((score(self.compat) or {}).get("metric") or "")
 
     @property
     def suite(self) -> bool:
@@ -148,6 +153,33 @@ class Capability:
         return frozenset({"chat"}) | self.declared
 
 
+def score(compat: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The metric that scores an entry, {"metric", "lower_is_better"}, or None.
+
+    The only reader of the score. Hub, the adapter launcher, MLflow and Amortized's results
+    all match it by exact name, so only the contract names it: a metric the pinned adapter
+    reported when the entry ran through Eval Hub. Never upstream's catalog.
+    """
+    record = (compat or {}).get("score")
+    if not isinstance(record, dict) or not record.get("metric"):
+        return None
+    return {
+        "metric": str(record["metric"]),
+        "lower_is_better": bool(record.get("lower_is_better")),
+    }
+
+
+def no_score_reason(compat: dict[str, Any] | None) -> str:
+    record = (compat or {}).get("score")
+    if isinstance(record, dict) and not record.get("metric"):
+        return str(record.get("reason") or "")
+    return ""
+
+
+def recipe_score(recipe: dict[str, Any]) -> dict[str, Any] | None:
+    return score(recipe.get("compatibility"))
+
+
 def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
@@ -171,22 +203,34 @@ def load_compat(provider_id: str) -> tuple[dict[str, Any] | None, str]:
     return data, ""
 
 
-async def load(sdk: Any, provider_ids: list[str] | None = None) -> list[Entry]:
+async def load(
+    sdk: Any,
+    provider_ids: list[str] | None = None,
+    described: dict[str, dict[str, Any]] | None = None,
+) -> list[Entry]:
     """Read the enabled providers. The SDK's Benchmark model drops domains and
-    modalities, so read the documented REST response directly."""
+    modalities, so read the documented REST response directly.
+
+    `described` replaces a provider's contract with the helpers' file, for the
+    conformance run that the contract is built from.
+    """
     entries = []
     for provider_id in provider_ids or config_mod.settings.evalhub_providers:
         data = (await sdk._request_get(f"/evaluations/providers/{provider_id}")).json()
         runtime = (data.get("runtime") or {}).get("k8s") or {}
         # Hub 1.0.3 serializes the Go field as "Image"; provider YAML uses "image".
         image = str(runtime.get("Image") or runtime.get("image") or "")
-        compat, problem = load_compat(provider_id)
+        compat: dict[str, Any] | None
+        if described is not None and provider_id in described:
+            compat, problem = described[provider_id], ""
+        else:
+            compat, problem = load_compat(provider_id)
         if compat is not None and compat.get("adapter_digest") != image_digest(image):
             compat, problem = (
                 None,
                 (
-                    "the compatibility file describes a different adapter image;"
-                    " regenerate it with `make evalhub-compat`"
+                    "the compatibility file describes a different adapter image; rebuild it"
+                    " with `make evalhub-describe evalhub-conform evalhub-contract`"
                 ),
             )
         provider = Provider(
@@ -217,6 +261,9 @@ async def load_shortlists(sdk: Any) -> list[dict[str, Any]]:
             }
         )
     return shortlists
+
+
+NOT_VERIFIED = "it has not passed a run on the pinned adapter image"
 
 
 def compatibility(entry: Entry, capability: Capability) -> tuple[str, str]:
@@ -273,21 +320,47 @@ def identity(entry: Entry) -> tuple[tuple[str, str, tuple[str, ...]], ...] | Non
     )
 
 
-def overlaps(entries: list[Entry]) -> dict[tuple[str, str], list[Entry]]:
-    """Copies of the same questions in different providers, in provider order.
+def same_questions(entries: list[Entry]) -> list[list[Entry]]:
+    """Groups of entries in different providers that ask the same questions.
 
-    Keyed by every member's (provider_id, id). A provider with two entries on the same
-    questions scores them differently, so such a group is not treated as copies.
+    A provider with two entries on the same questions scores them differently, so such a
+    group is left out.
     """
     by_identity: dict[Any, list[Entry]] = {}
     for entry in entries:
         key = identity(entry)
         if key is not None:
             by_identity.setdefault(key, []).append(entry)
-    groups: dict[tuple[str, str], list[Entry]] = {}
+    found = []
     for group in by_identity.values():
         providers = [e.provider.id for e in group]
         if len(set(providers)) > 1 and len(set(providers)) == len(providers):
+            found.append(group)
+    return found
+
+
+def _same_scoring(group: list[Entry]) -> bool:
+    """Whether the contract confirms each member scores the questions as the others do."""
+    for entry in group:
+        confirmed = {
+            (str(c.get("provider_id")), str(c.get("id")))
+            for c in (entry.compat or {}).get("same_scoring") or ()
+        }
+        if any((o.provider.id, o.id) not in confirmed for o in group if o is not entry):
+            return False
+    return True
+
+
+def overlaps(entries: list[Entry]) -> dict[tuple[str, str], list[Entry]]:
+    """Copies: the same questions in different providers, scored the same way, in provider
+    order. Keyed by every member's (provider_id, id).
+
+    The same questions alone are not enough: lm-eval scores ARC Easy by acc_norm and
+    LightEval by acc, so their numbers cannot stand in for each other.
+    """
+    groups: dict[tuple[str, str], list[Entry]] = {}
+    for group in same_questions(entries):
+        if _same_scoring(group):
             for entry in group:
                 groups[(entry.provider.id, entry.id)] = group
     return groups
@@ -341,6 +414,7 @@ def view(
         "name": entry.name,
         "description": str(entry.raw.get("description") or "").strip(),
         "metric": entry.metric,
+        **({"no_score": no_score_reason(compat)} if no_score_reason(compat) else {}),
         "questions": entry.raw.get("dataset_size") or None,
         "scoring": compat.get("scoring"),
         "answers_per_question": compat.get("answers_per_question"),
@@ -446,9 +520,13 @@ def find(
         for s in shortlists or []
     ]
     shown = _fold(entries, groups, statuses)
-    browsable = [e for e in shown if statuses[id(e)][0] in {"compatible", "unknown"}]
+    # Only entries verified on the pinned image are offered: an unknown one cannot be
+    # approved (resolve_recipe). Its own reason is shown when it is looked up by name.
+    browsable = [e for e in shown if statuses[id(e)][0] == "compatible"]
     hidden = Counter(
-        statuses[id(e)][1] for e in shown if statuses[id(e)][0] in {"incompatible", "unsupported"}
+        NOT_VERIFIED if statuses[id(e)][0] == "unknown" else statuses[id(e)][1]
+        for e in shown
+        if statuses[id(e)][0] != "compatible"
     )
     picks = dict(picks or {})
     pool = _narrow(browsable, picks, shortlists)
@@ -610,13 +688,23 @@ def _settings(entry: Entry, profile: type[BaseModel]) -> list[dict[str, Any]]:
             if getattr(item, "le", None) is not None:
                 bounds["max"] = item.le
         if name == "num_few_shot":
-            default: Any = int(entry.raw.get("num_few_shot") or 0)
+            default: Any = default_few_shot(entry)
+            available = (entry.compat or {}).get("max_few_shot")
+            if isinstance(available, int):
+                bounds["max"] = min(bounds.get("max", available), available)
         elif name == getattr(profile, "LIMIT", None):
             default = "all questions"
         else:
             default = field.default
         settings.append({"name": name, **bounds, "default": default, "help": _SETTING_HELP[name]})
     return settings
+
+
+def default_few_shot(entry: Entry) -> int:
+    """The catalog's few-shot count, capped at the worked examples the task config holds."""
+    wanted = int(entry.raw.get("num_few_shot") or 0)
+    available = (entry.compat or {}).get("max_few_shot")
+    return min(wanted, available) if isinstance(available, int) else wanted
 
 
 def detail(
@@ -628,7 +716,8 @@ def detail(
         **view(entry, capability, overlaps(entries or [entry])),
         "category": entry.raw.get("category"),
         "areas": list(entry.areas),
-        "metrics": entry.raw.get("metrics") or [],
+        # What the pinned adapter reported in its conformance run, not upstream's list.
+        "metrics": compat.get("metrics") or [],
         "tasks": compat.get("tasks") or [],
         "datasets": [
             {**d, "hf_revision": d.get("hf_revision") or "not pinned"}
@@ -666,7 +755,12 @@ def resolve_recipe(
     profile = SETTINGS_PROFILES[str(compat["settings_profile"])]
     parameters = dict(definition.get("parameters") or {})
     if parameters.get("num_few_shot") is None:
-        parameters["num_few_shot"] = int(entry.raw.get("num_few_shot") or 0)
+        parameters["num_few_shot"] = default_few_shot(entry)
+    available = compat.get("max_few_shot")
+    if isinstance(available, int) and int(parameters["num_few_shot"] or 0) > available:
+        return None, [
+            f"benchmark settings: num_few_shot: the task has only {available} worked examples"
+        ]
     limit = getattr(profile, "LIMIT", "")
     if limit and config.get("max_samples") and not parameters.get(limit):
         parameters[limit] = config["max_samples"]

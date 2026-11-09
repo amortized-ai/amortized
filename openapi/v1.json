@@ -2715,6 +2715,11 @@
             "title": "Metric",
             "default": ""
           },
+          "no_score": {
+            "type": "string",
+            "title": "No Score",
+            "default": ""
+          },
           "num_few_shot": {
             "anyOf": [
               {

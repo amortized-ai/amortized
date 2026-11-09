@@ -285,6 +285,7 @@ class BenchmarkView(BaseModel):
     id: str
     name: str
     metric: str = ""
+    no_score: str = ""  # why the benchmark has no score, when metric is empty
     num_few_shot: int | None = None
     max_samples: int | None = None
     recipe_fingerprint: str = ""

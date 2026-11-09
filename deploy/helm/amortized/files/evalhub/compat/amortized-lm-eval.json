@@ -27,13 +27,37 @@
           "task": "AraDiCE_ArabicMMLU_high_humanities_history_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_high_humanities_history_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:00+00:00",
+        "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy": {
       "answers_per_question": 1,
@@ -48,13 +72,37 @@
           "task": "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:00+00:00",
+        "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_high_language_arabic-language_lev": {
       "answers_per_question": 1,
@@ -69,13 +117,37 @@
           "task": "AraDiCE_ArabicMMLU_high_language_arabic-language_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_high_language_arabic-language_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_high_social-science_economics_egy": {
       "answers_per_question": 1,
@@ -90,13 +162,37 @@
           "task": "AraDiCE_ArabicMMLU_high_social-science_economics_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_high_social-science_economics_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:55:32+00:00",
+        "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_high_social-science_geography_lev": {
       "answers_per_question": 1,
@@ -111,13 +207,37 @@
           "task": "AraDiCE_ArabicMMLU_high_social-science_geography_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_high_social-science_geography_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_high_stem_computer-science_egy": {
       "answers_per_question": 1,
@@ -132,13 +252,37 @@
           "task": "AraDiCE_ArabicMMLU_high_stem_computer-science_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_high_stem_computer-science_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_high_stem_physics_lev": {
       "answers_per_question": 1,
@@ -153,13 +297,37 @@
           "task": "AraDiCE_ArabicMMLU_high_stem_physics_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_high_stem_physics_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_lev": {
       "reason": "lm-eval group",
@@ -186,13 +354,37 @@
           "task": "AraDiCE_ArabicMMLU_middle_humanities_islamic-studies_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_middle_humanities_islamic-studies_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev": {
       "answers_per_question": 1,
@@ -207,13 +399,37 @@
           "task": "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_middle_social-science_civics_egy": {
       "answers_per_question": 1,
@@ -228,13 +444,37 @@
           "task": "AraDiCE_ArabicMMLU_middle_social-science_civics_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_middle_social-science_civics_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_middle_social-science_economics_lev": {
       "answers_per_question": 1,
@@ -249,13 +489,37 @@
           "task": "AraDiCE_ArabicMMLU_middle_social-science_economics_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_middle_social-science_economics_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy": {
       "answers_per_question": 1,
@@ -270,13 +534,37 @@
           "task": "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev": {
       "answers_per_question": 1,
@@ -291,13 +579,37 @@
           "task": "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy": {
       "answers_per_question": 1,
@@ -312,13 +624,37 @@
           "task": "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev": {
       "answers_per_question": 1,
@@ -333,13 +669,37 @@
           "task": "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_na_other_driving-test_egy": {
       "answers_per_question": 1,
@@ -354,13 +714,37 @@
           "task": "AraDiCE_ArabicMMLU_na_other_driving-test_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_na_other_driving-test_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev": {
       "answers_per_question": 1,
@@ -375,13 +759,37 @@
           "task": "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy": {
       "answers_per_question": 1,
@@ -396,13 +804,37 @@
           "task": "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:51:46+00:00",
+        "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev": {
       "answers_per_question": 1,
@@ -417,13 +849,37 @@
           "task": "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:52:31+00:00",
+        "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_primary_social-science_geography_egy": {
       "answers_per_question": 1,
@@ -438,13 +894,37 @@
           "task": "AraDiCE_ArabicMMLU_primary_social-science_geography_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_primary_social-science_geography_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:56:17+00:00",
+        "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev": {
       "answers_per_question": 1,
@@ -459,13 +939,37 @@
           "task": "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:03+00:00",
+        "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_primary_stem_math_egy": {
       "answers_per_question": 1,
@@ -480,13 +984,37 @@
           "task": "AraDiCE_ArabicMMLU_primary_stem_math_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_primary_stem_math_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:53:16+00:00",
+        "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev": {
       "answers_per_question": 1,
@@ -501,13 +1029,37 @@
           "task": "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:03+00:00",
+        "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_univ_other_management_egy": {
       "answers_per_question": 1,
@@ -522,13 +1074,37 @@
           "task": "AraDiCE_ArabicMMLU_univ_other_management_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_univ_other_management_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:52:31+00:00",
+        "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev": {
       "answers_per_question": 1,
@@ -543,13 +1119,37 @@
           "task": "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:03+00:00",
+        "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy": {
       "answers_per_question": 1,
@@ -564,13 +1164,37 @@
           "task": "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:03+00:00",
+        "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev": {
       "answers_per_question": 1,
@@ -585,13 +1209,37 @@
           "task": "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:03+00:00",
+        "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_boolq_lev": {
       "answers_per_question": 1,
@@ -606,13 +1254,37 @@
           "task": "AraDiCE_boolq_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_boolq_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:50:30+00:00",
+        "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_openbookqa_eng": {
       "answers_per_question": 1,
@@ -627,13 +1299,37 @@
           "task": "AraDiCE_openbookqa_eng"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_openbookqa_eng"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:52:31+00:00",
+        "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_piqa_lev": {
       "answers_per_question": 1,
@@ -648,13 +1344,37 @@
           "task": "AraDiCE_piqa_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_piqa_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_truthfulqa_mc1_lev": {
       "answers_per_question": 1,
@@ -669,13 +1389,37 @@
           "task": "AraDiCE_truthfulqa_mc1_lev"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_truthfulqa_mc1_lev"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:00:34+00:00",
+        "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "AraDiCE_winogrande_eng": {
       "answers_per_question": 1,
@@ -690,13 +1434,37 @@
           "task": "AraDiCE_winogrande_eng"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "AraDiCE_winogrande_eng"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "aclue_ancient_chinese_culture": {
       "answers_per_question": 1,
@@ -711,9 +1479,10 @@
           "task": "aclue_ancient_chinese_culture"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for tyouisen/aclue contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/tyouisen/aclue.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "aclue_ancient_chinese_culture"
@@ -732,13 +1501,34 @@
           "task": "afrixnli_en_direct_ewe"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "afrixnli_en_direct_ewe"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:52:31+00:00",
+        "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "afrixnli_en_direct_ibo": {
       "answers_per_question": 1,
@@ -753,13 +1543,34 @@
           "task": "afrixnli_en_direct_ibo"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "afrixnli_en_direct_ibo"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:52:31+00:00",
+        "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "afrixnli_en_direct_lug": {
       "answers_per_question": 1,
@@ -774,13 +1585,34 @@
           "task": "afrixnli_en_direct_lug"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "afrixnli_en_direct_lug"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:53:16+00:00",
+        "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "afrixnli_en_direct_sot": {
       "answers_per_question": 1,
@@ -795,13 +1627,34 @@
           "task": "afrixnli_en_direct_sot"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "afrixnli_en_direct_sot"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:53:16+00:00",
+        "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "afrixnli_en_direct_wol": {
       "answers_per_question": 1,
@@ -816,13 +1669,34 @@
           "task": "afrixnli_en_direct_wol"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "afrixnli_en_direct_wol"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:53:16+00:00",
+        "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "afrixnli_en_direct_zul": {
       "answers_per_question": 1,
@@ -837,13 +1711,34 @@
           "task": "afrixnli_en_direct_zul"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "f1": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "afrixnli_en_direct_zul"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:53:16+00:00",
+        "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "agieval_logiqa_zh": {
       "answers_per_question": 1,
@@ -858,13 +1753,35 @@
           "task": "agieval_logiqa_zh"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "agieval_logiqa_zh"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:03+00:00",
+        "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mmlu_anatomy": {
       "answers_per_question": 1,
@@ -879,13 +1796,35 @@
           "task": "arabic_leaderboard_arabic_mmlu_anatomy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_leaderboard_arabic_mmlu_anatomy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:58:33+00:00",
+        "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mmlu_clinical_knowledge": {
       "answers_per_question": 1,
@@ -900,13 +1839,35 @@
           "task": "arabic_leaderboard_arabic_mmlu_clinical_knowledge"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_leaderboard_arabic_mmlu_clinical_knowledge"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:58:33+00:00",
+        "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mmlu_college_biology_light": {
       "answers_per_question": 1,
@@ -921,13 +1882,35 @@
           "task": "arabic_leaderboard_arabic_mmlu_college_biology_light"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_leaderboard_arabic_mmlu_college_biology_light"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:03+00:00",
+        "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mmlu_college_mathematics_light": {
       "answers_per_question": 1,
@@ -942,13 +1925,35 @@
           "task": "arabic_leaderboard_arabic_mmlu_college_mathematics_light"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_leaderboard_arabic_mmlu_college_mathematics_light"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:53:16+00:00",
+        "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mmlu_high_school_mathematics": {
       "answers_per_question": 1,
@@ -963,13 +1968,35 @@
           "task": "arabic_leaderboard_arabic_mmlu_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_leaderboard_arabic_mmlu_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:53:16+00:00",
+        "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mmlu_medical_genetics": {
       "answers_per_question": 1,
@@ -984,13 +2011,35 @@
           "task": "arabic_leaderboard_arabic_mmlu_medical_genetics"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_leaderboard_arabic_mmlu_medical_genetics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:58:33+00:00",
+        "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mmlu_professional_medicine": {
       "answers_per_question": 1,
@@ -1005,13 +2054,35 @@
           "task": "arabic_leaderboard_arabic_mmlu_professional_medicine"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_leaderboard_arabic_mmlu_professional_medicine"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:58:33+00:00",
+        "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_leaderboard_arabic_mt_boolq": {
       "reason": "lm-eval group",
@@ -1106,13 +2177,35 @@
           "task": "arabic_mt_boolq_light"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_mt_boolq_light"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:52:31+00:00",
+        "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_mt_hellaswag": {
       "answers_per_question": 1,
@@ -1127,13 +2220,35 @@
           "task": "arabic_mt_hellaswag"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_mt_hellaswag"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_mt_piqa": {
       "answers_per_question": 1,
@@ -1148,13 +2263,35 @@
           "task": "arabic_mt_piqa"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_mt_piqa"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arabic_mt_race_light": {
       "answers_per_question": 1,
@@ -1169,13 +2306,35 @@
           "task": "arabic_mt_race_light"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arabic_mt_race_light"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:55:32+00:00",
+        "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arc_easy": {
       "answers_per_question": 1,
@@ -1190,13 +2349,35 @@
           "task": "arc_easy"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arc_easy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:26:06+00:00",
+        "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh": {
       "reason": "lm-eval group",
@@ -1279,13 +2460,33 @@
           "task": "bbh_cot_fewshot_causal_judgement"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_causal_judgement"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_dyck_languages": {
       "answers_per_question": 1,
@@ -1300,13 +2501,33 @@
           "task": "bbh_cot_fewshot_dyck_languages"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_dyck_languages"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_hyperbaton": {
       "answers_per_question": 1,
@@ -1321,13 +2542,33 @@
           "task": "bbh_cot_fewshot_hyperbaton"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_hyperbaton"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_logical_deduction_three_objects": {
       "answers_per_question": 1,
@@ -1342,13 +2583,33 @@
           "task": "bbh_cot_fewshot_logical_deduction_three_objects"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_logical_deduction_three_objects"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_navigate": {
       "answers_per_question": 1,
@@ -1363,13 +2624,33 @@
           "task": "bbh_cot_fewshot_navigate"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_navigate"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_reasoning_about_colored_objects": {
       "answers_per_question": 1,
@@ -1384,13 +2665,33 @@
           "task": "bbh_cot_fewshot_reasoning_about_colored_objects"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_reasoning_about_colored_objects"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_snarks": {
       "answers_per_question": 1,
@@ -1405,13 +2706,33 @@
           "task": "bbh_cot_fewshot_snarks"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_snarks"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_tracking_shuffled_objects_five_objects": {
       "answers_per_question": 1,
@@ -1426,13 +2747,33 @@
           "task": "bbh_cot_fewshot_tracking_shuffled_objects_five_objects"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_tracking_shuffled_objects_five_objects"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:29:54+00:00",
+        "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_fewshot_web_of_lies": {
       "answers_per_question": 1,
@@ -1447,13 +2788,33 @@
           "task": "bbh_cot_fewshot_web_of_lies"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_fewshot_web_of_lies"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T18:30:09+00:00",
+        "hub_job": "19a80916-7884-4bb4-8b9a-c580d0b1d2e0",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_zeroshot": {
       "reason": "lm-eval group",
@@ -1502,13 +2863,32 @@
           "task": "bbh_cot_zeroshot_causal_judgement"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_zeroshot_causal_judgement"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:57:48+00:00",
+        "hub_job": "de7fd4e3-8282-48e3-b710-37d2fcf4e996",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbh_cot_zeroshot_dyck_languages": {
       "answers_per_question": 1,
@@ -1523,13 +2903,32 @@
           "task": "bbh_cot_zeroshot_dyck_languages"
         }
       ],
+      "directions": {
+        "exact_match": "higher"
+      },
+      "metrics": [
+        "exact_match",
+        "exact_match_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "exact_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbh_cot_zeroshot_dyck_languages"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:58:33+00:00",
+        "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bbq": {
       "answers_per_question": 1,
@@ -1544,13 +2943,44 @@
           "task": "bbq"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "accuracy_amb": "higher",
+        "accuracy_disamb": "higher",
+        "amb_bias_score": "lower",
+        "amb_bias_score_Age": "lower",
+        "disamb_bias_score": "lower",
+        "disamb_bias_score_Age": "lower"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "accuracy_amb",
+        "accuracy_disamb",
+        "amb_bias_score",
+        "amb_bias_score_Age",
+        "disamb_bias_score",
+        "disamb_bias_score_Age"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bbq"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bigbench_code_line_description_multiple_choice": {
       "answers_per_question": 1,
@@ -1565,13 +2995,32 @@
           "task": "bigbench_code_line_description_multiple_choice"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bigbench_code_line_description_multiple_choice"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:00:34+00:00",
+        "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bigbench_gre_reading_comprehension_multiple_choice": {
       "answers_per_question": 1,
@@ -1586,13 +3035,32 @@
           "task": "bigbench_gre_reading_comprehension_multiple_choice"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bigbench_gre_reading_comprehension_multiple_choice"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:55:32+00:00",
+        "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "bigbench_hhh_alignment_multiple_choice": {
       "answers_per_question": 1,
@@ -1607,13 +3075,32 @@
           "task": "bigbench_hhh_alignment_multiple_choice"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "bigbench_hhh_alignment_multiple_choice"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:49+00:00",
+        "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "blimp": {
       "reason": "lm-eval group",
@@ -1703,9 +3190,10 @@
           "task": "blimp_anaphor_gender_agreement"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_anaphor_gender_agreement"
@@ -1725,9 +3213,10 @@
           "task": "blimp_animate_subject_trans"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_animate_subject_trans"
@@ -1747,9 +3236,10 @@
           "task": "blimp_coordinate_structure_constraint_complex_left_branch"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_coordinate_structure_constraint_complex_left_branch"
@@ -1769,9 +3259,10 @@
           "task": "blimp_determiner_noun_agreement_2"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_determiner_noun_agreement_2"
@@ -1791,9 +3282,10 @@
           "task": "blimp_determiner_noun_agreement_with_adj_2"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_determiner_noun_agreement_with_adj_2"
@@ -1813,9 +3305,10 @@
           "task": "blimp_determiner_noun_agreement_with_adjective_1"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_determiner_noun_agreement_with_adjective_1"
@@ -1835,9 +3328,10 @@
           "task": "blimp_drop_argument"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_drop_argument"
@@ -1857,9 +3351,10 @@
           "task": "blimp_existential_there_object_raising"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_existential_there_object_raising"
@@ -1879,9 +3374,10 @@
           "task": "blimp_existential_there_subject_raising"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_existential_there_subject_raising"
@@ -1901,9 +3397,10 @@
           "task": "blimp_intransitive"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_intransitive"
@@ -1923,9 +3420,10 @@
           "task": "blimp_irregular_plural_subject_verb_agreement_1"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_irregular_plural_subject_verb_agreement_1"
@@ -1945,9 +3443,10 @@
           "task": "blimp_left_branch_island_simple_question"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_left_branch_island_simple_question"
@@ -1967,9 +3466,10 @@
           "task": "blimp_npi_present_2"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_npi_present_2"
@@ -1989,9 +3489,10 @@
           "task": "blimp_passive_1"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "blimp_passive_1"
@@ -2014,13 +3515,35 @@
           "task": "ceval-valid_college_programming"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "ceval-valid_college_programming"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:00:34+00:00",
+        "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "cmmlu_college_mathematics": {
       "answers_per_question": 1,
@@ -2036,9 +3559,10 @@
           "task": "cmmlu_college_mathematics"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "cmmlu_college_mathematics"
@@ -2058,9 +3582,10 @@
           "task": "cmmlu_high_school_mathematics"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "cmmlu_high_school_mathematics"
@@ -2080,9 +3605,10 @@
           "task": "cmmlu_professional_medicine"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "cmmlu_professional_medicine"
@@ -2102,9 +3628,10 @@
           "task": "cmmlu_traditional_chinese_medicine"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "cmmlu_traditional_chinese_medicine"
@@ -2123,13 +3650,32 @@
           "task": "code2text_javascript"
         }
       ],
+      "directions": {
+        "smoothed_bleu_4": "higher"
+      },
+      "metrics": [
+        "smoothed_bleu_4",
+        "smoothed_bleu_4_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "smoothed_bleu_4",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "code2text_javascript"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "code2text_ruby": {
       "answers_per_question": 1,
@@ -2144,13 +3690,32 @@
           "task": "code2text_ruby"
         }
       ],
+      "directions": {
+        "smoothed_bleu_4": "higher"
+      },
+      "metrics": [
+        "smoothed_bleu_4",
+        "smoothed_bleu_4_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "smoothed_bleu_4",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "code2text_ruby"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "copa_ar": {
       "answers_per_question": 1,
@@ -2165,13 +3730,35 @@
           "task": "copa_ar"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "copa_ar"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "copal_id_colloquial": {
       "answers_per_question": 1,
@@ -2186,13 +3773,32 @@
           "task": "copal_id_colloquial"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "copal_id_colloquial"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:55:32+00:00",
+        "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "crows_pairs_english": {
       "answers_per_question": 1,
@@ -2207,13 +3813,35 @@
           "task": "crows_pairs_english"
         }
       ],
+      "directions": {
+        "likelihood_diff": "lower",
+        "pct_stereotype": "lower"
+      },
+      "metrics": [
+        "likelihood_diff",
+        "likelihood_diff_stderr",
+        "pct_stereotype",
+        "pct_stereotype_stderr"
+      ],
+      "score": {
+        "lower_is_better": true,
+        "metric": "pct_stereotype",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "crows_pairs_english"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "cruxeval_output": {
       "answers_per_question": 10,
@@ -2228,9 +3856,11 @@
           "task": "cruxeval_output"
         }
       ],
+      "max_few_shot": 2,
+      "reason": "its conformance run failed: Evaluation failed: Attempted to run task: cruxeval_output which is marked as unsafe. Set confirm_run_unsafe_code=True to run this task.",
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "cruxeval_output"
@@ -2249,13 +3879,32 @@
           "task": "ethics_cm"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "ethics_cm"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "eus_reading": {
       "answers_per_question": 1,
@@ -2270,13 +3919,32 @@
           "task": "eus_reading"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "eus_reading"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:55:32+00:00",
+        "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_am_anatomy": {
       "answers_per_question": 1,
@@ -2292,13 +3960,32 @@
           "task": "global_mmlu_full_am_anatomy"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_am_anatomy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:58:33+00:00",
+        "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_am_clinical_knowledge": {
       "answers_per_question": 1,
@@ -2314,13 +4001,32 @@
           "task": "global_mmlu_full_am_clinical_knowledge"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_am_clinical_knowledge"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_am_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2336,13 +4042,32 @@
           "task": "global_mmlu_full_am_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_am_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:01+00:00",
+        "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_am_medical_genetics": {
       "answers_per_question": 1,
@@ -2358,13 +4083,32 @@
           "task": "global_mmlu_full_am_medical_genetics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_am_medical_genetics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_am_professional_medicine": {
       "answers_per_question": 1,
@@ -2380,13 +4124,32 @@
           "task": "global_mmlu_full_am_professional_medicine"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_am_professional_medicine"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_ar_anatomy": {
       "answers_per_question": 1,
@@ -2402,13 +4165,32 @@
           "task": "global_mmlu_full_ar_anatomy"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_ar_anatomy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_ar_clinical_knowledge": {
       "answers_per_question": 1,
@@ -2424,13 +4206,32 @@
           "task": "global_mmlu_full_ar_clinical_knowledge"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_ar_clinical_knowledge"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_ar_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2446,13 +4247,32 @@
           "task": "global_mmlu_full_ar_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_ar_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:01+00:00",
+        "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_ar_medical_genetics": {
       "answers_per_question": 1,
@@ -2468,13 +4288,32 @@
           "task": "global_mmlu_full_ar_medical_genetics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_ar_medical_genetics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_ar_professional_medicine": {
       "answers_per_question": 1,
@@ -2490,13 +4329,32 @@
           "task": "global_mmlu_full_ar_professional_medicine"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_ar_professional_medicine"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_bn_anatomy": {
       "answers_per_question": 1,
@@ -2512,13 +4370,32 @@
           "task": "global_mmlu_full_bn_anatomy"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_bn_anatomy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:18+00:00",
+        "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_bn_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2534,13 +4411,32 @@
           "task": "global_mmlu_full_bn_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_bn_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:01+00:00",
+        "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_cs_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2556,13 +4452,32 @@
           "task": "global_mmlu_full_cs_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_cs_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:01+00:00",
+        "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_de_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2578,13 +4493,32 @@
           "task": "global_mmlu_full_de_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_de_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:01+00:00",
+        "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_el_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2600,13 +4534,32 @@
           "task": "global_mmlu_full_el_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_el_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:01+00:00",
+        "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_en_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2622,13 +4575,32 @@
           "task": "global_mmlu_full_en_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_en_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:01+00:00",
+        "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_es_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2644,13 +4616,32 @@
           "task": "global_mmlu_full_es_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_es_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_fa_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2666,13 +4657,32 @@
           "task": "global_mmlu_full_fa_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_fa_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "global_mmlu_full_fil_high_school_mathematics": {
       "answers_per_question": 1,
@@ -2688,13 +4698,32 @@
           "task": "global_mmlu_full_fil_high_school_mathematics"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "global_mmlu_full_fil_high_school_mathematics"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:54:47+00:00",
+        "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "hellaswag_ar": {
       "answers_per_question": 1,
@@ -2709,13 +4738,35 @@
           "task": "hellaswag_ar"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "hellaswag_ar"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:55:32+00:00",
+        "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "humaneval": {
       "reason": "the adapter fails on it: AttributeError: module 'huggingface_hub.hf_api' has no attribute 'HfFolder'",
@@ -2741,13 +4792,39 @@
           "task": "ifeval"
         }
       ],
+      "directions": {
+        "inst_level_loose_acc": "higher",
+        "inst_level_strict_acc": "higher",
+        "prompt_level_loose_acc": "higher",
+        "prompt_level_strict_acc": "higher"
+      },
+      "metrics": [
+        "inst_level_loose_acc",
+        "inst_level_strict_acc",
+        "prompt_level_loose_acc",
+        "prompt_level_loose_acc_stderr",
+        "prompt_level_strict_acc",
+        "prompt_level_strict_acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "inst_level_strict_acc",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "ifeval"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:26:06+00:00",
+        "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "jsonschema_bench_easy": {
       "answers_per_question": 1,
@@ -2762,13 +4839,36 @@
           "task": "jsonschema_bench_easy"
         }
       ],
+      "directions": {
+        "json_validity": "higher",
+        "schema_compliance": "higher"
+      },
+      "max_few_shot": 6,
+      "metrics": [
+        "json_validity",
+        "json_validity_stderr",
+        "schema_compliance",
+        "schema_compliance_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "schema_compliance",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "jsonschema_bench_easy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:49+00:00",
+        "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "jsonschema_bench_hard": {
       "answers_per_question": 1,
@@ -2783,13 +4883,36 @@
           "task": "jsonschema_bench_hard"
         }
       ],
+      "directions": {
+        "json_validity": "higher",
+        "schema_compliance": "higher"
+      },
+      "max_few_shot": 6,
+      "metrics": [
+        "json_validity",
+        "json_validity_stderr",
+        "schema_compliance",
+        "schema_compliance_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "schema_compliance",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "jsonschema_bench_hard"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:49+00:00",
+        "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "jsonschema_bench_medium": {
       "answers_per_question": 1,
@@ -2804,13 +4927,36 @@
           "task": "jsonschema_bench_medium"
         }
       ],
+      "directions": {
+        "json_validity": "higher",
+        "schema_compliance": "higher"
+      },
+      "max_few_shot": 6,
+      "metrics": [
+        "json_validity",
+        "json_validity_stderr",
+        "schema_compliance",
+        "schema_compliance_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "schema_compliance",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "jsonschema_bench_medium"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:49+00:00",
+        "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "lambada_openai": {
       "answers_per_question": 1,
@@ -2825,13 +4971,35 @@
           "task": "lambada_openai"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "perplexity": "lower"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "perplexity",
+        "perplexity_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "lambada_openai"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:26:06+00:00",
+        "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "lambada_openai_mt_en": {
       "answers_per_question": 1,
@@ -2846,13 +5014,35 @@
           "task": "lambada_openai_mt_en"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "perplexity": "lower"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "perplexity",
+        "perplexity_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "lambada_openai_mt_en"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:48+00:00",
+        "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "lambada_openai_mt_it": {
       "answers_per_question": 1,
@@ -2867,13 +5057,35 @@
           "task": "lambada_openai_mt_it"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "perplexity": "lower"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "perplexity",
+        "perplexity_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "lambada_openai_mt_it"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:49+00:00",
+        "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "lambada_openai_mt_stablelm_es": {
       "answers_per_question": 1,
@@ -2888,13 +5100,35 @@
           "task": "lambada_openai_mt_stablelm_es"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "perplexity": "lower"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "perplexity",
+        "perplexity_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "lambada_openai_mt_stablelm_es"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:49+00:00",
+        "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "lambada_openai_mt_stablelm_nl": {
       "answers_per_question": 1,
@@ -2909,13 +5143,35 @@
           "task": "lambada_openai_mt_stablelm_nl"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "perplexity": "lower"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr",
+        "perplexity",
+        "perplexity_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "lambada_openai_mt_stablelm_nl"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:59:49+00:00",
+        "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "lambada_standard_cloze_yaml": {
       "answers_per_question": 1,
@@ -2931,9 +5187,10 @@
           "task": "lambada_standard_cloze_yaml"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/lambada@5953bd97664b64b95754f299b2309ecfbfbe81b9/.huggingface.yaml'. Repository id must be 'namespace/name', got 'lambada'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "lambada_standard_cloze_yaml"
@@ -2983,13 +5240,33 @@
           "task": "leaderboard_bbh_salient_translation_error_detection"
         }
       ],
+      "directions": {
+        "acc_norm": "higher"
+      },
+      "max_few_shot": 3,
+      "metrics": [
+        "acc_norm",
+        "acc_norm_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc_norm",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "leaderboard_bbh_salient_translation_error_detection"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:52:31+00:00",
+        "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "leaderboard_gpqa": {
       "reason": "lm-eval group",
@@ -3014,13 +5291,39 @@
           "task": "leaderboard_ifeval"
         }
       ],
+      "directions": {
+        "inst_level_loose_acc": "higher",
+        "inst_level_strict_acc": "higher",
+        "prompt_level_loose_acc": "higher",
+        "prompt_level_strict_acc": "higher"
+      },
+      "metrics": [
+        "inst_level_loose_acc",
+        "inst_level_strict_acc",
+        "prompt_level_loose_acc",
+        "prompt_level_loose_acc_stderr",
+        "prompt_level_strict_acc",
+        "prompt_level_strict_acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "inst_level_strict_acc",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "leaderboard_ifeval"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "leaderboard_math_hard": {
       "reason": "lm-eval group",
@@ -3049,13 +5352,32 @@
           "task": "leaderboard_mmlu_pro"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "leaderboard_mmlu_pro"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "leaderboard_musr": {
       "reason": "lm-eval group",
@@ -3088,13 +5410,32 @@
           "task": "metabench_truthfulqa_permute"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "metabench_truthfulqa_permute"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:00:34+00:00",
+        "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "paloma_wikitext_103": {
       "answers_per_question": 1,
@@ -3109,9 +5450,10 @@
           "task": "paloma_wikitext_103"
         }
       ],
+      "reason": "its conformance run failed: Gated HuggingFace dataset error; authentication required. Set HF_TOKEN by adding an 'hf-token' key to your model auth secret (model.auth.secret_ref).",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "paloma_wikitext_103"
@@ -3130,9 +5472,10 @@
           "task": "pile_arxiv"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "pile_arxiv"
@@ -3151,9 +5494,10 @@
           "task": "pile_freelaw"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "pile_freelaw"
@@ -3172,9 +5516,10 @@
           "task": "pile_hackernews"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "pile_hackernews"
@@ -3193,9 +5538,10 @@
           "task": "pile_openwebtext2"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "pile_openwebtext2"
@@ -3214,9 +5560,10 @@
           "task": "pile_ubuntu-irc"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "pile_ubuntu-irc"
@@ -3235,9 +5582,10 @@
           "task": "pile_youtubesubtitles"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "pile_youtubesubtitles"
@@ -3256,13 +5604,32 @@
           "task": "qasper_freeform"
         }
       ],
+      "directions": {
+        "f1_abstractive": "higher"
+      },
+      "metrics": [
+        "f1_abstractive",
+        "f1_abstractive_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "f1_abstractive",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "qasper_freeform"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:55:32+00:00",
+        "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "scrolls_qasper": {
       "reason": "lm-eval python_task (Python class task)",
@@ -3285,13 +5652,31 @@
           "task": "tinyTruthfulQA"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "only metric reported"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "tinyTruthfulQA"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:23:52+00:00",
+        "hub_job": "0be57efc-8f9d-4540-821a-ea57df033420",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": null
+      }
     },
     "toxigen": {
       "answers_per_question": 1,
@@ -3307,13 +5692,35 @@
           "task": "toxigen"
         }
       ],
+      "directions": {
+        "acc": "higher",
+        "acc_norm": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_norm",
+        "acc_norm_stderr",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "toxigen"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:19+00:00",
+        "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "truthfulqa_mc1": {
       "answers_per_question": 1,
@@ -3329,9 +5736,10 @@
           "task": "truthfulqa_mc1"
         }
       ],
+      "reason": "its conformance run failed: Evaluation failed: Invalid HF URI 'hf://datasets/truthful_qa@741b8276f2d1982aa3d5b832d3ee81ed3b896490/.huggingface.yaml'. Repository id must be 'namespace/name', got 'truthful_qa'.",
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "truthfulqa_mc1"
@@ -3350,13 +5758,35 @@
           "task": "wikitext"
         }
       ],
+      "directions": {
+        "bits_per_byte": "lower",
+        "byte_perplexity": "lower",
+        "word_perplexity": "lower"
+      },
+      "metrics": [
+        "bits_per_byte",
+        "byte_perplexity",
+        "word_perplexity"
+      ],
+      "score": {
+        "lower_is_better": true,
+        "metric": "word_perplexity",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "wikitext"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T16:26:06+00:00",
+        "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "winogender": {
       "answers_per_question": 1,
@@ -3371,20 +5801,43 @@
           "task": "winogender_all"
         }
       ],
+      "directions": {
+        "acc": "higher"
+      },
+      "metrics": [
+        "acc",
+        "acc_stderr"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "acc",
+        "source": "catalog"
+      },
       "scoring": "likelihood",
       "settings_profile": "lm-eval-completions-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "winogender_all"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+        "date": "2026-11-09T17:01:49+00:00",
+        "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     }
   },
   "catalog": {
     "commit": "9a18b91657dae635d9ed56a2075ec1b808eb6345",
     "repo": "eval-hub/eval-hub"
   },
+  "conformance": {
+    "model": "Qwen/Qwen3-0.6B",
+    "questions": 10
+  },
   "lm_eval_version": "0.4.8",
-  "schema": "amortized.evalhub.compat/v1",
+  "schema": "amortized.evalhub.compat/v2",
   "settings_profile": "lm-eval-completions-v1"
 }

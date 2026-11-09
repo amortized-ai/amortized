@@ -1,8 +1,10 @@
 """Release helper: record what each LightEval catalog entry needs, read from the pinned adapter.
 
 Runs INSIDE the pinned adapter image, so every answer comes from the code that will
-run the benchmark, never from a benchmark's name or category. See `make evalhub-compat`.
+run the benchmark, never from a benchmark's name or category. See `make evalhub-describe`.
 Writes JSON to stdout. Anything it cannot establish is recorded as "unknown" with a reason.
+Metric names are not predicted here: `make evalhub-conform` records what the adapter
+reports, and `make evalhub-contract` picks each score from that.
 """
 
 import argparse
@@ -13,11 +15,27 @@ from typing import Any
 
 from hf_identity import dataset
 
-SCHEMA = "amortized.evalhub.compat/v1"
+SCHEMA = "amortized.evalhub.described/v1"
 # Names the parameter contract Amortized implements for this adapter
 # (amortized.evaluation.spec.LightEvalParameters). Bump it when the adapter's
 # accepted parameters change, so a stale Amortized treats entries as unknown.
 SETTINGS_PROFILE = "lighteval-endpoint-v1"
+
+
+def directions(tasks: list[str], configs: dict[str, Any]) -> dict[str, bool]:
+    """higher_is_better per metric the task configs compute, under the configs' own names."""
+    found: dict[str, bool] = {}
+    for task in tasks:
+        for metric in configs[task.split("|", 1)[0]].metrics:
+            names = (
+                metric.metric_name if isinstance(metric.metric_name, list) else [metric.metric_name]
+            )
+            higher = metric.higher_is_better
+            for name in names:
+                better = higher.get(name) if isinstance(higher, dict) else higher
+                if better is not None:
+                    found[str(name)] = bool(better)
+    return found
 
 
 def describe(benchmark_id: str, adapter: Any, configs: dict[str, Any], methods: Any) -> dict:
@@ -59,6 +77,7 @@ def describe(benchmark_id: str, adapter: Any, configs: dict[str, Any], methods: 
         "answers_per_question": cls._max_samples_per_prompt(tasks),
         "settings_profile": SETTINGS_PROFILE,
         "datasets": datasets,
+        "directions": directions(tasks, configs),
     }
 
 
@@ -68,7 +87,9 @@ def main() -> None:
     parser.add_argument("--catalog-repo", default="eval-hub/eval-hub")
     parser.add_argument("--catalog-commit", required=True)
     parser.add_argument("--adapter-image", required=True, help="image@sha256:... being described")
-    parser.add_argument("--adapter-dir", default="/app", help="directory holding the adapter's main.py")
+    parser.add_argument(
+        "--adapter-dir", default="/app", help="directory holding the adapter's main.py"
+    )
     args = parser.parse_args()
     if "@sha256:" not in args.adapter_image:
         parser.error("--adapter-image must be pinned by digest")

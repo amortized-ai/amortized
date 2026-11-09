@@ -1,0 +1,769 @@
+{
+  "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+  "adapter_image": "quay.io/evalhub/community-lighteval@sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+  "benchmarks": {
+    "aime24": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "HuggingFaceH4/aime_2024",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
+          "task": "aime24"
+        }
+      ],
+      "directions": {
+        "avg@n:n=1": true,
+        "pass@k:k=1": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "aime24"
+      ]
+    },
+    "aime25": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "yentinglin/aime_2025",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
+          "task": "aime25"
+        }
+      ],
+      "directions": {
+        "avg@n:n=1": true,
+        "pass@k:k=1&n=1": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "aime25"
+      ]
+    },
+    "arc:challenge": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/ai2_arc",
+          "hf_revision": null,
+          "hf_subset": "ARC-Challenge",
+          "splits": [
+            "test"
+          ],
+          "task": "arc:challenge"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arc:challenge"
+      ]
+    },
+    "arc:easy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/ai2_arc",
+          "hf_revision": null,
+          "hf_subset": "ARC-Easy",
+          "splits": [
+            "test"
+          ],
+          "task": "arc:easy"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arc:easy"
+      ]
+    },
+    "commonsense_reasoning": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "Rowan/hellaswag",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
+          "task": "hellaswag"
+        },
+        {
+          "hf_repo": "allenai/winogrande",
+          "hf_revision": null,
+          "hf_subset": "winogrande_xl",
+          "splits": [
+            "validation"
+          ],
+          "task": "winogrande"
+        },
+        {
+          "hf_repo": "allenai/openbookqa",
+          "hf_revision": null,
+          "hf_subset": "main",
+          "splits": [
+            "test",
+            "validation"
+          ],
+          "task": "openbookqa"
+        },
+        {
+          "hf_repo": "allenai/ai2_arc",
+          "hf_revision": null,
+          "hf_subset": "ARC-Easy",
+          "splits": [
+            "test"
+          ],
+          "task": "arc:easy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "em": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "hellaswag",
+        "winogrande",
+        "openbookqa",
+        "arc:easy"
+      ]
+    },
+    "glue:cola": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/glue",
+          "hf_revision": null,
+          "hf_subset": "cola",
+          "splits": [
+            "validation"
+          ],
+          "task": "glue:cola"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "mcc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "glue:cola"
+      ]
+    },
+    "glue:mrpc": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/glue",
+          "hf_revision": null,
+          "hf_subset": "mrpc",
+          "splits": [
+            "validation"
+          ],
+          "task": "glue:mrpc"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "loglikelihood_f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "glue:mrpc"
+      ]
+    },
+    "glue:sst2": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/glue",
+          "hf_revision": null,
+          "hf_subset": "sst2",
+          "splits": [
+            "validation"
+          ],
+          "task": "glue:sst2"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "glue:sst2"
+      ]
+    },
+    "gpqa:diamond": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "Idavidrein/gpqa",
+          "hf_revision": null,
+          "hf_subset": "gpqa_diamond",
+          "splits": [
+            "train"
+          ],
+          "task": "gpqa:diamond"
+        }
+      ],
+      "directions": {
+        "gpqa_pass@k:k=1": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "gpqa:diamond"
+      ]
+    },
+    "gsm8k": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "openai/gsm8k",
+          "hf_revision": null,
+          "hf_subset": "main",
+          "splits": [
+            "test"
+          ],
+          "task": "gsm8k"
+        }
+      ],
+      "directions": {
+        "extractive_match": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "gsm8k"
+      ]
+    },
+    "hellaswag": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "Rowan/hellaswag",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
+          "task": "hellaswag"
+        }
+      ],
+      "directions": {
+        "em": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "hellaswag"
+      ]
+    },
+    "knowledge": {
+      "reason": "LightEval's task registry has no task mmlu",
+      "status": "unknown",
+      "suite": true,
+      "tasks": [
+        "mmlu",
+        "triviaqa",
+        "openbookqa"
+      ]
+    },
+    "language_understanding": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/glue",
+          "hf_revision": null,
+          "hf_subset": "cola",
+          "splits": [
+            "validation"
+          ],
+          "task": "glue:cola"
+        },
+        {
+          "hf_repo": "nyu-mll/glue",
+          "hf_revision": null,
+          "hf_subset": "sst2",
+          "splits": [
+            "validation"
+          ],
+          "task": "glue:sst2"
+        },
+        {
+          "hf_repo": "nyu-mll/glue",
+          "hf_revision": null,
+          "hf_subset": "mrpc",
+          "splits": [
+            "validation"
+          ],
+          "task": "glue:mrpc"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "loglikelihood_f1": true,
+        "mcc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "glue:cola",
+        "glue:sst2",
+        "glue:mrpc"
+      ]
+    },
+    "lcb:codegeneration_v6": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lighteval/code_generation_lite",
+          "hf_revision": null,
+          "hf_subset": "v6",
+          "splits": [
+            "test"
+          ],
+          "task": "lcb:codegeneration_v6"
+        }
+      ],
+      "directions": {
+        "codegen_pass@1:16": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "lcb:codegeneration_v6"
+      ]
+    },
+    "math": {
+      "answers_per_question": 4,
+      "datasets": [
+        {
+          "hf_repo": "openai/gsm8k",
+          "hf_revision": null,
+          "hf_subset": "main",
+          "splits": [
+            "test"
+          ],
+          "task": "gsm8k"
+        },
+        {
+          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_revision": null,
+          "hf_subset": "algebra",
+          "splits": [
+            "test"
+          ],
+          "task": "math:algebra"
+        },
+        {
+          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_revision": null,
+          "hf_subset": "counting_and_probability",
+          "splits": [
+            "test"
+          ],
+          "task": "math:counting_and_probability"
+        },
+        {
+          "hf_repo": "HuggingFaceH4/MATH-500",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "math_500"
+        }
+      ],
+      "directions": {
+        "extractive_match": true,
+        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer at 0x7f8e08825f80>&normalize_gold=<function math_normalizer at 0x7f8e08825f80>": true,
+        "pass@k:k=1&n=1": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "gsm8k",
+        "math:algebra",
+        "math:counting_and_probability",
+        "math_500"
+      ]
+    },
+    "math:algebra": {
+      "answers_per_question": 4,
+      "datasets": [
+        {
+          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_revision": null,
+          "hf_subset": "algebra",
+          "splits": [
+            "test"
+          ],
+          "task": "math:algebra"
+        }
+      ],
+      "directions": {
+        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer at 0x7f8e08825f80>&normalize_gold=<function math_normalizer at 0x7f8e08825f80>": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "math:algebra"
+      ]
+    },
+    "math:counting_and_probability": {
+      "answers_per_question": 4,
+      "datasets": [
+        {
+          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_revision": null,
+          "hf_subset": "counting_and_probability",
+          "splits": [
+            "test"
+          ],
+          "task": "math:counting_and_probability"
+        }
+      ],
+      "directions": {
+        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer at 0x7f8e08825f80>&normalize_gold=<function math_normalizer at 0x7f8e08825f80>": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "math:counting_and_probability"
+      ]
+    },
+    "math_500": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "HuggingFaceH4/MATH-500",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "math_500"
+        }
+      ],
+      "directions": {
+        "pass@k:k=1&n=1": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "math_500"
+      ]
+    },
+    "mmlu": {
+      "reason": "LightEval's task registry has no task mmlu",
+      "status": "unknown",
+      "suite": false,
+      "tasks": [
+        "mmlu"
+      ]
+    },
+    "openbookqa": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/openbookqa",
+          "hf_revision": null,
+          "hf_subset": "main",
+          "splits": [
+            "test",
+            "validation"
+          ],
+          "task": "openbookqa"
+        }
+      ],
+      "directions": {
+        "em": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "openbookqa"
+      ]
+    },
+    "physical_commonsense": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "regisss/piqa",
+          "hf_revision": "b434c23003a4bee60e2d88b3403259f5487dc5f4",
+          "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
+          "task": "evalhub_piqa"
+        }
+      ],
+      "directions": {
+        "em": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "evalhub_piqa"
+      ]
+    },
+    "piqa": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "regisss/piqa",
+          "hf_revision": "b434c23003a4bee60e2d88b3403259f5487dc5f4",
+          "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
+          "task": "evalhub_piqa"
+        }
+      ],
+      "directions": {
+        "em": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "evalhub_piqa"
+      ]
+    },
+    "scientific_reasoning": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/ai2_arc",
+          "hf_revision": null,
+          "hf_subset": "ARC-Easy",
+          "splits": [
+            "test"
+          ],
+          "task": "arc:easy"
+        },
+        {
+          "hf_repo": "allenai/ai2_arc",
+          "hf_revision": null,
+          "hf_subset": "ARC-Challenge",
+          "splits": [
+            "test"
+          ],
+          "task": "arc:challenge"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arc:easy",
+        "arc:challenge"
+      ]
+    },
+    "triviaqa": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "mandarjoshi/trivia_qa",
+          "hf_revision": null,
+          "hf_subset": "rc.nocontext",
+          "splits": [
+            "validation"
+          ],
+          "task": "triviaqa"
+        }
+      ],
+      "directions": {
+        "em": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "triviaqa"
+      ]
+    },
+    "truthfulness": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "truthfulqa/truthful_qa",
+          "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
+          "hf_subset": "multiple_choice",
+          "splits": [
+            "validation"
+          ],
+          "task": "evalhub_truthfulqa_mc"
+        },
+        {
+          "hf_repo": "truthfulqa/truthful_qa",
+          "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
+          "hf_subset": "generation",
+          "splits": [
+            "validation"
+          ],
+          "task": "evalhub_truthfulqa_gen"
+        }
+      ],
+      "directions": {
+        "em": true,
+        "truthfulqa_mc1": true,
+        "truthfulqa_mc2": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "evalhub_truthfulqa_mc",
+        "evalhub_truthfulqa_gen"
+      ]
+    },
+    "truthfulqa:gen": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "truthfulqa/truthful_qa",
+          "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
+          "hf_subset": "generation",
+          "splits": [
+            "validation"
+          ],
+          "task": "evalhub_truthfulqa_gen"
+        }
+      ],
+      "directions": {
+        "em": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "evalhub_truthfulqa_gen"
+      ]
+    },
+    "truthfulqa:mc": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "truthfulqa/truthful_qa",
+          "hf_revision": "741b8276f2d1982aa3d5b832d3ee81ed3b896490",
+          "hf_subset": "multiple_choice",
+          "splits": [
+            "validation"
+          ],
+          "task": "evalhub_truthfulqa_mc"
+        }
+      ],
+      "directions": {
+        "truthfulqa_mc1": true,
+        "truthfulqa_mc2": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "evalhub_truthfulqa_mc"
+      ]
+    },
+    "winogrande": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/winogrande",
+          "hf_revision": null,
+          "hf_subset": "winogrande_xl",
+          "splits": [
+            "validation"
+          ],
+          "task": "winogrande"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lighteval-endpoint-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "winogrande"
+      ]
+    }
+  },
+  "catalog": {
+    "commit": "9a18b91657dae635d9ed56a2075ec1b808eb6345",
+    "repo": "eval-hub/eval-hub"
+  },
+  "lighteval_version": "0.13.0",
+  "schema": "amortized.evalhub.described/v1",
+  "settings_profile": "lighteval-endpoint-v1"
+}

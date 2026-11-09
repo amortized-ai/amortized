@@ -15,13 +15,35 @@
           "task": "aime24"
         }
       ],
+      "directions": {
+        "aime24.avg@n:n=1": "higher",
+        "all.avg@n:n=1": "higher"
+      },
+      "metrics": [
+        "aime24.avg@n:n=1",
+        "aime24.pass@1",
+        "all.avg@n:n=1",
+        "all.pass@1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "aime24.pass@1",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "aime24"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T16:45:28+00:00",
+        "hub_job": "c4004269-b529-4899-bba7-f3ac777d3054",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "aime25": {
       "answers_per_question": 1,
@@ -36,13 +58,35 @@
           "task": "aime25"
         }
       ],
+      "directions": {
+        "aime25.avg@n:n=1": "higher",
+        "all.avg@n:n=1": "higher"
+      },
+      "metrics": [
+        "aime25.avg@n:n=1",
+        "aime25.pass@1",
+        "all.avg@n:n=1",
+        "all.pass@1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "aime25.pass@1",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "aime25"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:10:05+00:00",
+        "hub_job": "b7a250f6-2d74-4f4d-a641-aad2e80d557b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arc:challenge": {
       "answers_per_question": 1,
@@ -57,13 +101,33 @@
           "task": "arc:challenge"
         }
       ],
+      "directions": {
+        "all.acc": "higher",
+        "arc:challenge.acc": "higher"
+      },
+      "metrics": [
+        "all.acc",
+        "arc:challenge.acc"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "arc:challenge.acc",
+        "source": "only metric reported"
+      },
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arc:challenge"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:06+00:00",
+        "hub_job": "b2fa8602-4a35-4d28-9d10-c6a1634497e4",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "arc:easy": {
       "answers_per_question": 1,
@@ -78,13 +142,33 @@
           "task": "arc:easy"
         }
       ],
+      "directions": {
+        "all.acc": "higher",
+        "arc:easy.acc": "higher"
+      },
+      "metrics": [
+        "all.acc",
+        "arc:easy.acc"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "arc:easy.acc",
+        "source": "only metric reported"
+      },
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "arc:easy"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T16:46:13+00:00",
+        "hub_job": "a28b9f72-be94-4a0e-94df-f91aee4cbd79",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "commonsense_reasoning": {
       "answers_per_question": 1,
@@ -151,13 +235,37 @@
           "task": "glue:cola"
         }
       ],
+      "directions": {
+        "all.acc": "higher",
+        "all.mcc": "higher",
+        "glue:cola.acc": "higher",
+        "glue:cola.mcc": "higher"
+      },
+      "metrics": [
+        "all.acc",
+        "all.mcc",
+        "glue:cola.acc",
+        "glue:cola.mcc"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "glue:cola.mcc",
+        "source": "catalog's matthews_correlation, as the adapter names it"
+      },
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "glue:cola"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T16:46:13+00:00",
+        "hub_job": "a28b9f72-be94-4a0e-94df-f91aee4cbd79",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "glue:mrpc": {
       "answers_per_question": 1,
@@ -172,13 +280,37 @@
           "task": "glue:mrpc"
         }
       ],
+      "directions": {
+        "all.acc": "higher",
+        "all.loglikelihood_f1": "higher",
+        "glue:mrpc.acc": "higher",
+        "glue:mrpc.loglikelihood_f1": "higher"
+      },
+      "metrics": [
+        "all.acc",
+        "all.loglikelihood_f1",
+        "glue:mrpc.acc",
+        "glue:mrpc.loglikelihood_f1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "glue:mrpc.acc",
+        "source": "catalog's acc, as the adapter names it"
+      },
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "glue:mrpc"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:52+00:00",
+        "hub_job": "d70f8f4b-5064-465a-a56c-b27f45f2ffdd",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "glue:sst2": {
       "answers_per_question": 1,
@@ -193,13 +325,33 @@
           "task": "glue:sst2"
         }
       ],
+      "directions": {
+        "all.acc": "higher",
+        "glue:sst2.acc": "higher"
+      },
+      "metrics": [
+        "all.acc",
+        "glue:sst2.acc"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "glue:sst2.acc",
+        "source": "catalog's acc, as the adapter names it"
+      },
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "glue:sst2"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:52+00:00",
+        "hub_job": "d70f8f4b-5064-465a-a56c-b27f45f2ffdd",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "gpqa:diamond": {
       "answers_per_question": 1,
@@ -214,9 +366,10 @@
           "task": "gpqa:diamond"
         }
       ],
+      "reason": "its conformance run failed: Unexpected error during LightEval evaluation: RuntimeError: LightEval CLI failed with exit code 1; adapter log: DatasetNotFoundError: Dataset 'Idavidrein/gpqa' is a gated dataset on the Hub.",
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
-      "status": "known",
+      "status": "unknown",
       "suite": false,
       "tasks": [
         "gpqa:diamond"
@@ -235,13 +388,33 @@
           "task": "gsm8k"
         }
       ],
+      "directions": {
+        "all.extractive_match": "higher",
+        "gsm8k.extractive_match": "higher"
+      },
+      "metrics": [
+        "all.extractive_match",
+        "gsm8k.extractive_match"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "gsm8k.extractive_match",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "gsm8k"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T16:45:28+00:00",
+        "hub_job": "c4004269-b529-4899-bba7-f3ac777d3054",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "hellaswag": {
       "answers_per_question": 1,
@@ -256,13 +429,33 @@
           "task": "hellaswag"
         }
       ],
+      "directions": {
+        "all.em": "higher",
+        "hellaswag.em": "higher"
+      },
+      "metrics": [
+        "all.em",
+        "hellaswag.em"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "hellaswag.em",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "hellaswag"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T16:45:28+00:00",
+        "hub_job": "c4004269-b529-4899-bba7-f3ac777d3054",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "knowledge": {
       "reason": "LightEval's task registry has no task mmlu",
@@ -328,13 +521,30 @@
           "task": "lcb:codegeneration_v6"
         }
       ],
+      "directions": {},
+      "metrics": [
+        "all.codegen_pass@1",
+        "lcb:codegeneration_v6.codegen_pass@1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "lcb:codegeneration_v6.codegen_pass@1",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "lcb:codegeneration_v6"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T16:45:28+00:00",
+        "hub_job": "c4004269-b529-4899-bba7-f3ac777d3054",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "math": {
       "answers_per_question": 4,
@@ -400,13 +610,30 @@
           "task": "math:algebra"
         }
       ],
+      "directions": {},
+      "metrics": [
+        "all.maj@4",
+        "math:algebra.maj@4"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "math:algebra.maj@4",
+        "source": "only metric reported"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "math:algebra"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:52+00:00",
+        "hub_job": "d70f8f4b-5064-465a-a56c-b27f45f2ffdd",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "math:counting_and_probability": {
       "answers_per_question": 4,
@@ -421,13 +648,30 @@
           "task": "math:counting_and_probability"
         }
       ],
+      "directions": {},
+      "metrics": [
+        "all.maj@4",
+        "math:counting_and_probability.maj@4"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "math:counting_and_probability.maj@4",
+        "source": "only metric reported"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "math:counting_and_probability"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:52+00:00",
+        "hub_job": "d70f8f4b-5064-465a-a56c-b27f45f2ffdd",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "math_500": {
       "answers_per_question": 1,
@@ -442,13 +686,30 @@
           "task": "math_500"
         }
       ],
+      "directions": {},
+      "metrics": [
+        "all.pass@1",
+        "math_500.pass@1"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "math_500.pass@1",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "math_500"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:06+00:00",
+        "hub_job": "b2fa8602-4a35-4d28-9d10-c6a1634497e4",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "mmlu": {
       "reason": "LightEval's task registry has no task mmlu",
@@ -472,13 +733,33 @@
           "task": "openbookqa"
         }
       ],
+      "directions": {
+        "all.em": "higher",
+        "openbookqa.em": "higher"
+      },
+      "metrics": [
+        "all.em",
+        "openbookqa.em"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "openbookqa.em",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "openbookqa"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:10:05+00:00",
+        "hub_job": "b7a250f6-2d74-4f4d-a641-aad2e80d557b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "physical_commonsense": {
       "answers_per_question": 1,
@@ -514,13 +795,33 @@
           "task": "evalhub_piqa"
         }
       ],
+      "directions": {
+        "all.em": "higher",
+        "piqa.em": "higher"
+      },
+      "metrics": [
+        "all.em",
+        "piqa.em"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "piqa.em",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "evalhub_piqa"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:10:05+00:00",
+        "hub_job": "b7a250f6-2d74-4f4d-a641-aad2e80d557b",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "scientific_reasoning": {
       "answers_per_question": 1,
@@ -566,13 +867,33 @@
           "task": "triviaqa"
         }
       ],
+      "directions": {
+        "all.em": "higher",
+        "triviaqa.em": "higher"
+      },
+      "metrics": [
+        "all.em",
+        "triviaqa.em"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "triviaqa.em",
+        "source": "catalog"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "triviaqa"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:06+00:00",
+        "hub_job": "b2fa8602-4a35-4d28-9d10-c6a1634497e4",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "truthfulness": {
       "answers_per_question": 1,
@@ -618,13 +939,33 @@
           "task": "evalhub_truthfulqa_gen"
         }
       ],
+      "directions": {
+        "all.em": "higher",
+        "truthfulqa:gen.em": "higher"
+      },
+      "metrics": [
+        "all.em",
+        "truthfulqa:gen.em"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "truthfulqa:gen.em",
+        "source": "catalog's exact_match, as the adapter names it"
+      },
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "evalhub_truthfulqa_gen"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:06+00:00",
+        "hub_job": "b2fa8602-4a35-4d28-9d10-c6a1634497e4",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "truthfulqa:mc": {
       "answers_per_question": 1,
@@ -639,13 +980,37 @@
           "task": "evalhub_truthfulqa_mc"
         }
       ],
+      "directions": {
+        "all.truthfulqa_mc1": "higher",
+        "all.truthfulqa_mc2": "higher",
+        "truthfulqa:mc.truthfulqa_mc1": "higher",
+        "truthfulqa:mc.truthfulqa_mc2": "higher"
+      },
+      "metrics": [
+        "all.truthfulqa_mc1",
+        "all.truthfulqa_mc2",
+        "truthfulqa:mc.truthfulqa_mc1",
+        "truthfulqa:mc.truthfulqa_mc2"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "truthfulqa:mc.truthfulqa_mc1",
+        "source": "catalog's mc1, as the adapter names it"
+      },
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "evalhub_truthfulqa_mc"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T16:46:13+00:00",
+        "hub_job": "a28b9f72-be94-4a0e-94df-f91aee4cbd79",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     },
     "winogrande": {
       "answers_per_question": 1,
@@ -660,20 +1025,44 @@
           "task": "winogrande"
         }
       ],
+      "directions": {
+        "all.acc": "higher",
+        "winogrande.acc": "higher"
+      },
+      "metrics": [
+        "all.acc",
+        "winogrande.acc"
+      ],
+      "score": {
+        "lower_is_better": false,
+        "metric": "winogrande.acc",
+        "source": "catalog's acc, as the adapter names it"
+      },
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
       "suite": false,
       "tasks": [
         "winogrande"
-      ]
+      ],
+      "verified": {
+        "adapter_digest": "sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc",
+        "date": "2026-11-09T17:12:06+00:00",
+        "hub_job": "b2fa8602-4a35-4d28-9d10-c6a1634497e4",
+        "model": "Qwen/Qwen3-0.6B",
+        "questions": 10
+      }
     }
   },
   "catalog": {
     "commit": "9a18b91657dae635d9ed56a2075ec1b808eb6345",
     "repo": "eval-hub/eval-hub"
   },
+  "conformance": {
+    "model": "Qwen/Qwen3-0.6B",
+    "questions": 10
+  },
   "lighteval_version": "0.13.0",
-  "schema": "amortized.evalhub.compat/v1",
+  "schema": "amortized.evalhub.compat/v2",
   "settings_profile": "lighteval-endpoint-v1"
 }

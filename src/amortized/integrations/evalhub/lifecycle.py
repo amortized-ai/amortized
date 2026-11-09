@@ -115,8 +115,12 @@ async def _last_log_line(core: Any, namespace: str, pod: str) -> str:
     return (errors or lines or [""])[-1][:300]
 
 
-async def adapter_stopped(execution: dict[str, Any], snapshot: dict[str, Any]) -> str:
-    """Why Hub's adapter can no longer report this job's result, or "" while it can."""
+async def stopped_adapters(execution: dict[str, Any], snapshot: dict[str, Any]) -> dict[int, str]:
+    """Why each of Hub's adapters can no longer report its benchmark, by benchmark index.
+
+    Index -1 when the reason covers the whole job (its Jobs are gone) or a pod has no index.
+    Empty while every adapter that has not reported can still do so.
+    """
     from kubernetes_asyncio.client import BatchV1Api, CoreV1Api
 
     from amortized.backends.kubernetes import KubernetesBackend
@@ -124,7 +128,7 @@ async def adapter_stopped(execution: dict[str, Any], snapshot: dict[str, Any]) -
 
     backend = get_backend("kubernetes")
     if not isinstance(backend, KubernetesBackend):
-        return ""
+        return {}
     reported = {
         b.get("benchmark_index")
         for b in (snapshot.get("status") or {}).get("benchmarks") or []
@@ -138,12 +142,16 @@ async def adapter_stopped(execution: dict[str, Any], snapshot: dict[str, Any]) -
     jobs = (await BatchV1Api(api).list_namespaced_job(namespace, label_selector=selector)).items
     if not jobs:
         if _age((snapshot.get("resource") or {}).get("created_at"), now) > _START_GRACE:
-            return "The benchmark adapter's Kubernetes Job is gone and Eval Hub has no result"
-        return ""
+            return {-1: "The benchmark adapter's Kubernetes Job is gone and Eval Hub has no result"}
+        return {}
+    stopped: dict[int, str] = {}
     pods = (await core.list_namespaced_pod(namespace, label_selector=selector)).items
+    indices = {
+        j.metadata.name: int((j.metadata.labels or {}).get("benchmark_index", -1)) for j in jobs
+    }
     for k8s_job in jobs:
-        index = (k8s_job.metadata.labels or {}).get("benchmark_index")
-        if index is not None and int(index) in reported:
+        index = indices[k8s_job.metadata.name]
+        if index in reported:
             continue
         ended = next(
             (
@@ -162,11 +170,16 @@ async def adapter_stopped(execution: dict[str, Any], snapshot: dict[str, Any]) -
         )
         last = await _last_log_line(core, namespace, pod_name) if pod_name else ""
         how = f"failed ({ended.reason or 'Failed'})" if ended.type == "Failed" else "exited"
-        return f"The benchmark adapter {how} without reporting a result to Eval Hub" + (
-            f". Last log line: {last}" if last else ""
+        stopped.setdefault(
+            index,
+            f"The benchmark adapter {how} without reporting a result to Eval Hub"
+            + (f". Last log line: {last}" if last else ""),
         )
     for pod in pods:
         if _age(pod.metadata.creation_timestamp, now) <= _START_GRACE:
+            continue
+        index = indices.get((pod.metadata.labels or {}).get("job-name", ""), -1)
+        if index in reported:
             continue
         statuses = (pod.status.init_container_statuses or []) + (
             pod.status.container_statuses or []
@@ -174,10 +187,42 @@ async def adapter_stopped(execution: dict[str, Any], snapshot: dict[str, Any]) -
         for status in statuses:
             waiting = status.state.waiting if status.state else None
             if waiting and waiting.reason in _STUCK:
-                return (
-                    f"The benchmark adapter pod cannot start: {waiting.reason}"
-                    + (f": {waiting.message}" if waiting.message else "")
-                )[:500]
+                stopped.setdefault(
+                    index,
+                    (
+                        f"The benchmark adapter pod cannot start: {waiting.reason}"
+                        + (f": {waiting.message}" if waiting.message else "")
+                    )[:500],
+                )
+    return stopped
+
+
+async def adapter_stopped(execution: dict[str, Any], snapshot: dict[str, Any]) -> str:
+    """Why Hub's adapter can no longer report this job's result, or "" while it can."""
+    return next(iter((await stopped_adapters(execution, snapshot)).values()), "")
+
+
+async def adapter_log_tail(execution: dict[str, Any], snapshot: dict[str, Any], index: int) -> str:
+    """The last telling line of one benchmark's adapter log, or ""."""
+    from kubernetes_asyncio.client import BatchV1Api, CoreV1Api
+
+    from amortized.backends.kubernetes import KubernetesBackend
+    from amortized.core.compute import get_backend
+
+    backend = get_backend("kubernetes")
+    if not isinstance(backend, KubernetesBackend):
+        return ""
+    api = await backend._get_client()
+    core, namespace = CoreV1Api(api), execution["tenant"]
+    job_id = _label_value(snapshot["resource"]["id"])
+    selector = f"app=evalhub,component=evaluation-job,job_id={job_id},benchmark_index={index}"
+    jobs = (await BatchV1Api(api).list_namespaced_job(namespace, label_selector=selector)).items
+    for k8s_job in jobs:
+        pods = await core.list_namespaced_pod(
+            namespace, label_selector=f"job-name={k8s_job.metadata.name}"
+        )
+        if pods.items:
+            return await _last_log_line(core, namespace, pods.items[-1].metadata.name)
     return ""
 
 

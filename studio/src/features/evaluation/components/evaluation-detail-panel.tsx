@@ -258,6 +258,11 @@ export function EvaluationDetailPanel({
                   <tr key={row.name} className="border-b last:border-b-0">
                     <td className="px-4 py-3 font-medium sticky left-0 bg-card z-10">
                       {row.name}
+                      {row.name === group.primary_metric && (
+                        <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-normal text-primary">
+                          score
+                        </span>
+                      )}
                       {group.metric_metadata?.[row.name] && (
                         <span className="block text-xs font-normal text-muted-foreground">
                           {group.metric_metadata[row.name]!.unit}
@@ -441,11 +446,13 @@ function buildMetricRows(group: EvaluationGroup): {
   for (const e of group.evals) {
     for (const key of Object.keys(e.scores)) names.add(key)
   }
-  // Keep the group's declared metric order first, then any extras
-  const ordered = [
+  // The benchmark's score first, then the group's declared metric order, then any extras
+  const declared = [
     ...group.metric_names.filter((n) => names.has(n)),
     ...[...names].filter((n) => !group.metric_names.includes(n)).sort(),
   ]
+  const primary = group.primary_metric
+  const ordered = primary && names.has(primary) ? [primary, ...declared.filter((n) => n !== primary)] : declared
   const columns = mergeEvalColumns(group.evals)
   return ordered.map((name) => ({
     name,

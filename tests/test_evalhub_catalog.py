@@ -103,6 +103,29 @@ def both(hub):
     return hub
 
 
+def _contract(tmp_path: Path, change) -> str:
+    """A copy of the chart's compat files, changed by `change(lm_eval, lighteval)`."""
+    lm, le = copy.deepcopy(LM_COMPAT), copy.deepcopy(COMPAT)
+    change(lm["benchmarks"], le["benchmarks"])
+    (tmp_path / "amortized-lm-eval.json").write_text(json.dumps(lm))
+    (tmp_path / "amortized-lighteval.json").write_text(json.dumps(le))
+    return str(tmp_path)
+
+
+@pytest.fixture
+def copies(both, tmp_path):
+    """The pinned images have no copies: ARC Easy is scored differently and lm-eval cannot
+    load truthful_qa. To test how copies are offered, ARC Easy's two entries are confirmed
+    as scoring alike."""
+
+    def confirm(lm, le):
+        lm["arc_easy"]["same_scoring"] = [{"provider_id": "amortized-lighteval", "id": "arc:easy"}]
+        le["arc:easy"]["same_scoring"] = [{"provider_id": "amortized-lm-eval", "id": "arc_easy"}]
+
+    config_mod.settings.evalhub_compat_dir = _contract(tmp_path, confirm)
+    return both
+
+
 # --------------------------------------------------------------------------- #
 # Release artifacts stay consistent with each other and with the chart
 # --------------------------------------------------------------------------- #
@@ -131,6 +154,56 @@ def test_compat_file_matches_the_pinned_image_and_catalog(provider_id):
                 assert dataset["hf_repo"] and dataset["splits"], dataset
 
 
+@pytest.mark.parametrize(
+    ("records", "benchmark_id", "metric"),
+    [
+        (LM_COMPAT, "arc_easy", "acc_norm"),  # the catalog's name, reported as is
+        (COMPAT, "gsm8k", "gsm8k.extractive_match"),
+        (COMPAT, "glue:sst2", "glue:sst2.acc"),  # LightEval prefixes the task
+        (COMPAT, "glue:cola", "glue:cola.mcc"),  # matthews_correlation under its alias
+        (COMPAT, "arc:easy", "arc:easy.acc"),  # names acc_norm; acc is all it reports
+        (COMPAT, "truthfulqa:mc", "truthfulqa:mc.truthfulqa_mc1"),  # mc1 under its alias
+        (COMPAT, "math:algebra", "math:algebra.maj@4"),  # the only metric it reports
+    ],
+)
+def test_score_metric_follows_what_the_pinned_image_reports(records, benchmark_id, metric):
+    assert records["benchmarks"][benchmark_id]["score"]["metric"] == metric
+
+
+def test_entry_score_comes_only_from_the_contract():
+    raw = {"id": "b", "primary_score": {"metric": "acc_norm", "lower_is_better": False}}
+    chosen = {"metric": "b.acc", "lower_is_better": False, "source": "only metric reported"}
+    assert catalog.score({"score": chosen}) == {"metric": "b.acc", "lower_is_better": False}
+    assert catalog.score({"score": {"metric": None, "reason": "r"}}) is None
+    assert catalog.no_score_reason({"score": {"metric": None, "reason": "r"}}) == "r"
+    # Never upstream's catalog: an entry the contract has not scored has no score.
+    entry = catalog.Entry(catalog.Provider("p", "p", "", {}, ""), raw, {"status": "known"})
+    assert catalog.score({}) is None and catalog.score(None) is None
+    assert entry.metric == ""
+
+
+async def test_an_entry_without_a_score_says_why(both, tmp_path):
+    # No entry on the pinned images ran without a score (pile_* cannot load its dataset);
+    # pile_arxiv is given the result it would have: three perplexities, none of them acc.
+    reason = (
+        "the catalog's metric is acc; the adapter reports bits_per_byte, byte_perplexity,"
+        " word_perplexity"
+    )
+
+    def no_score(lm, le):
+        lm["pile_arxiv"] = {
+            **{k: v for k, v in lm["pile_arxiv"].items() if k != "reason"},
+            "status": "known",
+            "score": {"metric": None, "reason": reason},
+        }
+
+    config_mod.settings.evalhub_compat_dir = _contract(tmp_path, no_score)
+    pile = next(e for e in await entries(both) if e.id == "pile_arxiv")
+    shown = catalog.view(pile, SERVED)
+    assert shown["metric"] == ""
+    assert shown["no_score"] == reason
+
+
 def test_enabled_providers_default_to_lm_eval_first():
     assert config_mod.Settings().evalhub_providers == ["amortized-lm-eval", "amortized-lighteval"]
     values = yaml.safe_load((ROOT / "deploy/helm/amortized/values.yaml").read_text())
@@ -142,10 +215,17 @@ def test_enabled_providers_default_to_lm_eval_first():
 # --------------------------------------------------------------------------- #
 
 
-async def test_served_model_hides_only_suites(hub):
+async def test_served_model_is_offered_only_verified_entries(hub):
     result = catalog.find(await entries(hub), SERVED)
-    assert result["hidden"] == [{"reason": "suites are not supported yet", "count": 7}]
-    assert result["available"] == 21
+    unverified = [
+        k for k, r in COMPAT["benchmarks"].items() if not r.get("suite") and "verified" not in r
+    ]
+    assert sorted(unverified) == ["gpqa:diamond", "mmlu"]  # a gated dataset; no such task
+    assert result["hidden"] == [
+        {"reason": catalog.NOT_VERIFIED, "count": 2},
+        {"reason": "suites are not supported yet", "count": 7},
+    ]
+    assert result["available"] == 19
 
 
 async def test_endpoint_hides_likelihood_benchmarks_unless_declared(hub):
@@ -157,12 +237,15 @@ async def test_endpoint_hides_likelihood_benchmarks_unless_declared(hub):
         if r.get("scoring") == "likelihood" and not r.get("suite")
     )
     assert likelihood == 7
-    assert {h["count"] for h in result["hidden"]} == {7}
-    assert result["available"] == 14
+    hidden = {h["reason"]: h["count"] for h in result["hidden"]}
+    assert hidden.pop(catalog.NOT_VERIFIED) == 2
+    assert hidden.pop("suites are not supported yet") == 7
+    assert list(hidden.values()) == [likelihood]
+    assert result["available"] == 12
     declared = catalog.Capability.from_model(
         {"endpoint": {"base_url": "http://m/v1"}, "declared_capabilities": ["completions_logprobs"]}
     )
-    assert catalog.find(loaded, declared)["available"] == 21
+    assert catalog.find(loaded, declared)["available"] == 19
 
 
 def test_model_must_be_settled_first():
@@ -176,7 +259,7 @@ async def test_digest_mismatch_makes_every_entry_unknown(hub):
     gsm8k = next(e for e in loaded if e.id == "gsm8k")
     status, reason = catalog.compatibility(gsm8k, SERVED)
     assert status == "unknown"
-    assert "make evalhub-compat" in reason
+    assert "make evalhub-describe evalhub-conform evalhub-contract" in reason
 
 
 # --------------------------------------------------------------------------- #
@@ -300,13 +383,24 @@ def _ids(benchmarks: list[dict]) -> list[tuple[str, str, str]]:
     return [(b["provider_id"], b["id"], b["compatibility"]) for b in benchmarks]
 
 
-async def test_copies_are_same_dataset_subset_and_split(both):
-    groups = catalog.overlaps(await entries(both))
-    pairs = {tuple((e.provider.id, e.id) for e in g) for g in groups.values()}
-    assert pairs == {
+async def test_same_questions_are_same_dataset_subset_and_split(both):
+    loaded = await entries(both)
+    groups = catalog.same_questions(loaded)
+    # TruthfulQA would pair too, but lm-eval's truthfulqa_mc1 cannot load its dataset on
+    # the pinned image, so it is unknown. ARC Easy pairs, but is scored differently.
+    assert {tuple((e.provider.id, e.id) for e in g) for g in groups} == {
         (("amortized-lm-eval", "arc_easy"), ("amortized-lighteval", "arc:easy")),
-        (("amortized-lm-eval", "truthfulqa_mc1"), ("amortized-lighteval", "truthfulqa:mc")),
     }
+    assert catalog.overlaps(loaded) == {}
+
+
+async def test_arc_easy_is_two_choices_each_with_its_own_score(both):
+    result = catalog.find(await entries(both), SERVED, name="arc_easy")
+    shown = {(b["provider_id"], b["id"]): b for b in result["benchmarks"]}
+    assert set(shown) == {("amortized-lm-eval", "arc_easy"), ("amortized-lighteval", "arc:easy")}
+    assert shown[("amortized-lm-eval", "arc_easy")]["metric"] == "acc_norm"
+    assert shown[("amortized-lighteval", "arc:easy")]["metric"] == "arc:easy.acc"
+    assert not any(b.get("also_in") for b in shown.values())
 
 
 def test_a_provider_with_two_entries_on_one_dataset_has_no_copies():
@@ -319,45 +413,59 @@ def test_a_provider_with_two_entries_on_one_dataset_has_no_copies():
             catalog.Provider(provider, provider, "", {}, ""), {"id": benchmark_id}, record
         )
 
-    assert catalog.overlaps([entry("a", "x"), entry("b", "x")])
+    def pairs(entries: list[catalog.Entry]) -> list[list[str]]:
+        return [[f"{e.provider.id}/{e.id}" for e in g] for g in catalog.same_questions(entries)]
+
+    assert pairs([entry("a", "x"), entry("b", "x")]) == [["a/x", "b/x"]]
     # mc1 and mc2 read the same questions but score them differently.
-    assert not catalog.overlaps([entry("a", "mc1"), entry("a", "mc2"), entry("b", "mc")])
+    assert pairs([entry("a", "mc1"), entry("a", "mc2"), entry("b", "mc")]) == []
     other_split = entry("b", "x")
     other_split.compat["datasets"][0]["splits"] = ["validation"]
-    assert not catalog.overlaps([entry("a", "x"), other_split])
+    assert pairs([entry("a", "x"), other_split]) == []
+    # The same questions make a copy only once the contract confirms the same scoring.
+    a, b = entry("a", "x"), entry("b", "x")
+    assert not catalog.overlaps([a, b])
+    a.compat["same_scoring"] = [{"provider_id": "b", "id": "x"}]
+    b.compat["same_scoring"] = [{"provider_id": "a", "id": "x"}]
+    assert catalog.overlaps([a, b])
 
 
-async def test_served_model_gets_the_lm_eval_copy(both):
-    loaded = await entries(both)
+async def test_served_model_gets_the_lm_eval_copy(copies):
+    loaded = await entries(copies)
     for name in ("arc_easy", "ARC:Easy"):
         result = catalog.find(loaded, SERVED, name=name)
         assert _ids(result["benchmarks"]) == [("amortized-lm-eval", "arc_easy", "compatible")]
         also = [{"provider_id": "amortized-lighteval", "id": "arc:easy"}]
         assert result["benchmarks"][0]["also_in"] == also
     browse = catalog.find(loaded, SERVED, picks={"area": "knowledge_and_reasoning"})
-    area = [e for e in loaded if "knowledge_and_reasoning" in e.areas and not e.suite]
+    area = [
+        e
+        for e in loaded
+        if "knowledge_and_reasoning" in e.areas
+        and catalog.compatibility(e, SERVED)[0] == "compatible"
+    ]
     groups = catalog.overlaps(loaded)
-    copies = [
+    folded = [
         e
         for e in area
         if e.provider.id == "amortized-lighteval" and (e.provider.id, e.id) in groups
     ]
-    assert [e.id for e in copies] == ["arc:easy"]
-    assert browse["available"] == len(area) - len(copies)
+    assert [e.id for e in folded] == ["arc:easy"]
+    assert browse["available"] == len(area) - len(folded)
 
 
-async def test_naming_the_framework_picks_its_copy(both):
-    result = catalog.find(await entries(both), SERVED, name="lighteval arc easy")
+async def test_naming_the_framework_picks_its_copy(copies):
+    result = catalog.find(await entries(copies), SERVED, name="lighteval arc easy")
     assert _ids(result["benchmarks"]) == [("amortized-lighteval", "arc:easy", "compatible")]
     assert result["benchmarks"][0]["also_in"] == [
         {"provider_id": "amortized-lm-eval", "id": "arc_easy"}
     ]
 
 
-async def test_endpoint_gets_the_lighteval_copy_and_never_lm_eval(both):
-    loaded = await entries(both)
+async def test_endpoint_gets_the_lighteval_copy_and_never_lm_eval(copies):
+    loaded = await entries(copies)
     result = catalog.find(loaded, ENDPOINT)
-    assert result["available"] == 14  # LightEval alone, as before lm-eval was added
+    assert result["available"] == 12  # LightEval's verified entries that don't need logprobs
     reasons = {h["reason"]: h["count"] for h in result["hidden"]}
     tokenizer = next(r for r in reasons if "tokenizer" in r)
     # Every non-suite lm-eval entry, the unknown ones included.
@@ -367,12 +475,12 @@ async def test_endpoint_gets_the_lighteval_copy_and_never_lm_eval(both):
     declared = catalog.Capability.from_model(
         {"endpoint": {"base_url": "http://m/v1"}, "declared_capabilities": ["completions_logprobs"]}
     )
-    shared = catalog.find(loaded, declared, name="truthfulqa_mc1")
-    assert _ids(shared["benchmarks"]) == [("amortized-lighteval", "truthfulqa:mc", "compatible")]
+    shared = catalog.find(loaded, declared, name="arc_easy")
+    assert _ids(shared["benchmarks"]) == [("amortized-lighteval", "arc:easy", "compatible")]
 
 
-async def test_when_no_copy_can_run_every_copy_explains_itself(both):
-    result = catalog.find(await entries(both), ENDPOINT, name="arc easy")
+async def test_when_no_copy_can_run_every_copy_explains_itself(copies):
+    result = catalog.find(await entries(copies), ENDPOINT, name="arc easy")
     assert _ids(result["benchmarks"]) == [
         ("amortized-lm-eval", "arc_easy", "incompatible"),
         ("amortized-lighteval", "arc:easy", "incompatible"),
@@ -381,25 +489,25 @@ async def test_when_no_copy_can_run_every_copy_explains_itself(both):
     assert "declare" in result["benchmarks"][1]["reason"]
 
 
-async def test_named_model_needs_a_hugging_face_id_for_lm_eval(both):
+async def test_named_model_needs_a_hugging_face_id_for_lm_eval(copies):
     local = catalog.Capability.from_model({"model_name_or_path": "/models/qwen"})
-    result = catalog.find(await entries(both), local, name="arc_easy")
+    result = catalog.find(await entries(copies), local, name="arc_easy")
     assert _ids(result["benchmarks"]) == [("amortized-lighteval", "arc:easy", "compatible")]
     hf = catalog.Capability.from_model({"model_name_or_path": "Qwen/Qwen3-0.6B"})
-    assert catalog.find(await entries(both), hf, name="arc_easy")["benchmarks"][0][
+    assert catalog.find(await entries(copies), hf, name="arc_easy")["benchmarks"][0][
         "provider_id"
     ] == ("amortized-lm-eval")
 
 
-async def test_shortlist_member_brings_its_copies(both):
-    loaded = await entries(both)
+async def test_shortlist_member_brings_its_copies(copies):
+    loaded = await entries(copies)
     shortlists = [{"id": "s", "name": "S", "members": {("amortized-lighteval", "arc:easy")}}]
     result = catalog.find(loaded, SERVED, answer="Shortlist: S", shortlists=shortlists)
     assert [o["value"] for o in result["options"]] == ["arc_easy"]
 
 
-async def test_lm_eval_recipe_uses_its_own_setting_names(both):
-    loaded = await entries(both)
+async def test_lm_eval_recipe_uses_its_own_setting_names(copies):
+    loaded = await entries(copies)
     arc = {**definition("arc_easy"), "provider_id": "amortized-lm-eval"}
     recipe, errors = catalog.resolve_recipe(loaded, SERVED, arc, {"max_samples": 20})
     assert errors == []
@@ -420,6 +528,21 @@ async def test_lm_eval_recipe_uses_its_own_setting_names(both):
     settings = {s["name"]: s["default"] for s in detail["settings"]}
     assert settings == {"num_examples": "all questions", "num_few_shot": 0, "batch_size": 1}
     assert detail["also_in"] == [{"provider_id": "amortized-lighteval", "id": "arc:easy"}]
+
+
+async def test_few_shot_default_is_capped_at_the_examples_the_task_holds(both):
+    # BBH's chain-of-thought tasks list 3 worked examples; the catalog asks for 5.
+    loaded = await entries(both)
+    navigate = next(e for e in loaded if e.id == "bbh_cot_fewshot_navigate")
+    assert navigate.raw["num_few_shot"] == 5 and navigate.compat["max_few_shot"] == 3
+    settings = {s["name"]: s for s in catalog.detail(navigate, SERVED, loaded)["settings"]}
+    assert (settings["num_few_shot"]["default"], settings["num_few_shot"]["max"]) == (3, 3)
+    bbh = {**definition("bbh_cot_fewshot_navigate"), "provider_id": "amortized-lm-eval"}
+    recipe, errors = catalog.resolve_recipe(loaded, SERVED, bbh, {})
+    assert errors == [] and recipe["parameters"]["num_few_shot"] == 3
+    asked = {**bbh, "parameters": {"num_few_shot": 5}}
+    _, errors = catalog.resolve_recipe(loaded, SERVED, asked, {})
+    assert errors == ["benchmark settings: num_few_shot: the task has only 3 worked examples"]
 
 
 def test_benchmark_definitions_validate_each_providers_settings():
@@ -550,16 +673,20 @@ async def test_hub_job_is_built_only_from_an_unchanged_approved_recipe(hub):
 async def test_hub_job_carries_the_cards_metric_as_its_primary_score(hub):
     from evalhub.models import JobSubmissionRequest
 
+    from amortized.api.jobs import _benchmark_view
     from amortized.integrations.evalhub.preparation import benchmark_selection
 
-    recipe, _ = catalog.resolve_recipe(await entries(hub), ENDPOINT, definition(), {})
-    selected = benchmark_selection(recipe, definition())
-    metric = recipe["catalog_entry"]["primary_score"]["metric"]
-    assert selected["primary_score"] == {"metric": metric, "lower_is_better": False}
+    # LightEval's catalog names acc_norm for arc:easy; its adapter reports arc:easy.acc.
+    recipe, errors = catalog.resolve_recipe(await entries(hub), SERVED, definition("arc:easy"), {})
+    assert errors == []
+    assert recipe["catalog_entry"]["primary_score"]["metric"] == "acc_norm"
+    selected = benchmark_selection(recipe, definition("arc:easy"))
+    assert selected["primary_score"] == {"metric": "arc:easy.acc", "lower_is_better": False}
+    assert _benchmark_view(recipe, {}).metric == "arc:easy.acc"
     request = JobSubmissionRequest.model_validate(
         {"name": "n", "model": {"url": "http://m/v1", "name": "m"}, "benchmarks": [selected]}
     )
-    assert request.benchmarks[0].primary_score.metric == metric
+    assert request.benchmarks[0].primary_score.metric == "arc:easy.acc"
 
 
 async def test_benchmark_comparisons_key_on_the_recipe_fingerprint(monkeypatch):

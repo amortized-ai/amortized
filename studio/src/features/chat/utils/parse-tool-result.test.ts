@@ -134,10 +134,24 @@ describe("extractValidatedJobConfig", () => {
       id: "gsm8k",
       name: "GSM8K",
       metric: "gsm8k.extractive_match",
+      noScore: "",
       numFewShot: 8,
       maxSamples: null,
       recipeFingerprint: "215799b4e6da",
     })
+  })
+
+  it("carries why a benchmark has no score", () => {
+    const validated = extractValidatedJobConfig(
+      JSON.stringify({
+        valid: true,
+        job_type: "eval",
+        config: { evaluation: { kind: "benchmark" } },
+        benchmark: { id: "pile_arxiv", metric: "", no_score: "reports only perplexities" },
+      }),
+    )
+    expect(validated?.benchmark?.metric).toBe("")
+    expect(validated?.benchmark?.noScore).toBe("reports only perplexities")
   })
 
   it("has no benchmark for task evaluations", () => {

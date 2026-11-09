@@ -17,3 +17,7 @@ export function formatDuration(
   return `${hours}h ${remainingMinutes}m`
 }
 
+// A benchmark metric's value: 4 significant digits, no unit (scores, perplexities, stderr).
+export function formatBenchmarkValue(value: number): string {
+  return String(Number(value.toPrecision(4)))
+}

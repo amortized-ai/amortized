@@ -250,6 +250,13 @@ export interface EvalJudgeMetrics {
 export interface EvalResults {
   num_records: number | null
   num_skipped: number | null
+  // Benchmark jobs (kind="benchmark"): the score the contract names, display-ready.
+  kind?: string
+  stderr?: Record<string, number>
+  primary_metric?: string | null
+  primary_score?: number | null
+  primary_lower_is_better?: boolean | null
+  no_score_reason?: string | null
   // New single-model schema (one model per eval job, absolute scores):
   model?: Partial<EvalModelMetrics>
   scores?: Record<string, number | null>
@@ -303,6 +310,7 @@ export interface EvaluationGroup {
   dataset: { run_id: string; name: string }
   metric_names: string[]
   metric_metadata?: Record<string, EvalMetricMetadata>
+  primary_metric?: string | null
   evals: EvaluationEntry[]
   latest_created_at: string | null
 }

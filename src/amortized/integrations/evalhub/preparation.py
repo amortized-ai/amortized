@@ -18,6 +18,7 @@ from amortized.core.jobs import deserialize_handle
 from amortized.core.mlflow_client import MLflowClient
 from amortized.db.evalhub import EvalHubRepository
 from amortized.integrations.evalhub import client
+from amortized.integrations.evalhub.catalog import recipe_score
 from amortized.jobs.base import JobBuildError
 from amortized.jobs.eval import _ASSETS_DIR, _build_embedded_serving, _endpoint_spec
 
@@ -306,17 +307,46 @@ def benchmark_selection(recipe: dict[str, Any], definition: dict[str, Any]) -> d
         "provider_id": recipe["provider_id"],
         "parameters": dict(recipe["parameters"]),
     }
-    # The card's metric is the score everywhere: Hub, the adapter (adapter_launcher.py),
-    # MLflow and Amortized's results all take it from the job's primary_score.
-    primary = (recipe.get("catalog_entry") or {}).get("primary_score")
-    if isinstance(primary, dict) and primary.get("metric"):
-        selected["primary_score"] = {
-            "metric": str(primary["metric"]),
-            "lower_is_better": bool(primary.get("lower_is_better")),
-        }
+    # The contract's score is the score everywhere: the card, Hub, the adapter
+    # (adapter_launcher.py), MLflow and Amortized's results. Without one, the launcher
+    # leaves overall_score empty rather than the adapter's first metric.
+    primary = recipe_score(recipe)
+    if primary:
+        selected["primary_score"] = primary
     if definition.get("test_data_ref"):
         selected["test_data_ref"] = definition["test_data_ref"]
     return selected
+
+
+def needs_tokenizer(recipe: dict[str, Any]) -> bool:
+    """lm-eval loads the model's Hugging Face tokenizer to count tokens itself."""
+    profile = (recipe.get("compatibility") or {}).get("settings_profile")
+    return bool(profile == "lm-eval-completions-v1")
+
+
+def hub_request(
+    correlation: str,
+    job_id: str,
+    endpoint: dict[str, Any],
+    secret: str,
+    benchmarks: list[dict[str, Any]],
+    experiment: str = "",
+) -> dict[str, Any]:
+    """The Hub job submission; a user's job and the conformance run both build it here."""
+    return {
+        "name": correlation,
+        "tags": [correlation],
+        "model": {
+            "url": endpoint["base_url"],
+            "name": endpoint["model"],
+            "auth": {"secret_ref": secret},
+        },
+        "benchmarks": benchmarks,
+        "experiment": {
+            "name": experiment or config_mod.settings.evalhub_experiment,
+            "tags": [{"key": "amortized_job_id", "value": job_id}],
+        },
+    }
 
 
 async def prepare(
@@ -365,9 +395,9 @@ async def prepare(
     secret = await _credential_secret(job, store, endpoint, config.get("judge"))
     if benchmark:
         selected = benchmark_selection(recipe, definition)
-        if (recipe.get("compatibility") or {}).get("settings_profile") == "lm-eval-completions-v1":
-            # The adapter loads this to count tokens; the served model name may be a
-            # tuned model's display name, so name the Hugging Face model explicitly.
+        if needs_tokenizer(recipe):
+            # The served model name may be a tuned model's display name, so name the
+            # Hugging Face model explicitly.
             selected["parameters"]["tokenizer"] = await _hf_tokenizer(config, store.repo)
     else:
         # Only accepted semantic configuration crosses the engine boundary.
@@ -396,20 +426,7 @@ async def prepare(
             "parameters": parameters,
             "test_data_ref": data_ref,
         }
-    return {
-        "name": execution["correlation"],
-        "tags": [execution["correlation"]],
-        "model": {
-            "url": endpoint["base_url"],
-            "name": endpoint["model"],
-            "auth": {"secret_ref": secret},
-        },
-        "benchmarks": [selected],
-        "experiment": {
-            "name": settings.evalhub_experiment,
-            "tags": [{"key": "amortized_job_id", "value": job["id"]}],
-        },
-    }
+    return hub_request(execution["correlation"], job["id"], endpoint, secret, [selected])
 
 
 async def cleanup(execution: dict[str, Any]) -> None:

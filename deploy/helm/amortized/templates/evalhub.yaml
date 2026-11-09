@@ -1,7 +1,8 @@
 {{- if .Values.evalhub.url }}
 ---
-# What each benchmark needs, recorded by scripts/evalhub/*_compat.py inside each pinned
-# adapter image (make evalhub-compat). The server reads it at request time.
+# The benchmark contract per pinned adapter image: what each benchmark needs, what it
+# reported when run through Eval Hub, and its score (make evalhub-contract; see
+# files/evalhub/REPORT.md). The server reads it at request time.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -105,7 +106,7 @@ id and runtime are replaced, so each registered adapter is its pinned image. */}
 {{- $_ := set $provider "runtime" (dict "k8s" $runtime) }}
 {{- $compat := $.Files.Get (printf "files/evalhub/compat/%s.json" .id) | fromJson }}
 {{- if ne (get $compat "adapter_digest") (regexReplaceAll "^[^@]*@" .image "") }}
-{{- fail (printf "files/evalhub/compat/%s.json describes a different adapter image than evalhub.operator.%s; run make evalhub-compat" .id .value) }}
+{{- fail (printf "files/evalhub/compat/%s.json describes a different adapter image than evalhub.operator.%s; run make evalhub-describe evalhub-conform evalhub-contract" .id .value) }}
 {{- end }}
 ---
 apiVersion: v1

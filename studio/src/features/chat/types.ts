@@ -18,6 +18,7 @@ export interface BenchmarkView {
   id: string
   name: string
   metric: string
+  noScore: string
   numFewShot: number | null
   maxSamples: number | null
   recipeFingerprint: string

@@ -593,7 +593,7 @@ async def list_reusable_eval_sets(
             from amortized.integrations.evalhub.results import present
 
             execution = await EvalHubRepository(repo).get(job["id"])
-            view = present(execution) if execution else None
+            view = present(execution, job) if execution else None
             entry["scores"] = (view or {}).get("scores") or {}
         # Only sets with real scores are reusable comparison baselines.
         if not entry["scores"]:
