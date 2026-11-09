@@ -221,11 +221,9 @@ async def test_served_model_is_offered_only_verified_entries(hub):
         k for k, r in COMPAT["benchmarks"].items() if not r.get("suite") and "verified" not in r
     ]
     assert sorted(unverified) == ["gpqa:diamond", "mmlu"]  # a gated dataset; no such task
-    assert result["hidden"] == [
-        {"reason": catalog.NOT_VERIFIED, "count": 2},
-        {"reason": "suites are not supported yet", "count": 7},
-    ]
     assert result["available"] == 19
+    # Neither the unverified entries nor the suites are counted for Morty to repeat.
+    assert "hidden" not in result
 
 
 async def test_endpoint_hides_likelihood_benchmarks_unless_declared(hub):
@@ -237,11 +235,8 @@ async def test_endpoint_hides_likelihood_benchmarks_unless_declared(hub):
         if r.get("scoring") == "likelihood" and not r.get("suite")
     )
     assert likelihood == 7
-    hidden = {h["reason"]: h["count"] for h in result["hidden"]}
-    assert hidden.pop(catalog.NOT_VERIFIED) == 2
-    assert hidden.pop("suites are not supported yet") == 7
-    assert list(hidden.values()) == [likelihood]
     assert result["available"] == 12
+    assert "hidden" not in result  # something can run, so nothing to explain
     declared = catalog.Capability.from_model(
         {"endpoint": {"base_url": "http://m/v1"}, "declared_capabilities": ["completions_logprobs"]}
     )
@@ -466,12 +461,14 @@ async def test_endpoint_gets_the_lighteval_copy_and_never_lm_eval(copies):
     loaded = await entries(copies)
     result = catalog.find(loaded, ENDPOINT)
     assert result["available"] == 12  # LightEval's verified entries that don't need logprobs
-    reasons = {h["reason"]: h["count"] for h in result["hidden"]}
-    tokenizer = next(r for r in reasons if "tokenizer" in r)
-    # Every non-suite lm-eval entry, the unknown ones included.
-    assert reasons[tokenizer] == sum(
-        1 for r in LM_COMPAT["benchmarks"].values() if not r.get("suite")
-    )
+    # With only lm-eval, nothing can run: the reason is told once, for every non-suite
+    # entry, the unverified ones included; suites are not counted.
+    lm_eval = [e for e in loaded if e.provider.id == "amortized-lm-eval"]
+    nothing = catalog.find(lm_eval, ENDPOINT)
+    assert nothing["available"] == 0
+    [hidden] = nothing["hidden"]
+    assert "tokenizer" in hidden["reason"]
+    assert hidden["count"] == sum(1 for r in LM_COMPAT["benchmarks"].values() if not r.get("suite"))
     declared = catalog.Capability.from_model(
         {"endpoint": {"base_url": "http://m/v1"}, "declared_capabilities": ["completions_logprobs"]}
     )

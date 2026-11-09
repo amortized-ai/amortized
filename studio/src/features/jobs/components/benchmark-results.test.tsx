@@ -7,7 +7,7 @@ import type { EvalResults, EvaluationGroup } from "@/lib/api-client"
 import { extractBenchmarkView } from "@/features/chat/utils/parse-tool-result"
 import { EvaluationDetailPanel } from "@/features/evaluation/components/evaluation-detail-panel"
 import { BenchmarkResults } from "./benchmark-results"
-import { formatBenchmarkValue } from "../lib/format"
+import { formatBenchmarkValue, isRunAverage } from "../lib/format"
 
 vi.mock("@/features/models/api/use-models", () => ({ useModels: () => ({ data: [] }) }))
 vi.mock("@/features/datasets/api/use-datasets", () => ({
@@ -36,7 +36,8 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
   (_, entry) => {
     const results = entry.results
     const primary = results.primary_metric ?? null
-    const reported = Object.keys(results.scores ?? {})
+    const all = Object.keys(results.scores ?? {})
+    const reported = all.filter((name) => !isRunAverage(name, primary))
 
     it("the card names the score the results show", () => {
       const card = extractBenchmarkView(entry.card)!
@@ -61,7 +62,7 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
       }
     })
 
-    it("lists each reported metric once, stderr as ± beside it, with its direction", () => {
+    it("lists each reported metric once, stderr as ± beside it, with its direction; no run average", () => {
       render(<BenchmarkResults results={results} />)
       const rows = rowsOf(screen.getByTestId("benchmark-metrics")).slice(1)
       expect(rows.map((row) => row.cells[0]!.textContent)).toHaveLength(reported.length)
@@ -78,6 +79,7 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
       for (const name of Object.keys(results.stderr ?? {})) {
         expect(rows.some((row) => row.cells[0]!.textContent?.startsWith(`${name}_stderr`))).toBe(false)
       }
+      expect(rows.some((row) => row.cells[0]!.textContent?.startsWith("all."))).toBe(primary?.startsWith("all.") ?? false)
     })
 
     it("the comparison marks the score row first", () => {
@@ -85,7 +87,7 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
       const group: EvaluationGroup = {
         id: "group-1",
         dataset: { run_id: "", name: entry.id },
-        metric_names: reported,
+        metric_names: all,
         metric_metadata: results.metric_metadata,
         primary_metric: primary,
         evals: [
@@ -110,9 +112,10 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
         </QueryClientProvider>,
       )
       const body = screen.getAllByRole("rowgroup").at(-1)!
-      const first = rowsOf(body)[0]!
-      expect(first.cells[0]).toHaveTextContent(primary)
-      expect(first.cells[0]).toHaveTextContent("score")
+      const rows = rowsOf(body)
+      expect(rows[0]!.cells[0]).toHaveTextContent(primary)
+      expect(rows[0]!.cells[0]).toHaveTextContent("score")
+      expect(rows).toHaveLength(reported.length)
     })
   },
 )
@@ -135,6 +138,27 @@ it("a benchmark without a score says why and still lists its metrics", () => {
   expect(rows.map((row) => row.cells[0]!.textContent)).toEqual([
     "word_perplexitylower is better",
     "bits_per_byte",
+  ])
+})
+
+// LightEval's "all.<m>" averages the run's tasks; a job runs one, so it repeats the score.
+it("hides the run average unless it is the score itself", () => {
+  const one = {
+    kind: "benchmark",
+    scores: { "all.extractive_match": 0.1, "gsm8k.extractive_match": 0.1 },
+    primary_metric: "gsm8k.extractive_match",
+    primary_score: 0.1,
+  } as unknown as EvalResults
+  const { unmount } = render(<BenchmarkResults results={one} />)
+  expect(rowsOf(screen.getByTestId("benchmark-metrics")).slice(1).map((r) => r.cells[0]!.textContent)).toEqual([
+    "gsm8k.extractive_matchscore",
+  ])
+  unmount()
+  const suite = { ...one, primary_metric: "all.extractive_match" } as unknown as EvalResults
+  render(<BenchmarkResults results={suite} />)
+  expect(rowsOf(screen.getByTestId("benchmark-metrics")).slice(1).map((r) => r.cells[0]!.textContent)).toEqual([
+    "all.extractive_matchscore",
+    "gsm8k.extractive_match",
   ])
 })
 

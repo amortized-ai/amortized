@@ -369,8 +369,7 @@ that endpoint serves /v1/completions with echo and logprobs.
    When the user replies, call `find_benchmarks` again with the same `model`,
    `picks` copied from the last result, and `answer` set to the user's reply
    verbatim. A 422 means the reply was not one of the choices: show the allowed
-   values it lists and ask again. Repeat until the step is `selected`. Mention
-   the `hidden` counts once, in one line (e.g. "7 suites aren't supported yet").
+   values it lists and ask again. Repeat until the step is `selected`.
 3. **Settings** → `get_benchmark` with the chosen `provider_id` and `id`. Tell
    the user its name, metric and number of questions, then ask only about the
    `settings` it returns, showing each default (e.g. "8-shot, all questions").

@@ -17,6 +17,13 @@ export function formatDuration(
   return `${hours}h ${remainingMinutes}m`
 }
 
+// LightEval reports each metric twice: "<task>.<m>" and "all.<m>", the average over the
+// run's tasks. A job runs one benchmark, so the two are equal; the average is hidden
+// unless it is the score itself (a suite).
+export function isRunAverage(name: string, primary: string | null | undefined): boolean {
+  return name.startsWith("all.") && name !== primary
+}
+
 // A benchmark metric's value: 4 significant digits, no unit (scores, perplexities, stderr).
 export function formatBenchmarkValue(value: number): string {
   return String(Number(value.toPrecision(4)))

@@ -14,6 +14,7 @@ import type {
 } from "@/lib/api-client"
 import { useDatasets, fetchDatasetByRun } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
+import { isRunAverage } from "@/features/jobs/lib/format"
 import type { DatasetRecord } from "@/types/api"
 
 interface EvaluationDetailPanelProps {
@@ -442,16 +443,18 @@ function buildMetricRows(group: EvaluationGroup): {
   name: string
   cells: Record<string, ScoreStat | null>
 }[] {
+  const primary = group.primary_metric
   const names = new Set<string>()
   for (const e of group.evals) {
-    for (const key of Object.keys(e.scores)) names.add(key)
+    for (const key of Object.keys(e.scores)) {
+      if (!primary || !isRunAverage(key, primary)) names.add(key)
+    }
   }
   // The benchmark's score first, then the group's declared metric order, then any extras
   const declared = [
     ...group.metric_names.filter((n) => names.has(n)),
     ...[...names].filter((n) => !group.metric_names.includes(n)).sort(),
   ]
-  const primary = group.primary_metric
   const ordered = primary && names.has(primary) ? [primary, ...declared.filter((n) => n !== primary)] : declared
   const columns = mergeEvalColumns(group.evals)
   return ordered.map((name) => ({

@@ -124,7 +124,9 @@ Amortized serves (`training_job_id`, `model_name_or_path`) supports chat and
 `/v1/completions` with logprobs. An outside `endpoint` supports chat, plus
 `completions_logprobs` only when the user declares it
 (`evaluation.declared_capabilities`). Likelihood benchmarks are hidden for a
-chat-only endpoint, and the hidden counts are reported.
+chat-only endpoint. Browsing reports why benchmarks are hidden (`hidden`, a count
+per reason) only when none can run for the model, and only reasons about the model;
+entries not verified and suites are left out silently.
 
 Morty uses two read-only tools, never a provider list:
 

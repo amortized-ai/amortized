@@ -1,5 +1,5 @@
 import type { EvalResults } from "@/lib/api-client"
-import { formatBenchmarkValue } from "../lib/format"
+import { formatBenchmarkValue, isRunAverage } from "../lib/format"
 
 // A benchmark job's results, as the server presents them: the contract's score first,
 // then every metric the adapter reported once, with its stderr as ± and its direction.
@@ -10,10 +10,11 @@ function better(direction: string | null | undefined): string {
 }
 
 export function BenchmarkResults({ results, modelName }: { results: EvalResults; modelName?: string }) {
-  const scores = Object.entries(results.scores ?? {}).filter(
-    (entry): entry is [string, number] => typeof entry[1] === "number",
-  )
   const primary = results.primary_metric ?? null
+  const scores = Object.entries(results.scores ?? {}).filter(
+    (entry): entry is [string, number] =>
+      typeof entry[1] === "number" && !isRunAverage(entry[0], primary),
+  )
   const primaryScore = results.primary_score
   const metadata = results.metric_metadata ?? {}
   const direction = primary

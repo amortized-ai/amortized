@@ -263,9 +263,6 @@ async def load_shortlists(sdk: Any) -> list[dict[str, Any]]:
     return shortlists
 
 
-NOT_VERIFIED = "it has not passed a run on the pinned adapter image"
-
-
 def compatibility(entry: Entry, capability: Capability) -> tuple[str, str]:
     """(status, reason) with status compatible | incompatible | unknown | unsupported."""
     if "model" not in (entry.raw.get("evaluation_targets") or ()):
@@ -523,11 +520,9 @@ def find(
     # Only entries verified on the pinned image are offered: an unknown one cannot be
     # approved (resolve_recipe). Its own reason is shown when it is looked up by name.
     browsable = [e for e in shown if statuses[id(e)][0] == "compatible"]
-    hidden = Counter(
-        NOT_VERIFIED if statuses[id(e)][0] == "unknown" else statuses[id(e)][1]
-        for e in shown
-        if statuses[id(e)][0] != "compatible"
-    )
+    # What this model can't do (e.g. an endpoint without logprobs): told only when nothing
+    # can run. Entries not verified and suites are never offered to anyone; not counted.
+    hidden = Counter(statuses[id(e)][1] for e in shown if statuses[id(e)][0] == "incompatible")
     picks = dict(picks or {})
     pool = _narrow(browsable, picks, shortlists)
     if answer:
@@ -558,7 +553,6 @@ def find(
     response: dict[str, Any] = {
         "picks": picks,
         "available": len(pool),
-        "hidden": [{"reason": r, "count": n} for r, n in sorted(hidden.items())],
     }
     step = _question(pool, picks, shortlists)
     if step is not None:
@@ -591,6 +585,7 @@ def find(
     response.update(step="benchmarks", benchmarks=benchmarks)
     if not pool:
         response["display"] = "text"
+        response["hidden"] = [{"reason": r, "count": n} for r, n in sorted(hidden.items())]
         response["next"] = "No benchmark can run for this model; explain the hidden reasons."
     elif len(pool) <= CARD_LIMIT:
         response["display"] = "card"
