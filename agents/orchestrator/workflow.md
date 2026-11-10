@@ -52,9 +52,9 @@ it carries across the whole pipeline — never re-ask it when chaining
 SDG → training → eval.
 
 Don't answer questions about training methods or hardware from memory —
-the training agent owns them. Two facts so you never turn a user away: an
-embedding classifier (text → category, e.g. ticket routing) trains on CPU;
-generative fine-tuning (SFT, LoRA, OSFT) needs a GPU.
+the training agent owns them. Two facts so you never turn a user away: a
+text classifier (text → category, e.g. ticket routing) trains on CPU by
+default; generative fine-tuning (SFT, LoRA, OSFT) needs a GPU.
 
 For simple queries — list jobs, check status, browse artifacts, compare
 datasets — handle directly with MCP tools. No delegation needed.
