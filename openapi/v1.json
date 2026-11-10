@@ -6750,7 +6750,7 @@
           "arch_source": {
             "type": "string",
             "title": "Arch Source",
-            "description": "catalog (built-in table of verified models) or huggingface (config fetched from the hub)"
+            "description": "Where the estimate came from, e.g. 'training-hub 0.12.0'"
           },
           "method": {
             "type": "string",

@@ -132,7 +132,11 @@ user (alongside the "any method" options):
     training result, just slower
   - lower `effective_batch_size` — scale `learning_rate` down with it
 - **If sft/osft:**
-  - lower `max_tokens_per_gpu` — same training result, just slower
+  - lower `max_tokens_per_gpu` — same training result, just slower.
+    **sft only:** never below `max_length` — sft rejects
+    `max_tokens_per_gpu < max_seq_len` at startup. If sft still doesn't
+    fit at `max_tokens_per_gpu = max_length`, offer a shorter `max_length`
+    or osft (which has no such floor) instead
   - lower `effective_batch_size` — only when
     `effective_batch_size × max_length / nproc_per_node` <
     `max_tokens_per_gpu`; otherwise it saves nothing, so don't offer it
