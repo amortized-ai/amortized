@@ -11,7 +11,7 @@ COPY src/amortized/evaluation /app/amortized/evaluation
 COPY src/amortized/jobs/assets/classify_eval.py /app/amortized/jobs/assets/classify_eval.py
 RUN mkdir -p /tmp/amortized && chmod 1777 /tmp/amortized
 WORKDIR /tmp/amortized
-# Hub's init container (1000:1000) downloads test data into folders it creates as
-# 0750, so the adapter must share group 1000 to read them.
-USER 1001:1000
+# Hub's init container (uid 1000) downloads test data into folders it creates as
+# 0750. Kubernetes ignores a group in USER, so run as that uid to read them.
+USER 1000
 ENTRYPOINT ["python", "-m", "amortized.evaluation.adapter"]
