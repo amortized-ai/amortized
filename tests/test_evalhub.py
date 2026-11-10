@@ -744,7 +744,8 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
     monkeypatch.setattr(client, "client", sdk_client)
     assert await client.validate_definition(TASK) == []
     provider.runtime = {"k8s": {image_field: "adapter:latest"}}
-    assert "pinned adapter image" in (await client.validate_definition(TASK))[0]
+    [unpinned] = await client.validate_definition(TASK)
+    assert "pinned adapter image" in unpinned and SERVER_LIMIT in unpinned
     provider.runtime = {"k8s": {image_field: "adapter@sha256:pinned"}}
     assert (
         "loopback"
@@ -777,11 +778,14 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
 @pytest.mark.parametrize(
     ("overrides", "reason"),
     [
+        ({"compute_backend": "local"}, "Kubernetes backend"),
+        ({"mlflow_tracking_uri": ""}, "no MLflow artifact storage"),
         ({"mlflow_tracking_token_file": ""}, "isn't set up with workspaces"),
         ({"mlflow_workspace": ""}, "isn't set up with workspaces"),
+        ({"evalhub_staging_bucket": ""}, "no input staging bucket"),
     ],
 )
-async def test_hub_evaluations_need_mlflow_workspaces(monkeypatch, overrides, reason):
+async def test_server_limits_say_the_request_cannot_fix_them(monkeypatch, overrides, reason):
     import amortized.config as config_mod
 
     settings = config_mod.Settings(**{**HUB_SETTINGS, **overrides})

@@ -26,6 +26,7 @@ from pydantic import BaseModel, ValidationError
 
 import amortized.config as config_mod
 from amortized.evaluation.spec import LightEvalParameters, LMEvalParameters
+from amortized.integrations.evalhub import server_limit
 
 SCHEMA = "amortized.evalhub.compat/v2"
 # What the release helpers read from the pinned image, before any run (make evalhub-describe).
@@ -743,7 +744,10 @@ def resolve_recipe(
     if entry is None:
         return None, [f"benchmark {benchmark_id!r} is not in provider {provider_id!r}"]
     if "@sha256:" not in entry.provider.image:
-        return None, [f"provider {provider_id!r} must use a pinned adapter image digest"]
+        return None, server_limit(
+            "this benchmark",
+            f"Eval Hub's provider {provider_id!r} has no pinned adapter image digest",
+        )
     status, reason = compatibility(entry, capability)
     if status == "unsupported":
         return None, [f"benchmark {benchmark_id!r} cannot run: {reason}"]

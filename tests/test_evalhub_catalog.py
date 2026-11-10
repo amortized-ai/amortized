@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 import amortized.config as config_mod
-from amortized.integrations.evalhub import catalog, client
+from amortized.integrations.evalhub import SERVER_LIMIT, catalog, client
 from amortized.jobs.base import JobBuildError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -674,6 +674,13 @@ async def test_recipe_refuses_what_cannot_be_approved(hub, benchmark_id, paramet
     )
     assert recipe is None
     assert message in errors[0]
+
+
+async def test_recipe_refuses_an_unpinned_adapter_as_a_server_limit(hub):
+    hub.provider["runtime"] = {"k8s": {"Image": "adapter:latest"}}
+    recipe, errors = catalog.resolve_recipe(await entries(hub), ENDPOINT, definition(), {})
+    assert recipe is None
+    assert "pinned adapter image" in errors[0] and SERVER_LIMIT in errors[0]
 
 
 async def test_benchmark_recipe_reports_hub_failures(hub):

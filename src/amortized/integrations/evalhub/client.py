@@ -91,14 +91,14 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             ["evaluation definitions require the configured Eval Hub engine"] if definition else []
         )
     if settings.resolved_default_backend != "kubernetes":
-        return ["Eval Hub execution requires the Kubernetes preparation backend"]
+        return server_limit("Eval Hub evaluations", "they need the Kubernetes backend")
     benchmark = definition.get("kind") == "benchmark"
     from amortized.evaluation.spec import PROVIDER_PARAMETERS
 
     if benchmark and definition["provider_id"] not in PROVIDER_PARAMETERS:
         return ["This benchmark provider needs an implemented parameter/capability contract"]
     if not settings.mlflow_tracking_uri:
-        return ["Eval Hub evaluation requires configured MLflow artifact storage"]
+        return server_limit("Eval Hub evaluations", "no MLflow artifact storage is configured")
     # Hub saves every evaluation into the MLflow workspace named after its job namespace.
     # Amortized sends a workspace only with the token, and an unset one falls back to the
     # server pod's namespace; a set one must equal the jobs namespace (config.py).
@@ -110,7 +110,7 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             "AMORTIZED_MLFLOW_WORKSPACE)",
         )
     if not benchmark and not settings.evalhub_staging_bucket:
-        return ["Eval Hub task evaluation requires a configured input staging bucket"]
+        return server_limit("task evaluations", "no input staging bucket is configured")
     from urllib.parse import urlparse
 
     from amortized.jobs.eval import _endpoint_spec
@@ -144,13 +144,19 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         async with client() as sdk:
             provider = await sdk.providers.get(provider_id)
         if benchmark_id not in {b.id for b in provider.benchmarks}:
-            return [f"benchmark {benchmark_id!r} is not in provider {provider_id!r}"]
+            return server_limit(
+                "task evaluations",
+                f"Eval Hub's provider {provider_id!r} has no benchmark {benchmark_id!r}",
+            )
         runtime = (provider.runtime or {}).get("k8s") or {}
         # Hub 1.0.3 serializes this Go struct field as "Image" in JSON,
         # although provider YAML uses "image". Accept both wire formats.
         image = runtime.get("Image") or runtime.get("image", "")
         if "@sha256:" not in image:
-            return [f"provider {provider_id!r} must use a pinned adapter image digest"]
+            return server_limit(
+                "task evaluations",
+                f"Eval Hub's provider {provider_id!r} has no pinned adapter image digest",
+            )
     except Exception:
         return [
             "Cannot verify the selected benchmark against the Eval Hub catalog; retry validation"

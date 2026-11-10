@@ -460,11 +460,15 @@ Call `validate_eval_job` with the assembled config. Pass it as a SINGLE
 string (every field — rubric, judge, endpoints, eval_mode, parent_job_id —
 inside that one string): a large multi-argument call (especially a rubric with
 multi-line criteria) can be corrupted in transit, one `config_json` string
-round-trips reliably. A **422** is one of two
+round-trips reliably. A **422** is one of three
 things: a **config error** (e.g. a missing judge) — read it, fix the config, and
 re-validate; or a **decision-warning** (leakage / rubric drift / recipe mismatch,
 see below) — do NOT silently 'fix' it, relay it to the user and only re-validate
-with the `acknowledge_warnings` token from the 422 if they accept. Never present a text summary of a
+with the `acknowledge_warnings` token from the 422 if they accept; or a **server
+limit** (it says "This server isn't set up to run …" and "This can't be fixed in the
+evaluation request") — do NOT change the config or re-validate; tell the user in
+plain words that this server isn't set up for that evaluation and an administrator
+must change it, then stop. Never present a text summary of a
 config that failed validation.
 
 `validate_eval_job` returns a **422 tool error** when there is a decision-requiring
