@@ -261,8 +261,8 @@ async def _build_classification_eval(
             " model_name_or_path (base model baseline)"
         )
 
-    # 2. Held-out labeled dataset. resolve_parent_artifacts already sets
-    #    eval_data_path for a parent sdg/upload job; else download by run id.
+    # 2. Held-out labeled dataset: eval_data_run_id when set, else the parent sdg/upload
+    #    output that resolve_parent_artifacts put in eval_data_path.
     eval_data_path = config.get("eval_data_path", "")
     eval_data_run_id = str(config.get("eval_data_run_id", "") or "")
     if not eval_data_path and eval_data_run_id:

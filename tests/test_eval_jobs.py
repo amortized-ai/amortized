@@ -157,6 +157,26 @@ class TestCreateEvalJob:
 
 class TestClassificationEvalBuilder:
     @pytest.mark.asyncio
+    async def test_eval_scores_eval_data_run_even_with_parent(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # The worker's sequence: with a parent SDG job AND eval_data_run_id, the eval
+        # downloads eval_data_run_id (e.g. a held-out split), not the parent's output.
+        job = {"id": "e2", "type": "eval", "parent_job_id": "sdg-1"}
+        config = {
+            "eval_mode": "classification",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "eval_data_run_id": "split-run",
+            "class_labels": ["A", "B"],
+        }
+        config, parent_pre = await _resolve_parent_artifacts(job, config)
+        result = await eval_builder.build(job, config, {})
+        downloads = [c for c in parent_pre + result.pre_commands if "artifacts download" in c]
+        assert downloads == [
+            "mlflow artifacts download -r split-run -a generated_data -d /amortized/work/eval_data"
+        ]
+
+    @pytest.mark.asyncio
     async def test_build_classification_eval_base_model(self) -> None:
         import json
 

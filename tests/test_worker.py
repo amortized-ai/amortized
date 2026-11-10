@@ -761,6 +761,20 @@ class TestResolveParentArtifacts:
         ]
 
     @pytest.mark.asyncio
+    async def test_eval_data_run_id_wins_over_parent(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # An eval scores its eval_data_run_id (the eval builder downloads it); the parent
+        # SDG job stays lineage only and is never looked up (no DB pool here).
+        eval_job = {"id": "eval-1", "type": "eval", "parent_job_id": "sdg-1"}
+        config: dict[str, object] = {"eval_data_run_id": "split-portion-run"}
+
+        result_config, pre_commands = await _resolve_parent_artifacts(eval_job, config)
+
+        assert pre_commands == []
+        assert "eval_data_path" not in result_config
+
+    @pytest.mark.asyncio
     async def test_explicit_data_path_wins_over_data_run_id(self) -> None:
         from amortized.worker import _resolve_parent_artifacts
 

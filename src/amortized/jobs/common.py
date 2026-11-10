@@ -222,6 +222,11 @@ async def resolve_parent_artifacts(
         )
         return config, [download_cmd]
 
+    # Likewise an eval scores its explicit eval_data_run_id (the eval builder downloads
+    # it); a parent then stays lineage only, feeding reusable-set naming/recipe matching.
+    if job["type"] == JobType.eval.value and config.get("eval_data_run_id"):
+        return config, []
+
     if not parent_job_id:
         return config, []
 

@@ -351,12 +351,11 @@ class TestEvalConfirmCardFacts:
         assert "data_record_count" not in data["config"]
 
     @pytest.mark.asyncio
-    async def test_validate_eval_record_count_prefers_parent_over_eval_data_run(
+    async def test_validate_eval_record_count_prefers_eval_data_run_over_parent(
         self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # With BOTH a parent and eval_data_run_id set, the eval job scores the PARENT's
-        # dataset — resolve_parent_artifacts injects the parent output as eval_data_path
-        # unconditionally — so the card's count must be the parent's run, not eval_data_run_id.
+        # With BOTH a parent and eval_data_run_id set, the eval job scores eval_data_run_id
+        # (e.g. a held-out split; the parent stays lineage only), so the card counts it.
         import amortized.api.jobs as jobs_mod
         import amortized.db.connection as _db_conn
         from amortized.db.repository import Repository
@@ -386,8 +385,8 @@ class TestEvalConfirmCardFacts:
         resp = await client.post("/api/v1/jobs/eval/validate", json=body)
         assert resp.status_code == 200, resp.text
         assert resp.json()["data_record_count"] == 150
-        # The parent's run wins over eval_data_run_id (matches resolve_parent_artifacts).
-        assert seen == ["parent-run-xyz"]
+        # eval_data_run_id wins over the parent's run (matches resolve_parent_artifacts).
+        assert seen == [eval_run]
 
 
 class TestListJobs:
