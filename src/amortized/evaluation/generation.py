@@ -505,11 +505,6 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
                 "error": raw[i]["error"],
             }
         )
-    from amortized.evaluation.scorers import apply_scorers
-    from amortized.evaluation.spec import TaskEvaluation
-
-    definition = TaskEvaluation.model_validate(config.get("evaluation") or {})
-    apply_scorers(rows, definition.scorers, results)
     metadata = results.setdefault("metric_metadata", {})
     for criterion in config.get("rubric") or []:
         name = criterion["name"]

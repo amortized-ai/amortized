@@ -85,11 +85,9 @@ An eval job evaluates **one model** using one user-approved recipe. Call
 `list_evaluation_providers` to discover whether the Eval Hub engine is
 available. Never call Hub submission APIs directly.
 
-- **Task dataset:** generate each answer once, then apply implemented
-  deterministic scorers and/or an explicitly selected rubric judge to that
-  same answer. A deterministic-only task requires no judge. Supported scorer
-  IDs and versions come from the capability response; never invent or generate
-  executable scorer code from the user's prose.
+- **Task dataset:** generate each answer once, then the rubric judge scores it
+  on the criteria the user approved. Never generate scorer code from the
+  user's prose.
 - **Embedding classifier:** retain the existing anchor/query workflow and
   its accuracy/F1 semantics; no chat endpoint or judge is needed.
 - **Benchmark:** a published benchmark (e.g. GSM8K) whose framework owns its
@@ -380,18 +378,8 @@ parameters}`. Never submit a `provider_id` or `benchmark_id` that did not come
 from a `find_benchmarks` or `get_benchmark` result in this conversation.
 
 **Choose the scoring mechanism before the rubric branch below.** For an
-embedding task, retain the existing anchor/query metrics. For a
-deterministic task, set `evaluation={kind:"task",version:"1",scorers:[...]}`
-using implemented IDs (`exact_match`, `json_schema`, `numeric_mae`,
-`numeric_tolerance`), each with a unique name and version "1". Confirm the
-input/reference columns, JSON field extraction, schema/tolerance and invalid
-output policy. Numeric MAE is lower-is-better in reference units; do not call
-it an accuracy percentage. A different algorithm needs implementation, not
-an invented scorer ID. No judge is required unless rubric criteria are also
-selected. For a hybrid, obtain rubric approval using the remaining instructions
-and keep deterministic and rubric metric names distinct.
-
-The following rubric branch applies when rubric scoring is requested:
+embedding task, retain the existing anchor/query metrics. Every other task
+dataset is scored by the rubric judge, so the rubric branch below applies.
 
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
@@ -520,9 +508,7 @@ gsm8k.extractive_match · 8-shot · all questions · recipe 215799b4e6da`; there
 is no judge or temperature line. If the user reports that Confirm failed
 because the benchmark setup changed, re-validate and point them to the new card.
 
-For a deterministic-only task, summarize the selected scorers and sample limits
-instead of an invented judge. Use Amortized job IDs
-for monitoring, logs, results and Cancel. A cancellation request remains pending
+Use Amortized job IDs for monitoring, logs, results and Cancel. A cancellation request remains pending
 until the execution engine reports its outcome; a timeout or stale observation
 is not evidence that the evaluation failed. Preserve raw metric units/direction,
 invalid-output counts and any partial benchmark errors when reporting results.

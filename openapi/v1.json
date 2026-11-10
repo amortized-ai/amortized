@@ -3478,67 +3478,6 @@
         ],
         "title": "DelegateResponse"
       },
-      "DeterministicScorer": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "enum": [
-              "exact_match",
-              "json_schema",
-              "numeric_mae",
-              "numeric_tolerance"
-            ],
-            "title": "Id"
-          },
-          "version": {
-            "type": "string",
-            "const": "1",
-            "title": "Version",
-            "default": "1"
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
-            "title": "Name"
-          },
-          "response_field": {
-            "type": "string",
-            "title": "Response Field",
-            "default": ""
-          },
-          "reference_field": {
-            "type": "string",
-            "title": "Reference Field",
-            "default": ""
-          },
-          "tolerance": {
-            "type": "number",
-            "minimum": 0.0,
-            "title": "Tolerance",
-            "default": 0.0
-          },
-          "schema": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Schema"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "title": "DeterministicScorer"
-      },
       "DistributionType": {
         "type": "string",
         "enum": [
@@ -7016,13 +6955,6 @@
             "title": "Version",
             "default": "1"
           },
-          "scorers": {
-            "items": {
-              "$ref": "#/components/schemas/DeterministicScorer"
-            },
-            "type": "array",
-            "title": "Scorers"
-          },
           "input_column": {
             "type": "string",
             "minLength": 1,
@@ -7037,7 +6969,8 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "title": "TaskEvaluation"
+        "title": "TaskEvaluation",
+        "description": "A task dataset scored by the rubric judge; only the column mapping lives here."
       },
       "TimeDeltaSamplerParams": {
         "properties": {

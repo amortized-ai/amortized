@@ -480,16 +480,12 @@ async def _validate_eval_definition(config: dict[str, Any]) -> list[str]:
     definition = config.get("evaluation") or {}
     if config.get("eval_mode") == "classification" and definition.get("kind") == "benchmark":
         errors.append("embedding models require anchor/query task evaluation, not a chat benchmark")
-    has_scorers = bool(definition.get("scorers"))
     if (
         config.get("eval_mode") != "classification"
         and definition.get("kind") != "benchmark"
-        and not has_scorers
         and not [c for c in config.get("rubric", []) if isinstance(c, dict) and c.get("name")]
     ):
-        errors.append(
-            "eval jobs require at least one rubric criterion or an implemented deterministic scorer"
-        )
+        errors.append("eval jobs require at least one rubric criterion")
     return errors
 
 

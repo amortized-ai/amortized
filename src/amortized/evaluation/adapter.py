@@ -1,4 +1,4 @@
-"""Eval Hub adapter for Amortized's versioned task scorers."""
+"""Eval Hub adapter for Amortized's task evaluations: rubric judge or embedding classification."""
 
 import asyncio
 import importlib.util

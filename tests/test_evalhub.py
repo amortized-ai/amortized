@@ -12,8 +12,7 @@ import pytest
 from conftest import TEST_DATABASE_URL
 from pydantic import ValidationError
 
-from amortized.evaluation.scorers import apply_scorers
-from amortized.evaluation.spec import DeterministicScorer, TaskEvaluation
+from amortized.evaluation.spec import TaskEvaluation
 from amortized.integrations.evalhub import client, lifecycle
 from amortized.integrations.evalhub.results import present
 from amortized.models import EvalJobRequest
@@ -365,55 +364,19 @@ def test_partial_results_keep_raw_units_and_artifact_references():
     assert result["benchmarks"][0]["mlflow_run_id"] == "engine-run"
 
 
-def test_deterministic_invalid_outputs_have_explicit_denominators():
-    rows = [
-        {"output": '{"score": 8}', "reference": '{"score": 5}'},
-        {"output": "invalid", "reference": '{"score": 5}'},
-    ]
-    scorers = [
-        DeterministicScorer(
-            id="numeric_mae", name="error", response_field="score", reference_field="score"
-        ),
-        DeterministicScorer(
-            id="numeric_tolerance",
-            name="within",
-            response_field="score",
-            reference_field="score",
-            tolerance=3,
-        ),
-    ]
-    result = {}
-    apply_scorers(rows, scorers, result)
-    assert result["scores"] == {"error": 3, "within": 0.5}
-    assert result["scores_n"] == {"error": 1, "within": 2}
-    assert result["metric_metadata"]["error"]["num_invalid"] == 1
-    assert result["metric_metadata"]["error"]["direction"] == "lower"
-
-
-def test_nonfinite_numeric_output_is_not_a_score():
-    result = {}
-    apply_scorers(
-        [{"output": "NaN", "reference": "5"}],
-        [DeterministicScorer(id="numeric_mae", name="mae")],
-        result,
-    )
-    assert result["scores"]["mae"] is None
-    assert result["scores_n"]["mae"] == 0
-
-
-def test_duplicate_metric_names_and_unknown_scorers_are_rejected():
+def test_fixed_scorers_are_gone_and_duplicate_criteria_are_rejected():
     with pytest.raises(ValidationError):
-        TaskEvaluation(scorers=[{"id": "execute_python", "name": "unsafe"}])
-    with pytest.raises(ValidationError):
+        TaskEvaluation(scorers=[{"id": "exact_match", "name": "match"}])
+    with pytest.raises(ValidationError, match="rubric criterion names must be unique"):
         EvalJobRequest(
             endpoint={"base_url": "http://model/v1", "model": "m"},
-            evaluation={"kind": "task", "scorers": [{"id": "exact_match", "name": "same"}]},
-            rubric=[{"name": "same", "description": "test"}],
+            evaluation={"kind": "task"},
+            rubric=[{"name": "same", "description": "a"}, {"name": "same", "description": "b"}],
         )
 
 
 @pytest.mark.asyncio
-async def test_hybrid_task_generates_once_and_does_not_leak_reference(tmp_path, monkeypatch):
+async def test_task_generates_once_and_does_not_leak_reference(tmp_path, monkeypatch):
     from amortized.evaluation import generation
 
     data = tmp_path / "data"
@@ -438,13 +401,13 @@ async def test_hybrid_task_generates_once_and_does_not_leak_reference(tmp_path, 
             "output_dir": str(tmp_path / "out"),
             "endpoints": {"model": {}, "judge": {}},
             "rubric": [{"name": "quality", "description": "test"}],
-            "evaluation": {"kind": "task", "scorers": [{"id": "exact_match", "name": "match"}]},
+            "evaluation": {"kind": "task"},
         }
     )
     generation_call.assert_awaited_once()
     samples = generation_call.call_args.args[2]
     assert samples[0]["prompt"] == [{"role": "user", "content": "question"}]
-    assert summary["results"]["scores"] == {"quality": 0.8, "match": 1.0}
+    assert summary["results"]["scores"] == {"quality": 0.8}
 
 
 @pytest.fixture
@@ -489,7 +452,9 @@ async def hub_http_client(monkeypatch):
 TASK = {
     "endpoint": {"base_url": "http://model/v1", "model": "test"},
     "eval_data_run_id": "a" * 32,
-    "evaluation": {"kind": "task", "scorers": [{"id": "exact_match", "name": "match"}]},
+    "evaluation": {"kind": "task"},
+    "rubric": [{"name": "match", "description": "Matches the reference"}],
+    "judge": {"base_url": "http://judge/v1", "model": "judge"},
 }
 
 
@@ -722,25 +687,9 @@ async def test_reconciliation_pages_and_rejects_other_tenants_and_nonexact_match
     assert all(r.headers["X-Tenant"] == "user-namespace" for r in requests)
 
 
-def test_json_schema_round_trips_through_accepted_request_and_invalid_schema_is_422():
+def test_benchmark_parameters_reject_code_loading_and_secrets():
     from amortized.evaluation.spec import BenchmarkEvaluation
 
-    request = EvalJobRequest(
-        **{
-            **TASK,
-            "evaluation": {
-                "kind": "task",
-                "scorers": [{"id": "json_schema", "name": "valid", "schema": {"type": "object"}}],
-            },
-        }
-    )
-    restored = EvalJobRequest.model_validate(request.model_dump())
-    scorer = restored.evaluation.scorers[0]
-    result = {}
-    apply_scorers([{"output": "{}", "reference": ""}], [scorer], result)
-    assert result["scores"] == {"valid": 1.0}
-    with pytest.raises(ValidationError, match="Invalid JSON Schema"):
-        DeterministicScorer(id="json_schema", name="valid", schema={"type": "made_up_type"})
     for parameters in (
         {"provider": "transformers"},
         {"trust_remote_code": True},
@@ -933,7 +882,13 @@ def test_task_adapter_generates_scores_and_artifacts_using_sdk_contract(tmp_path
         adapter, "resolve_model_credentials", lambda: MagicMock(api_key="api-key:ref")
     )
     monkeypatch.setattr(
-        generation, "eval_endpoint", AsyncMock(return_value=[{"output": "8", "error": ""}])
+        generation, "eval_endpoint", AsyncMock(return_value=[{"output": "5", "error": ""}])
+    )
+    monkeypatch.setattr(generation, "score_one", AsyncMock(return_value={"accuracy": 8.0}))
+    monkeypatch.setattr(
+        adapter,
+        "read_model_auth_key",
+        {"judge_url": "http://judge/v1", "judge_api-key": "judge-key"}.get,
     )
     spec = JobSpec(
         id="hub-123",
@@ -943,13 +898,17 @@ def test_task_adapter_generates_scores_and_artifacts_using_sdk_contract(tmp_path
         callback_url="http://sidecar/callback",
         model={"url": "http://sidecar/v1", "name": "model"},
         parameters={
-            "evaluation": {"kind": "task", "scorers": [{"id": "numeric_mae", "name": "mae"}]}
+            "evaluation": {"kind": "task"},
+            "rubric": [{"name": "accuracy", "description": "Matches the reference"}],
+            "judge_model": "judge",
         },
     )
     instance = object.__new__(adapter.AmortizedTaskAdapter)
     results = instance.run_benchmark_job(spec, MagicMock())
-    assert results.results[0].metric_value == 3.0
-    assert results.results[0].metadata["direction"] == "lower"
+    assert results.results[0].metric_name == "accuracy"
+    assert results.results[0].metric_value == 0.8
+    assert results.results[0].metadata["direction"] == "higher"
+    assert results.results[0].metadata["scorer_id"] == "rubric_judge"
     assert [a.path for a in instance.mlflow_artifacts] == [
         "eval_results/metrics.json",
         "eval_results/results.jsonl",
@@ -1084,23 +1043,6 @@ def test_adapter_main_persists_exactly_one_primary_run_then_reports_results(monk
     )
     assert results.mlflow_run_id == "one-primary-run"
     callbacks.report_results.assert_called_once_with(results)
-
-
-def test_numeric_overflow_is_counted_invalid_and_mean_stays_finite():
-    scorer = DeterministicScorer(id="numeric_mae", name="mae")
-    results = {}
-    apply_scorers(
-        [
-            {"output": "1e308", "reference": "0"},
-            {"output": "1e308", "reference": "0"},
-            {"output": "1e308", "reference": "-1e308"},
-        ],
-        [scorer],
-        results,
-    )
-    assert results["scores"]["mae"] == 1e308
-    assert results["scores_n"]["mae"] == 2
-    assert results["metric_metadata"]["mae"]["num_invalid"] == 1
 
 
 ADAPTER_MAIN = """

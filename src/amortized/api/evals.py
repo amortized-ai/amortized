@@ -50,14 +50,7 @@ async def list_evaluation_providers() -> dict[str, Any]:
     return {
         "enabled": True,
         "providers": [task.model_dump(mode="json", exclude_none=True)],
-        "task_scoring": [
-            "rubric",
-            "exact_match@1",
-            "json_schema@1",
-            "numeric_mae@1",
-            "numeric_tolerance@1",
-            "embedding_anchor_query@1",
-        ],
+        "task_scoring": ["rubric", "embedding_anchor_query@1"],
         "benchmark_providers": benchmark_providers,
         "benchmarks": (
             "Do not choose a benchmark from this list. Settle the model first, then call"

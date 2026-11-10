@@ -48,39 +48,29 @@ until owned serving has stopped. Deletion is blocked while cleanup is pending.
 
 ## Supported recipes
 
-Existing rubric and anchor/query requests retain their existing shape. An omitted
-`evaluation` field selects the existing task semantics. New explicit definitions:
+A task dataset is scored by the rubric judge; an embedding model by its anchor/query
+metrics. Rubric and anchor/query requests keep their existing shape, and an omitted
+`evaluation` field selects these task semantics. An explicit task definition only
+maps the dataset's columns:
 
 ```json
 {
   "endpoint": {"base_url": "https://model.example/v1", "model": "candidate"},
   "eval_data_run_id": "<real dataset run>",
-  "evaluation": {
-    "kind": "task",
-    "version": "1",
-    "input_column": "question",
-    "reference_column": "expected",
-    "scorers": [
-      {"id": "numeric_mae", "version": "1", "name": "absolute_error"},
-      {"id": "numeric_tolerance", "version": "1", "name": "within_two", "tolerance": 2}
-    ]
-  }
+  "evaluation": {"kind": "task", "version": "1", "input_column": "question", "reference_column": "expected"},
+  "rubric": [{"name": "accuracy", "description": "Facts match the reference"}],
+  "judge": {"base_url": "https://judge.example/v1", "model": "judge"}
 }
 ```
 
-Implemented deterministic scorer IDs are `exact_match`, `json_schema`,
-`numeric_mae`, and `numeric_tolerance`, all version `1`. `response_field` and
-`reference_field` optionally extract dot-separated JSON fields. `json_schema`
-requires a `schema` object. No scorer executes user-supplied Python.
-
-MAE is lower-is-better in reference units. Invalid numeric values are excluded
-with explicit counts and denominators; no observations produce null, never a
-fabricated zero. Pass/fail scorers count invalid outputs as zero and expose their
-invalid counts. A task may also include approved `rubric` criteria and an explicit
-`judge`; deterministic and judge metrics use the same generated answer. Rubric
-scores retain the existing normalized 0–1 semantics. The embedding adapter calls
-the existing anchor/query implementation, retaining its splits, seeds, parameters,
-confusion matrix, and separability-proxy interpretation.
+The judge scores each answer from 0 to 10 on every approved criterion, against the
+reference. Each criterion's metric is the mean divided by 10 (0–1, higher is
+better); an answer the judge can't score is left out of the mean and counted as
+invalid. There are no fixed scorers (exact match, JSON schema, numeric): the skills
+are general-purpose, so a task is judged on its approved rubric. No scorer executes
+user-supplied Python. The embedding adapter calls the existing anchor/query
+implementation, retaining its splits, seeds, parameters, confusion matrix, and
+separability-proxy interpretation.
 
 Benchmarks come from **Eval Hub's own lm-eval and LightEval catalogs**, vendored
 verbatim at a pinned commit in `deploy/helm/amortized/files/evalhub/`
@@ -435,12 +425,12 @@ confirmation rather than accepting an evaluation that cannot authenticate.
 
 Local contract tests cover approval-only validation, transactional intent,
 ambiguous POST recovery, restart adoption, pagination/tenant matching, cancellation
-races, status outages, serving lease recovery, credential erasure, scorer math,
-hybrid generation reuse, adapter artifacts, raw units and comparison identity.
+races, status outages, serving lease recovery, credential erasure, rubric score
+math, adapter artifacts, raw units and comparison identity.
 They do **not** establish Kubernetes/operator/image/endpoint compatibility.
 
 The cluster release check must run the exact pinned images against a small real
-task, a rubric/hybrid task, an embedding task, GSM8K (generative) and one
+rubric task, an embedding task, GSM8K (generative) and one
 likelihood benchmark on a served model (e.g. ARC challenge) through the normal Amortized
 validate → user Confirm path. Verify outputs/sample artifacts and the single
 primary MLflow run, cancel a genuinely running evaluation, restart Amortized
@@ -459,7 +449,7 @@ back to a version that does not understand those mappings.
 Hub metrics/outcomes and MLflow/OCI artifacts are authoritative execution outputs.
 Amortized's timestamped snapshot is a disposable UI projection; restoring it must
 not launch another evaluation. Task comparison groups include dataset content
-hash, scorer/rubric/mapping/settings and provider catalog/image identity, while
+hash, rubric/mapping/settings and provider catalog/image identity, while
 excluding per-job object prefixes and model checkpoint paths. Benchmark groups key on
 the recipe fingerprint alone. Different recipes
 stay separate; raw units and direction remain attached to the metric.

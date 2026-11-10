@@ -759,11 +759,9 @@ class EvalJobConfig(BaseModel):
             if self.max_samples and selected_limit and self.max_samples != selected_limit:
                 raise ValueError("Conflicting task and benchmark sample limits")
         if isinstance(self.evaluation, TaskEvaluation):
-            if self.eval_mode == "classification" and self.evaluation.scorers:
-                raise ValueError("anchor/query classification uses its own accuracy/F1 metrics")
-            names = [s.name for s in self.evaluation.scorers] + [r.name for r in self.rubric]
+            names = [r.name for r in self.rubric]
             if len(names) != len(set(names)):
-                raise ValueError("rubric and deterministic scorer names must be unique")
+                raise ValueError("rubric criterion names must be unique")
         return self
 
     @model_validator(mode="after")
