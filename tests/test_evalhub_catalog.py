@@ -77,7 +77,9 @@ def hub(monkeypatch):
     settings = config_mod.Settings(
         compute_backend="kubernetes",
         evalhub_url="http://hub",
-        mlflow_tracking_uri="http://mlflow",
+        mlflow_tracking_uri="https://mlflow",
+        mlflow_tracking_token_file="/var/run/secrets/mlflow/token",
+        mlflow_workspace="amortized-jobs",
         evalhub_providers=["amortized-lighteval"],
         evalhub_compat_dir=str(FILES / "compat"),
     )

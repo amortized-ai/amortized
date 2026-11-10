@@ -383,12 +383,26 @@ chart does not install a cluster-wide operator.
    artifacts using existing auth/workspace/CA support, hashes them, and writes a
    job-specific immutable S3 snapshot plus manifest. It never forwards `runs:/`,
    `mlflow-artifacts:/`, or Amortized pod-local paths to an evaluator.
-7. For enterprise MLflow, configure the Hub operator's MLflow TLS/workspace/auth
-   integration and include the actual helper/adapter SA in
-   `evalhub.operator.jobServiceAccount` so the chart grants existing workspace roles.
-   Hub uses the tenant namespace as the execution workspace. Verify the configured
-   workspace, CA and rotating SA tokens end to end; Amortized's own bindings alone
-   do not grant access to Hub's new service accounts.
+7. Use an https MLflow with workspaces. Hub saves every evaluation into the MLflow
+   workspace named after the jobs namespace, and Amortized must use the same one:
+   set `mlflow.enterprise.enabled: true`, which sets `AMORTIZED_MLFLOW_TRACKING_TOKEN_FILE`
+   and `AMORTIZED_MLFLOW_WORKSPACE` (= `jobsNamespace`). Do this even when the MLflow
+   has no login, because Amortized sends the workspace only with the token. Without
+   both settings, validation refuses every Hub evaluation and says the server must
+   change. Otherwise the evaluation would score and then fail at Hub's final save
+   (`FEATURE_DISABLED`).
+   - RHOAI's operator-managed MLflow meets this.
+   - The chart's bundled MLflow doesn't: it runs without `--enable-workspaces`, and
+     `mlflow.enterprise.enabled` turns it off.
+   - The shared KIND MLflow doesn't either. The KIND live tests used a separate MLflow
+     started with `--enable-workspaces` (`mlflow-ws`); turning workspaces on in the
+     shared one is a separate amortized-kind-deploy change.
+
+   For RHOAI, also configure the Hub operator's MLflow TLS/workspace/auth integration
+   and include the actual helper/adapter SA in `evalhub.operator.jobServiceAccount`
+   so the chart grants existing workspace roles. Verify the workspace, CA and rotating
+   SA tokens end to end; Amortized's own bindings alone do not grant access to Hub's
+   new service accounts.
 8. Verify network policy permits authenticated Amortized→Hub, runtime callbacks,
    artifact/staging access, model endpoint access and optional judge access.
    Workload loopback addresses are rejected as external endpoints. Adapter caches

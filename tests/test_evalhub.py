@@ -13,9 +13,11 @@ from conftest import TEST_DATABASE_URL
 from pydantic import ValidationError
 
 from amortized.evaluation.spec import TaskEvaluation
-from amortized.integrations.evalhub import client, lifecycle
+from amortized.integrations.evalhub import SERVER_LIMIT, client, lifecycle
 from amortized.integrations.evalhub.results import present
 from amortized.models import EvalJobRequest
+
+REAL_VALIDATE = client.validate_definition
 
 
 def snapshot(state="pending", remote_id="hub-123", metrics=None):
@@ -705,6 +707,17 @@ def test_benchmark_parameters_reject_code_loading_and_secrets():
             )
 
 
+HUB_SETTINGS = {
+    "compute_backend": "kubernetes",
+    "compute_namespace": "tenant",
+    "evalhub_url": "http://hub",
+    "evalhub_staging_bucket": "snapshots",
+    "mlflow_tracking_uri": "https://mlflow",
+    "mlflow_tracking_token_file": "/var/run/secrets/mlflow/token",
+    "mlflow_workspace": "tenant",
+}
+
+
 @pytest.mark.parametrize("image_field", ["Image", "image"])
 async def test_preconfirmation_checks_catalog_and_routability_without_creating_resources(
     monkeypatch,
@@ -714,14 +727,7 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
 
     import amortized.config as config_mod
 
-    settings = config_mod.Settings(
-        compute_backend="kubernetes",
-        compute_namespace="tenant",
-        evalhub_url="http://hub",
-        evalhub_staging_bucket="snapshots",
-        mlflow_tracking_uri="http://mlflow",
-    )
-    monkeypatch.setattr(config_mod, "settings", settings)
+    monkeypatch.setattr(config_mod, "settings", config_mod.Settings(**HUB_SETTINGS))
     provider = Provider(
         resource={"id": "amortized"},
         name="Amortized",
@@ -766,6 +772,35 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
         "not enabled"
         in (await client.validate_definition({**benchmark, "evaluation": disabled}))[0]
     )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason"),
+    [
+        ({"mlflow_tracking_token_file": ""}, "isn't set up with workspaces"),
+        ({"mlflow_workspace": ""}, "isn't set up with workspaces"),
+    ],
+)
+async def test_hub_evaluations_need_mlflow_workspaces(monkeypatch, overrides, reason):
+    import amortized.config as config_mod
+
+    settings = config_mod.Settings(**{**HUB_SETTINGS, **overrides})
+    monkeypatch.setattr(config_mod, "settings", settings)
+    [error] = await client.validate_definition(TASK)
+    assert reason in error and SERVER_LIMIT in error
+
+
+@pytest.mark.asyncio
+async def test_validate_api_refuses_hub_eval_when_mlflow_has_no_workspaces(
+    hub_http_client, monkeypatch
+):
+    import amortized.config as config_mod
+
+    monkeypatch.setattr(client, "validate_definition", REAL_VALIDATE)
+    monkeypatch.setattr(config_mod.settings, "mlflow_tracking_uri", "http://mlflow")
+    response = await hub_http_client.post("/api/v1/jobs/eval/validate", json=TASK)
+    assert response.status_code == 422
+    assert "workspace 'hub-test'" in response.text and SERVER_LIMIT in response.text
 
 
 async def test_model_serving_survives_readiness_timeout_without_a_second_gpu_job(monkeypatch):

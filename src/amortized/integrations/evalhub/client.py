@@ -7,6 +7,7 @@ from evalhub import AsyncEvalHubClient
 from evalhub.models import JobSubmissionRequest
 
 import amortized.config as config_mod
+from amortized.integrations.evalhub import server_limit
 
 
 @asynccontextmanager
@@ -98,6 +99,16 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         return ["This benchmark provider needs an implemented parameter/capability contract"]
     if not settings.mlflow_tracking_uri:
         return ["Eval Hub evaluation requires configured MLflow artifact storage"]
+    # Hub saves every evaluation into the MLflow workspace named after its job namespace.
+    # Amortized sends a workspace only with the token, and an unset one falls back to the
+    # server pod's namespace; a set one must equal the jobs namespace (config.py).
+    if not (settings.mlflow_tracking_token_file and settings.mlflow_workspace):
+        return server_limit(
+            "Eval Hub evaluations",
+            "its MLflow isn't set up with workspaces (Eval Hub saves into workspace "
+            f"{settings.compute_namespace!r}; set AMORTIZED_MLFLOW_TRACKING_TOKEN_FILE and "
+            "AMORTIZED_MLFLOW_WORKSPACE)",
+        )
     if not benchmark and not settings.evalhub_staging_bucket:
         return ["Eval Hub task evaluation requires a configured input staging bucket"]
     from urllib.parse import urlparse

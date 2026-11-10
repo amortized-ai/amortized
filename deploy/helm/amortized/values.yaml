@@ -74,6 +74,9 @@ server:
 evalhub:
   # Empty URL retains the native migration path for new jobs. Historical owners
   # never change. Connect to the authenticated HTTPS service, not its internal port.
+  # Needs an https MLflow with workspaces and mlflow.enterprise.enabled=true (even if
+  # that MLflow has no login): Hub saves into the jobsNamespace workspace, and without
+  # it validation refuses every Hub evaluation. The bundled MLflow has no workspaces.
   url: ""
   tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
   caConfigMap: ""
