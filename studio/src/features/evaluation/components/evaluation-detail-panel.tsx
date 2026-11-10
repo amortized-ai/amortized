@@ -261,7 +261,7 @@ export function EvaluationDetailPanel({
                       {row.name}
                       {row.name === group.primary_metric && (
                         <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-normal text-primary">
-                          score
+                          primary
                         </span>
                       )}
                       {group.metric_metadata?.[row.name] && (

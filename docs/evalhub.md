@@ -89,7 +89,9 @@ release steps. Re-run them whenever an image pin or a catalog commit changes:
    log-probabilities), datasets, settings profile, each metric's direction and, when a
    task config lists its own worked examples, how many (`max_few_shot`; BBH's
    chain-of-thought tasks have 3, so their few-shot default is 3, not the catalog's 5).
-   Anything it cannot establish is `unknown` with a reason.
+   For LightEval it also counts each benchmark's questions with LightEval's own loader
+   (`question_count`; this downloads the datasets), because its results never report
+   the total. Anything it cannot establish is `unknown` with a reason.
 2. `make evalhub-conform` runs every entry a served model can take through Eval Hub
    on a running deployment (KIND or OpenShift), the way a user's job runs (`amortized.integrations.evalhub.conformance`,
    in the server pod, ~10 questions each), and records in
@@ -97,12 +99,15 @@ release steps. Re-run them whenever an image pin or a catalog commit changes:
    values, `additional_info`, MLflow `overall_score`, or why the run failed.
 3. `make evalhub-contract` picks each score from the reported names (the catalog's
    metric, then the adapter's prefixed name, a known alias, the only metric
-   reported, else no score with the reason) and writes `files/evalhub/compat/`,
+   reported, else no score with the reason), takes lm-eval's question count from its
+   run (`num_samples_original`), and writes `files/evalhub/compat/`,
    `files/evalhub/REPORT.md` (one row per entry) and Studio's test fixture. It
    stops if the card, Hub, MLflow and the results API disagree on any score.
 
 Only entries verified on the pinned digest are offered; the rest are `unknown` with
-the reason. Two entries are offered as one benchmark only when they ask the same
+the reason. Morty shows only this question count, never the catalog's `dataset_size`:
+lm-eval's catalog gives 14042 for every ArabicMMLU subject, and LightEval's
+openbookqa asks 1000 questions (test and validation), not the catalog's 500. Two entries are offered as one benchmark only when they ask the same
 questions *and* score them the same way (confirmed in `contract.SAME_SCORING`).
 The chart mounts the compat files into the server and refuses to render if they
 describe a different image than the pinned one; at runtime a digest mismatch makes
@@ -129,8 +134,7 @@ Morty uses two read-only tools, never a provider list:
   returned `picks`; an off-list reply is a 422 listing the allowed values. A
   benchmark is chosen by its exact id first (lm-eval `arc_easy` and LightEval
   `arc:easy` are both listed under Reasoning); a reply that still matches two is a
-  422 naming each id with its score. Hub collections
-  are offered as shortlists at the first question, for navigation only.
+  422 naming each id with its score.
 - `get_benchmark` (`POST /api/v1/evaluations/benchmarks/get`) returns one entry's
   details, compatibility and the only settings the user may change, with bounds and
   defaults.
@@ -244,7 +248,8 @@ Run them from the repository root, with the dev environment active.
      row: whether it runs (or why not), its score and why, its copies, the suites that
      contain it.
    - Commit together: `described/`, `conformance/`, `compat/`, `REPORT.md` and
-     `studio/src/test/fixtures/evalhub-results.json`.
+     `studio/src/test/fixtures/evalhub-results.json`, exactly as the make targets wrote
+     them. Never edit or merge them by hand; to change one entry, re-run its step.
    - Redeploy the chart, so the server gets the new ConfigMap `amortized-evalhub-compat`.
 
 **Re-running chosen entries.** Example: run `tinyTruthfulQA` again with all its

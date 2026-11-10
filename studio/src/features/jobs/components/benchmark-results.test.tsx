@@ -6,6 +6,7 @@ import fixture from "@/test/fixtures/evalhub-results.json"
 import type { EvalResults, EvaluationGroup } from "@/lib/api-client"
 import { extractBenchmarkView } from "@/features/chat/utils/parse-tool-result"
 import { EvaluationDetailPanel } from "@/features/evaluation/components/evaluation-detail-panel"
+import { ActionCard } from "@/features/chat/components/action-card"
 import { BenchmarkResults } from "./benchmark-results"
 import { formatBenchmarkValue, isRunAverage } from "../lib/format"
 
@@ -39,17 +40,28 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
     const all = Object.keys(results.scores ?? {})
     const reported = all.filter((name) => !isRunAverage(name, primary))
 
-    it("the card names the score the results show", () => {
+    it("the card names the primary metric the results show", () => {
       const card = extractBenchmarkView(entry.card)!
       expect(card.metric).toBe(primary ?? "")
       if (!primary) expect(card.noScore).toBe(results.no_score_reason)
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ActionCard
+            action={{ action: "create_eval_job", description: "", params: {}, jobType: "eval", benchmark: card }}
+            onConfirm={() => {}}
+            onReject={() => {}}
+          />
+        </QueryClientProvider>,
+      )
+      const row = screen.getByText("Primary metric").closest("tr")!
+      expect(row).toHaveTextContent(primary ? `Primary metric${primary}` : `Primary metricnone: ${card.noScore}`)
     })
 
-    it("the results tab leads with the score, or says why there is none", () => {
+    it("the results tab leads with the primary metric, or says why there is none", () => {
       render(<BenchmarkResults results={results} />)
       if (primary) {
         const headline = screen.getByTestId("benchmark-score")
-        expect(headline).toHaveTextContent(primary)
+        expect(headline).toHaveTextContent(`Primary metric${primary}`)
         expect(headline).toHaveTextContent(formatBenchmarkValue(results.primary_score!))
         const direction = results.primary_lower_is_better ? "lower" : "higher"
         expect(headline).toHaveTextContent(`${direction} is better`)
@@ -62,14 +74,20 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
       }
     })
 
-    it("lists each reported metric once, stderr as ± beside it, with its direction; no run average", () => {
+    it("lists every other metric once, stderr as ± beside it, with its direction; no run average", () => {
       render(<BenchmarkResults results={results} />)
-      const rows = rowsOf(screen.getByTestId("benchmark-metrics")).slice(1)
-      expect(rows.map((row) => row.cells[0]!.textContent)).toHaveLength(reported.length)
-      reported.forEach((name, i) => {
+      // The score is in its card only; the table holds the rest, or is absent.
+      const others = reported.filter((name) => name !== primary)
+      const table = screen.queryByTestId("benchmark-metrics")
+      if (others.length === 0) {
+        expect(table).toBeNull()
+        return
+      }
+      const rows = rowsOf(table!).slice(1)
+      expect(rows.map((row) => row.cells[0]!.textContent)).toHaveLength(others.length)
+      others.forEach((name, i) => {
         const [label, value] = [rows[i]!.cells[0]!, rows[i]!.cells[1]!]
         expect(label.textContent).toContain(name)
-        expect(label.textContent?.includes("score")).toBe(name === primary || name.includes("score"))
         expect(value).toHaveTextContent(formatBenchmarkValue(results.scores![name]!))
         const stderr = results.stderr?.[name]
         if (stderr != null) expect(value).toHaveTextContent(`±${formatBenchmarkValue(stderr)}`)
@@ -82,7 +100,7 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
       expect(rows.some((row) => row.cells[0]!.textContent?.startsWith("all."))).toBe(primary?.startsWith("all.") ?? false)
     })
 
-    it("the comparison marks the score row first", () => {
+    it("the comparison marks the primary metric's row first", () => {
       if (!primary) return
       const group: EvaluationGroup = {
         id: "group-1",
@@ -114,7 +132,7 @@ describe.each(entries.map((e) => [`${e.provider_id} ${e.id}`, e] as const))(
       const body = screen.getAllByRole("rowgroup").at(-1)!
       const rows = rowsOf(body)
       expect(rows[0]!.cells[0]).toHaveTextContent(primary)
-      expect(rows[0]!.cells[0]).toHaveTextContent("score")
+      expect(rows[0]!.cells[0]).toHaveTextContent("primary")
       expect(rows).toHaveLength(reported.length)
     })
   },
@@ -132,7 +150,7 @@ it("a benchmark without a score says why and still lists its metrics", () => {
     no_score_reason: reason,
   } as unknown as EvalResults
   render(<BenchmarkResults results={results} />)
-  expect(screen.getByTestId("benchmark-no-score")).toHaveTextContent(reason)
+  expect(screen.getByTestId("benchmark-no-score")).toHaveTextContent(`No primary metric${reason}`)
   expect(screen.queryByTestId("benchmark-score")).toBeNull()
   const rows = rowsOf(screen.getByTestId("benchmark-metrics")).slice(1)
   expect(rows.map((row) => row.cells[0]!.textContent)).toEqual([
@@ -150,14 +168,13 @@ it("hides the run average unless it is the score itself", () => {
     primary_score: 0.1,
   } as unknown as EvalResults
   const { unmount } = render(<BenchmarkResults results={one} />)
-  expect(rowsOf(screen.getByTestId("benchmark-metrics")).slice(1).map((r) => r.cells[0]!.textContent)).toEqual([
-    "gsm8k.extractive_matchscore",
-  ])
+  expect(screen.getByTestId("benchmark-score")).toHaveTextContent("gsm8k.extractive_match")
+  // Its only other metric is the run average, so there is no table to repeat the score.
+  expect(screen.queryByTestId("benchmark-metrics")).toBeNull()
   unmount()
   const suite = { ...one, primary_metric: "all.extractive_match" } as unknown as EvalResults
   render(<BenchmarkResults results={suite} />)
   expect(rowsOf(screen.getByTestId("benchmark-metrics")).slice(1).map((r) => r.cells[0]!.textContent)).toEqual([
-    "all.extractive_matchscore",
     "gsm8k.extractive_match",
   ])
 })

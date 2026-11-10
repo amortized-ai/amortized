@@ -39,6 +39,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 760,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -84,6 +85,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 39,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -129,6 +131,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 390,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -174,6 +177,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 360,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -219,6 +223,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 1038,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -264,6 +269,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 261,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -309,6 +315,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 255,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -366,6 +373,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 238,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -411,6 +419,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 27,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -456,6 +465,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 236,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -501,6 +511,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 87,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -546,6 +557,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 241,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -591,6 +603,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 27,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -636,6 +649,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 639,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -681,6 +695,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 612,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -726,6 +741,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 1211,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -771,6 +787,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 864,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -816,6 +833,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 999,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -861,6 +879,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 252,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -906,6 +925,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 57,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -951,6 +971,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 705,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -996,6 +1017,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 409,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1041,6 +1063,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 336,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1086,6 +1109,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 75,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1131,6 +1155,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 74,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1176,6 +1201,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 210,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1221,6 +1247,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 64,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1266,6 +1293,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 984,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1311,6 +1339,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 497,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1356,6 +1385,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 1838,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1401,6 +1431,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 780,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1446,6 +1477,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 1267,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1510,6 +1542,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 600,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1552,6 +1585,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 600,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1594,6 +1628,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 600,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1636,6 +1671,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 600,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1678,6 +1714,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 600,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1720,6 +1757,7 @@
         "acc_stderr",
         "f1"
       ],
+      "question_count": 600,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1763,6 +1801,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 651,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1806,6 +1845,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 135,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1849,6 +1889,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 265,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1892,6 +1933,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 14,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -1935,6 +1977,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 10,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -1978,6 +2021,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -2021,6 +2065,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 100,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -2064,6 +2109,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 272,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -2187,6 +2233,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 326,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -2230,6 +2277,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 9171,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -2273,6 +2321,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 1833,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -2316,6 +2365,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 492,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -2359,6 +2409,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 2376,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -2468,6 +2519,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 187,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2509,6 +2561,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2550,6 +2603,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2591,6 +2645,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2632,6 +2687,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2673,6 +2729,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2714,6 +2771,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 178,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2755,6 +2813,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2796,6 +2855,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2870,6 +2930,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 187,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2910,6 +2971,7 @@
         "exact_match",
         "exact_match_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "exact_match",
@@ -2962,6 +3024,7 @@
         "disamb_bias_score",
         "disamb_bias_score_Age"
       ],
+      "question_count": 58492,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3002,6 +3065,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 60,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3042,6 +3106,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 31,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3082,6 +3147,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 221,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3525,6 +3591,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 37,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3657,6 +3724,7 @@
         "smoothed_bleu_4",
         "smoothed_bleu_4_stderr"
       ],
+      "question_count": 3291,
       "score": {
         "lower_is_better": false,
         "metric": "smoothed_bleu_4",
@@ -3697,6 +3765,7 @@
         "smoothed_bleu_4",
         "smoothed_bleu_4_stderr"
       ],
+      "question_count": 1261,
       "score": {
         "lower_is_better": false,
         "metric": "smoothed_bleu_4",
@@ -3740,6 +3809,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 89,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3780,6 +3850,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 559,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3823,6 +3894,7 @@
         "pct_stereotype",
         "pct_stereotype_stderr"
       ],
+      "question_count": 1677,
       "score": {
         "lower_is_better": true,
         "metric": "pct_stereotype",
@@ -3886,6 +3958,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 3885,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3926,6 +3999,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 352,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -3967,6 +4041,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 135,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4008,6 +4083,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 265,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4049,6 +4125,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4090,6 +4167,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 100,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4131,6 +4209,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 272,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4172,6 +4251,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 135,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4213,6 +4293,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 265,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4254,6 +4335,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4295,6 +4377,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 100,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4336,6 +4419,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 272,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4377,6 +4461,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 135,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4418,6 +4503,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4459,6 +4545,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4500,6 +4587,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4541,6 +4629,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4582,6 +4671,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4623,6 +4713,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4664,6 +4755,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4705,6 +4797,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 270,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -4748,6 +4841,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 9176,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -4806,6 +4900,7 @@
         "prompt_level_strict_acc",
         "prompt_level_strict_acc_stderr"
       ],
+      "question_count": 541,
       "score": {
         "lower_is_better": false,
         "metric": "inst_level_strict_acc",
@@ -4850,6 +4945,7 @@
         "schema_compliance",
         "schema_compliance_stderr"
       ],
+      "question_count": 577,
       "score": {
         "lower_is_better": false,
         "metric": "schema_compliance",
@@ -4894,6 +4990,7 @@
         "schema_compliance",
         "schema_compliance_stderr"
       ],
+      "question_count": 368,
       "score": {
         "lower_is_better": false,
         "metric": "schema_compliance",
@@ -4938,6 +5035,7 @@
         "schema_compliance",
         "schema_compliance_stderr"
       ],
+      "question_count": 586,
       "score": {
         "lower_is_better": false,
         "metric": "schema_compliance",
@@ -4981,6 +5079,7 @@
         "perplexity",
         "perplexity_stderr"
       ],
+      "question_count": 5153,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5024,6 +5123,7 @@
         "perplexity",
         "perplexity_stderr"
       ],
+      "question_count": 5153,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5067,6 +5167,7 @@
         "perplexity",
         "perplexity_stderr"
       ],
+      "question_count": 5153,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5110,6 +5211,7 @@
         "perplexity",
         "perplexity_stderr"
       ],
+      "question_count": 5153,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5153,6 +5255,7 @@
         "perplexity",
         "perplexity_stderr"
       ],
+      "question_count": 5153,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5248,6 +5351,7 @@
         "acc_norm",
         "acc_norm_stderr"
       ],
+      "question_count": 250,
       "score": {
         "lower_is_better": false,
         "metric": "acc_norm",
@@ -5305,6 +5409,7 @@
         "prompt_level_strict_acc",
         "prompt_level_strict_acc_stderr"
       ],
+      "question_count": 541,
       "score": {
         "lower_is_better": false,
         "metric": "inst_level_strict_acc",
@@ -5359,6 +5464,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 12032,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5417,6 +5523,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 154,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5611,6 +5718,7 @@
         "f1_abstractive",
         "f1_abstractive_stderr"
       ],
+      "question_count": 431,
       "score": {
         "lower_is_better": false,
         "metric": "f1_abstractive",
@@ -5658,6 +5766,7 @@
       "metrics": [
         "acc"
       ],
+      "question_count": 100,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5702,6 +5811,7 @@
         "acc_norm_stderr",
         "acc_stderr"
       ],
+      "question_count": 940,
       "score": {
         "lower_is_better": false,
         "metric": "acc",
@@ -5768,6 +5878,7 @@
         "byte_perplexity",
         "word_perplexity"
       ],
+      "question_count": 62,
       "score": {
         "lower_is_better": true,
         "metric": "word_perplexity",
@@ -5808,6 +5919,7 @@
         "acc",
         "acc_stderr"
       ],
+      "question_count": 720,
       "score": {
         "lower_is_better": false,
         "metric": "acc",

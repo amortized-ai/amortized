@@ -105,7 +105,7 @@ RUNS = {
         "arc_easy": _run(
             {"acc": 0.6, "acc_norm": 0.4, "acc_stderr": 0.11, "acc_norm_stderr": 0.11},
             "acc_norm",
-            {"primary_metric": "acc_norm", "zero_shot": 0.4},
+            {"primary_metric": "acc_norm", "zero_shot": 0.4, "num_samples_original": 2376},
         ),
         "truthfulqa_mc1": _run({"acc": 0.3, "acc_stderr": 0.1}, "acc"),
         "pile_arxiv": _run(
@@ -166,6 +166,17 @@ def test_a_verified_entry_records_what_it_reported_and_its_score(files):
     assert lighteval["score"]["source"] == "only metric reported"
 
 
+def test_question_count_is_the_adapters_own_never_the_catalogs(files):
+    # lm-eval's catalog says 14042 for every ArabicMMLU subject; its run reports the real total.
+    compat, _, _ = contract.build(files)
+    assert compat[LM]["benchmarks"]["arc_easy"]["question_count"] == 2376
+    assert "question_count" not in compat[LM]["benchmarks"]["truthfulqa_mc1"]  # not reported
+    # LightEval reports no total: describe counted it with LightEval's loader.
+    described = json.loads((files / f"described/{LE}.json").read_text())["benchmarks"]
+    lighteval = compat[LE]["benchmarks"]["arc:easy"]
+    assert lighteval["question_count"] == described["arc:easy"]["question_count"]
+
+
 def test_an_entry_without_a_score_says_why_and_keeps_its_directions(files):
     compat, _, fixture = contract.build(files)
     pile = compat[LM]["benchmarks"]["pile_arxiv"]
@@ -206,7 +217,7 @@ def test_copies_must_also_score_the_questions_the_same_way(files):
     pairs = {frozenset((e.provider.id, e.id) for e in group) for group in groups}
     assert pairs == {frozenset({(LM, "truthfulqa_mc1"), (LE, "truthfulqa:mc")})}
     assert (
-        "| arc_easy | yes | likelihood | acc_norm (higher is better) | catalog |"
+        "| arc_easy | yes | 2376 | likelihood | acc_norm (higher is better) | catalog |"
         " amortized-lighteval arc:easy (scored differently, listed separately) |"
     ) in report
 

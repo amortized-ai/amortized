@@ -297,6 +297,11 @@ def build(files: Path = FILES) -> tuple[dict[str, dict[str, Any]], str, dict[str
         prefixed = entry.provider.profile in PREFIXED
         known = directions(run["metrics"], (entry.compat or {}).get("directions") or {}, prefixed)
         chosen = choose_score(entry.raw.get("primary_score"), run["metrics"], prefixed, known)
+        total = (run.get("additional_info") or {}).get("num_samples_original")
+        if isinstance(total, int):
+            # lm-eval reports how many questions the full task holds. LightEval's results
+            # carry no total, so its count comes from describe (question_count).
+            record["question_count"] = total
         record.update(
             metrics=sorted(run["metrics"]),
             directions=known,
@@ -431,8 +436,9 @@ def report(
             "",
             f"## {provider_id}: {len(mine)} entries, {runs} verified, {failed} failed their run",
             "",
-            "| Entry | Runs | Scoring | Score | Why this score | Same questions as | In suites |",
-            "|---|---|---|---|---|---|---|",
+            "| Entry | Runs | Questions (full) | Scoring | Score | Why this score"
+            " | Same questions as | In suites |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         for entry in mine:
             key = (entry.provider.id, entry.id)
@@ -450,7 +456,8 @@ def report(
             if ran == "yes" and asked != default:
                 ran = f"yes ({asked or 'all'} questions)"
             lines.append(
-                f"| {_cell(entry.id)} | {_cell(ran)} | {compat.get('scoring') or ''} |"
+                f"| {_cell(entry.id)} | {_cell(ran)} | {compat.get('question_count') or ''} |"
+                f" {compat.get('scoring') or ''} |"
                 f" {_cell(score)} | {_cell(why or '')} | {_cell(copies.get(key, ''))} |"
                 f" {_cell(', '.join(suites.get(key, [])))} |"
             )

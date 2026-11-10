@@ -5,10 +5,13 @@ run the benchmark, never from a benchmark's name or category. See `make evalhub-
 Writes JSON to stdout. Anything it cannot establish is recorded as "unknown" with a reason.
 Metric names are not predicted here: `make evalhub-conform` records what the adapter
 reports, and `make evalhub-contract` picks each score from that.
+Counting questions downloads each benchmark's dataset (needs network); the adapter's
+results never report the total.
 """
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,6 +23,9 @@ SCHEMA = "amortized.evalhub.described/v1"
 # (amortized.evaluation.spec.LightEvalParameters). Bump it when the adapter's
 # accepted parameters change, so a stale Amortized treats entries as unknown.
 SETTINGS_PROFILE = "lighteval-endpoint-v1"
+# Some metric names embed a function's repr ("<function math_normalizer at 0x7f8e...>").
+# Its memory address differs every run; dropped so describe's output is reproducible.
+_ADDRESS = re.compile(r" at 0x[0-9a-fA-F]+")
 
 
 def directions(tasks: list[str], configs: dict[str, Any]) -> dict[str, bool]:
@@ -34,8 +40,16 @@ def directions(tasks: list[str], configs: dict[str, Any]) -> dict[str, bool]:
             for name in names:
                 better = higher.get(name) if isinstance(higher, dict) else higher
                 if better is not None:
-                    found[str(name)] = bool(better)
+                    found[_ADDRESS.sub("", str(name))] = bool(better)
     return found
+
+
+def question_count(tasks: list[str], configs: dict[str, Any]) -> int:
+    """Questions in a full run, counted by LightEval's own loader: every evaluation split,
+    after the task's filter and formatter (openbookqa asks test and validation: 1000)."""
+    from lighteval.tasks.lighteval_task import LightevalTask
+
+    return sum(len(LightevalTask(configs[t.split("|", 1)[0]]).eval_docs()) for t in tasks)
 
 
 def describe(benchmark_id: str, adapter: Any, configs: dict[str, Any], methods: Any) -> dict:
@@ -70,8 +84,15 @@ def describe(benchmark_id: str, adapter: Any, configs: dict[str, Any], methods: 
                 getattr(config, "hf_revision", None),
             )
         )
+    counted: dict[str, Any] = {}
+    if not suite:  # suites are never offered
+        try:
+            counted["question_count"] = question_count(tasks, configs)
+        except Exception as exc:  # record, never guess
+            counted["question_count_unknown"] = f"{type(exc).__name__}: {exc}"[:300]
     return {
         **record,
+        **counted,
         "status": "known",
         "scoring": scoring,
         "answers_per_question": cls._max_samples_per_prompt(tasks),

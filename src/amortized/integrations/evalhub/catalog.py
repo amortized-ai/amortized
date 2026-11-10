@@ -246,22 +246,6 @@ async def load(
     return entries
 
 
-async def load_shortlists(sdk: Any) -> list[dict[str, Any]]:
-    """Hub collections, used only as named navigation lists."""
-    data = (await sdk._request_get("/evaluations/collections")).json()
-    shortlists = []
-    for item in data.get("items") or []:
-        members = {(b.get("provider_id"), b.get("id")) for b in item.get("benchmarks") or []}
-        shortlists.append(
-            {
-                "id": str((item.get("resource") or {}).get("id") or item.get("name")),
-                "name": str(item.get("name") or ""),
-                "members": members,
-            }
-        )
-    return shortlists
-
-
 def compatibility(entry: Entry, capability: Capability) -> tuple[str, str]:
     """(status, reason) with status compatible | incompatible | unknown | unsupported."""
     if "model" not in (entry.raw.get("evaluation_targets") or ()):
@@ -411,7 +395,9 @@ def view(
         "description": str(entry.raw.get("description") or "").strip(),
         "metric": entry.metric,
         **({"no_score": no_score_reason(compat)} if no_score_reason(compat) else {}),
-        "questions": entry.raw.get("dataset_size") or None,
+        # The adapter's own count (contract), never the catalog's dataset_size: lm-eval's
+        # gives 14042 for every ArabicMMLU subject.
+        "questions": compat.get("question_count"),
         "scoring": compat.get("scoring"),
         "answers_per_question": compat.get("answers_per_question"),
         "compatibility": status,
@@ -445,17 +431,10 @@ def _matches(answer: str, *candidates: str) -> bool:
     return bool(key) and key in {normalize(c) for c in candidates if c}
 
 
-def _narrow(
-    pool: list[Entry], picks: dict[str, str], shortlists: list[dict[str, Any]]
-) -> list[Entry]:
-    unknown = set(picks) - {"shortlist", *FACETS}
+def _narrow(pool: list[Entry], picks: dict[str, str]) -> list[Entry]:
+    unknown = set(picks) - set(FACETS)
     if unknown:
         raise ChoiceError(f"Unknown picks {sorted(unknown)}; send back the picks you received")
-    if "shortlist" in picks:
-        chosen = next((s for s in shortlists if s["id"] == picks["shortlist"]), None)
-        if chosen is None:
-            raise ChoiceError(f"No shortlist {picks['shortlist']!r}")
-        pool = [e for e in pool if (e.provider.id, e.id) in chosen["members"]]
     for facet in FACETS:
         if facet not in picks:
             continue
@@ -467,9 +446,7 @@ def _narrow(
     return pool
 
 
-def _question(
-    pool: list[Entry], picks: dict[str, str], shortlists: list[dict[str, Any]]
-) -> tuple[str, list[dict[str, Any]]] | None:
+def _question(pool: list[Entry], picks: dict[str, str]) -> tuple[str, list[dict[str, Any]]] | None:
     if len(pool) <= CARD_LIMIT:
         return None
     for facet in FACETS:
@@ -477,14 +454,6 @@ def _question(
             continue
         choices = _choices(facet, pool)
         if _splits(choices, len(pool)):
-            if not picks:
-                for s in shortlists:
-                    count = sum((e.provider.id, e.id) in s["members"] for e in pool)
-                    if count:
-                        label = f"Shortlist: {s['name'] or s['id']}"
-                        choices.append(
-                            {"key": "shortlist", "value": s["id"], "label": label, "count": count}
-                        )
             return facet, choices
     return None
 
@@ -502,17 +471,11 @@ def find(
     name: str = "",
     picks: dict[str, str] | None = None,
     answer: str = "",
-    shortlists: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     statuses = {id(e): compatibility(e, capability) for e in entries}
     groups = overlaps(entries)
     if name:
         return _by_name(entries, capability, name, statuses, groups)
-    # A shortlist naming one copy of a benchmark also holds its other copies.
-    shortlists = [
-        {**s, "members": s["members"] | {k for m in s["members"] for k in _keys(groups.get(m))}}
-        for s in shortlists or []
-    ]
     shown = _fold(entries, groups, statuses)
     # Only entries verified on the pinned image are offered: an unknown one cannot be
     # approved (resolve_recipe). Its own reason is shown when it is looked up by name.
@@ -521,9 +484,9 @@ def find(
     # can run. Entries not verified and suites are never offered to anyone; not counted.
     hidden = Counter(statuses[id(e)][1] for e in shown if statuses[id(e)][0] == "incompatible")
     picks = dict(picks or {})
-    pool = _narrow(browsable, picks, shortlists)
+    pool = _narrow(browsable, picks)
     if answer:
-        step = _question(pool, picks, shortlists)
+        step = _question(pool, picks)
         if step is None:
             # An exact id first: lm-eval arc_easy and LightEval arc:easy normalize alike.
             chosen = [e for e in pool if answer.strip() == e.id] or [
@@ -558,12 +521,12 @@ def find(
                 " (To look a benchmark up by name instead, call find_benchmarks with name.)"
             )
         picks[hit["key"]] = hit["value"]
-        pool = _narrow(browsable, picks, shortlists)
+        pool = _narrow(browsable, picks)
     response: dict[str, Any] = {
         "picks": picks,
         "available": len(pool),
     }
-    step = _question(pool, picks, shortlists)
+    step = _question(pool, picks)
     if step is not None:
         facet, choices = step
         response.update(step="question", facet=facet, question=QUESTIONS[facet])
@@ -626,10 +589,6 @@ def find(
             " Do not use present_options. " + _REPLY
         )
     return response
-
-
-def _keys(group: list[Entry] | None) -> set[tuple[str, str]]:
-    return {(e.provider.id, e.id) for e in group or ()}
 
 
 def _prefixes(provider: Provider) -> set[str]:

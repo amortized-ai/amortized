@@ -101,9 +101,7 @@ def _capability(model: BenchmarkModel) -> Any:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-async def _read_catalog(
-    provider_ids: list[str] | None, with_shortlists: bool
-) -> tuple[list[Any], list[dict[str, Any]]]:
+async def _read_catalog(provider_ids: list[str] | None) -> list[Any]:
     from amortized.integrations.evalhub import catalog
     from amortized.integrations.evalhub.client import client
 
@@ -114,13 +112,6 @@ async def _read_catalog(
     try:
         async with client() as sdk:
             entries = await catalog.load(sdk, provider_ids)
-            shortlists: list[dict[str, Any]] = []
-            if with_shortlists:
-                try:
-                    shortlists = await catalog.load_shortlists(sdk)
-                except Exception:
-                    # Shortlists only help navigation; browsing works without them.
-                    logger.warning("Could not read Eval Hub collections", exc_info=True)
     except HTTPException:
         raise
     except Exception as exc:
@@ -128,7 +119,7 @@ async def _read_catalog(
         raise HTTPException(
             status_code=503, detail="Cannot read the Eval Hub benchmark catalog; retry"
         ) from exc
-    return entries, shortlists
+    return entries
 
 
 @router.post(
@@ -144,7 +135,7 @@ async def find_benchmarks(request: FindBenchmarksRequest) -> dict[str, Any]:
     from amortized.integrations.evalhub import catalog
 
     capability = _capability(request.model)
-    entries, shortlists = await _read_catalog(None, with_shortlists=not request.name)
+    entries = await _read_catalog(None)
     try:
         return catalog.find(
             entries,
@@ -152,7 +143,6 @@ async def find_benchmarks(request: FindBenchmarksRequest) -> dict[str, Any]:
             name=request.name.strip(),
             picks=request.picks,
             answer=request.answer.strip(),
-            shortlists=shortlists,
         )
     except catalog.ChoiceError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -176,7 +166,7 @@ async def get_benchmark(request: GetBenchmarkRequest) -> dict[str, Any]:
             detail=f"No enabled benchmark provider {request.provider_id!r}; use find_benchmarks",
         )
     # Every enabled provider, so the answer can name the benchmark's copies elsewhere.
-    entries, _ = await _read_catalog(None, with_shortlists=False)
+    entries = await _read_catalog(None)
     entry = next(
         (e for e in entries if e.provider.id == request.provider_id and e.id == request.id), None
     )

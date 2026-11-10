@@ -25,6 +25,7 @@
         "all.avg@n:n=1",
         "all.pass@1"
       ],
+      "question_count": 30,
       "score": {
         "lower_is_better": false,
         "metric": "aime24.pass@1",
@@ -68,6 +69,7 @@
         "all.avg@n:n=1",
         "all.pass@1"
       ],
+      "question_count": 30,
       "score": {
         "lower_is_better": false,
         "metric": "aime25.pass@1",
@@ -109,6 +111,7 @@
         "all.acc",
         "arc:challenge.acc"
       ],
+      "question_count": 1172,
       "score": {
         "lower_is_better": false,
         "metric": "arc:challenge.acc",
@@ -150,6 +153,7 @@
         "all.acc",
         "arc:easy.acc"
       ],
+      "question_count": 2376,
       "score": {
         "lower_is_better": false,
         "metric": "arc:easy.acc",
@@ -247,6 +251,7 @@
         "glue:cola.acc",
         "glue:cola.mcc"
       ],
+      "question_count": 1043,
       "score": {
         "lower_is_better": false,
         "metric": "glue:cola.mcc",
@@ -292,6 +297,7 @@
         "glue:mrpc.acc",
         "glue:mrpc.loglikelihood_f1"
       ],
+      "question_count": 408,
       "score": {
         "lower_is_better": false,
         "metric": "glue:mrpc.acc",
@@ -333,6 +339,7 @@
         "all.acc",
         "glue:sst2.acc"
       ],
+      "question_count": 872,
       "score": {
         "lower_is_better": false,
         "metric": "glue:sst2.acc",
@@ -366,6 +373,7 @@
           "task": "gpqa:diamond"
         }
       ],
+      "question_count_unknown": "DatasetNotFoundError: Dataset 'Idavidrein/gpqa' is a gated dataset on the Hub. You must be authenticated to access it.",
       "reason": "its conformance run failed: Unexpected error during LightEval evaluation: RuntimeError: LightEval CLI failed with exit code 1; adapter log: DatasetNotFoundError: Dataset 'Idavidrein/gpqa' is a gated dataset on the Hub.",
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
@@ -396,6 +404,7 @@
         "all.extractive_match",
         "gsm8k.extractive_match"
       ],
+      "question_count": 1319,
       "score": {
         "lower_is_better": false,
         "metric": "gsm8k.extractive_match",
@@ -437,6 +446,7 @@
         "all.em",
         "hellaswag.em"
       ],
+      "question_count": 10042,
       "score": {
         "lower_is_better": false,
         "metric": "hellaswag.em",
@@ -526,6 +536,7 @@
         "all.codegen_pass@1",
         "lcb:codegeneration_v6.codegen_pass@1"
       ],
+      "question_count": 175,
       "score": {
         "lower_is_better": false,
         "metric": "lcb:codegeneration_v6.codegen_pass@1",
@@ -559,7 +570,8 @@
           "task": "gsm8k"
         },
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "algebra",
           "splits": [
@@ -568,7 +580,8 @@
           "task": "math:algebra"
         },
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "counting_and_probability",
           "splits": [
@@ -601,7 +614,8 @@
       "answers_per_question": 4,
       "datasets": [
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "algebra",
           "splits": [
@@ -615,6 +629,7 @@
         "all.maj@4",
         "math:algebra.maj@4"
       ],
+      "question_count": 1187,
       "score": {
         "lower_is_better": false,
         "metric": "math:algebra.maj@4",
@@ -639,7 +654,8 @@
       "answers_per_question": 4,
       "datasets": [
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "counting_and_probability",
           "splits": [
@@ -653,6 +669,7 @@
         "all.maj@4",
         "math:counting_and_probability.maj@4"
       ],
+      "question_count": 474,
       "score": {
         "lower_is_better": false,
         "metric": "math:counting_and_probability.maj@4",
@@ -691,6 +708,7 @@
         "all.pass@1",
         "math_500.pass@1"
       ],
+      "question_count": 500,
       "score": {
         "lower_is_better": false,
         "metric": "math_500.pass@1",
@@ -741,6 +759,7 @@
         "all.em",
         "openbookqa.em"
       ],
+      "question_count": 1000,
       "score": {
         "lower_is_better": false,
         "metric": "openbookqa.em",
@@ -803,6 +822,7 @@
         "all.em",
         "piqa.em"
       ],
+      "question_count": 1838,
       "score": {
         "lower_is_better": false,
         "metric": "piqa.em",
@@ -875,6 +895,7 @@
         "all.em",
         "triviaqa.em"
       ],
+      "question_count": 17944,
       "score": {
         "lower_is_better": false,
         "metric": "triviaqa.em",
@@ -947,6 +968,7 @@
         "all.em",
         "truthfulqa:gen.em"
       ],
+      "question_count": 817,
       "score": {
         "lower_is_better": false,
         "metric": "truthfulqa:gen.em",
@@ -992,6 +1014,7 @@
         "truthfulqa:mc.truthfulqa_mc1",
         "truthfulqa:mc.truthfulqa_mc2"
       ],
+      "question_count": 817,
       "score": {
         "lower_is_better": false,
         "metric": "truthfulqa:mc.truthfulqa_mc1",
@@ -1033,6 +1056,7 @@
         "all.acc",
         "winogrande.acc"
       ],
+      "question_count": 1267,
       "score": {
         "lower_is_better": false,
         "metric": "winogrande.acc",

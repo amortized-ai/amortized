@@ -12,7 +12,7 @@
         "name": "Basic science Q&A",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "86567580dc70"
+        "recipe_fingerprint": "eeea7037baf1"
       },
       "id": "arc_easy",
       "provider_id": "amortized-lm-eval",
@@ -103,7 +103,7 @@
         "name": "Yes/no question answering (Levantine Arabic)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "684fc1c5fc0d"
+        "recipe_fingerprint": "9bf602e9ce79"
       },
       "id": "AraDiCE_boolq_lev",
       "provider_id": "amortized-lm-eval",
@@ -198,7 +198,7 @@
         "name": "History knowledge (high school, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "b84b0b39c20b"
+        "recipe_fingerprint": "89ff0db96774"
       },
       "id": "AraDiCE_ArabicMMLU_high_humanities_history_lev",
       "provider_id": "amortized-lm-eval",
@@ -296,7 +296,7 @@
         "name": "Philosophy knowledge (high school, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "ef236e791990"
+        "recipe_fingerprint": "8fddc93df31f"
       },
       "id": "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy",
       "provider_id": "amortized-lm-eval",
@@ -394,7 +394,7 @@
         "name": "Arabic language proficiency (high school, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "56cebb89eae6"
+        "recipe_fingerprint": "d05b72185a63"
       },
       "id": "AraDiCE_ArabicMMLU_high_language_arabic-language_lev",
       "provider_id": "amortized-lm-eval",
@@ -492,7 +492,7 @@
         "name": "Islamic studies knowledge (middle school, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "0b98d7035688"
+        "recipe_fingerprint": "23e8590a31a9"
       },
       "id": "AraDiCE_ArabicMMLU_middle_humanities_islamic-studies_egy",
       "provider_id": "amortized-lm-eval",
@@ -590,7 +590,7 @@
         "name": "Arabic language proficiency (middle school, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "9501dc735542"
+        "recipe_fingerprint": "b1d6673c0200"
       },
       "id": "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev",
       "provider_id": "amortized-lm-eval",
@@ -688,7 +688,7 @@
         "name": "Islamic studies knowledge (general, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "614fd4975f1f"
+        "recipe_fingerprint": "8bb51124a12b"
       },
       "id": "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy",
       "provider_id": "amortized-lm-eval",
@@ -786,7 +786,7 @@
         "name": "General Arabic proficiency (Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "0ecd18b7518b"
+        "recipe_fingerprint": "c815beec166c"
       },
       "id": "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev",
       "provider_id": "amortized-lm-eval",
@@ -884,7 +884,7 @@
         "name": "Driving test knowledge (Egyptian Arabic)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "25b932c23490"
+        "recipe_fingerprint": "5e9831b5086b"
       },
       "id": "AraDiCE_ArabicMMLU_na_other_driving-test_egy",
       "provider_id": "amortized-lm-eval",
@@ -982,7 +982,7 @@
         "name": "General knowledge trivia (Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "09de9ef235a0"
+        "recipe_fingerprint": "5c15e8a1b8bf"
       },
       "id": "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev",
       "provider_id": "amortized-lm-eval",
@@ -1080,7 +1080,7 @@
         "name": "Islamic studies knowledge (primary, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "34b2e16e4bf8"
+        "recipe_fingerprint": "fcc440fa0c26"
       },
       "id": "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy",
       "provider_id": "amortized-lm-eval",
@@ -1178,7 +1178,7 @@
         "name": "Arabic language basics (primary, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "898090007c2e"
+        "recipe_fingerprint": "59e1548a40ad"
       },
       "id": "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev",
       "provider_id": "amortized-lm-eval",
@@ -1276,7 +1276,7 @@
         "name": "Business management knowledge (university, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "89775162b109"
+        "recipe_fingerprint": "f09f3f762498"
       },
       "id": "AraDiCE_ArabicMMLU_univ_other_management_egy",
       "provider_id": "amortized-lm-eval",
@@ -1374,7 +1374,7 @@
         "name": "Open-book science reasoning (English)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "ec435c20197f"
+        "recipe_fingerprint": "707f8aa75d6b"
       },
       "id": "AraDiCE_openbookqa_eng",
       "provider_id": "amortized-lm-eval",
@@ -1469,7 +1469,7 @@
         "name": "Yes/no comprehension (Arabic MT, light)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "088364d20741"
+        "recipe_fingerprint": "98aaed8f89d6"
       },
       "id": "arabic_mt_boolq_light",
       "provider_id": "amortized-lm-eval",
@@ -1557,7 +1557,7 @@
         "name": "Translation error detection",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "bf930d390873"
+        "recipe_fingerprint": "4a1dab66e302"
       },
       "id": "leaderboard_bbh_salient_translation_error_detection",
       "provider_id": "amortized-lm-eval",
@@ -1637,7 +1637,7 @@
         "name": "Textual inference in Ewe",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "dddce521a5a1"
+        "recipe_fingerprint": "f1c90f4396b5"
       },
       "id": "afrixnli_en_direct_ewe",
       "provider_id": "amortized-lm-eval",
@@ -1727,7 +1727,7 @@
         "name": "Textual inference in Igbo",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "b5638eefbb31"
+        "recipe_fingerprint": "7df678c4d3b1"
       },
       "id": "afrixnli_en_direct_ibo",
       "provider_id": "amortized-lm-eval",
@@ -1817,7 +1817,7 @@
         "name": "Textual inference in Luganda",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "6a0451a27ecc"
+        "recipe_fingerprint": "dffadb31e498"
       },
       "id": "afrixnli_en_direct_lug",
       "provider_id": "amortized-lm-eval",
@@ -1907,7 +1907,7 @@
         "name": "Textual inference in Sesotho",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "2228fcc7b433"
+        "recipe_fingerprint": "c58a06d6719f"
       },
       "id": "afrixnli_en_direct_sot",
       "provider_id": "amortized-lm-eval",
@@ -1997,7 +1997,7 @@
         "name": "Textual inference in Wolof",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "ce56b071118d"
+        "recipe_fingerprint": "7ef9fb349b1e"
       },
       "id": "afrixnli_en_direct_wol",
       "provider_id": "amortized-lm-eval",
@@ -2087,7 +2087,7 @@
         "name": "Textual inference in Zulu",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "741d9ef99ea1"
+        "recipe_fingerprint": "6615a4a3a108"
       },
       "id": "afrixnli_en_direct_zul",
       "provider_id": "amortized-lm-eval",
@@ -2177,7 +2177,7 @@
         "name": "Primary math skills (Egyptian Arabic)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "1cee12edf643"
+        "recipe_fingerprint": "7f3bfe182706"
       },
       "id": "AraDiCE_ArabicMMLU_primary_stem_math_egy",
       "provider_id": "amortized-lm-eval",
@@ -2275,7 +2275,7 @@
         "name": "College math in Arabic (light)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "e83f075d1ab1"
+        "recipe_fingerprint": "9aa02f56d0bd"
       },
       "id": "arabic_leaderboard_arabic_mmlu_college_mathematics_light",
       "provider_id": "amortized-lm-eval",
@@ -2363,7 +2363,7 @@
         "name": "High school math in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "a67c93c72c41"
+        "recipe_fingerprint": "0ed0fea90b7c"
       },
       "id": "arabic_leaderboard_arabic_mmlu_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -2451,7 +2451,7 @@
         "name": "High school math in Amharic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "109d2879b450"
+        "recipe_fingerprint": "b1630a80dd7a"
       },
       "id": "global_mmlu_full_am_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -2533,7 +2533,7 @@
         "name": "High school math in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "4ff318cf46aa"
+        "recipe_fingerprint": "424dcc74eafb"
       },
       "id": "global_mmlu_full_ar_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -2615,7 +2615,7 @@
         "name": "High school math in Bengali",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "dc49f4345c77"
+        "recipe_fingerprint": "9d692fa51d5e"
       },
       "id": "global_mmlu_full_bn_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -2697,7 +2697,7 @@
         "name": "High school math in Czech",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "8f15705323e6"
+        "recipe_fingerprint": "910d44403400"
       },
       "id": "global_mmlu_full_cs_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -2779,7 +2779,7 @@
         "name": "High school math in German",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "5b606343ba7e"
+        "recipe_fingerprint": "0b94eadbe3f5"
       },
       "id": "global_mmlu_full_de_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -2861,7 +2861,7 @@
         "name": "High school math in Greek",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "1ad782d86ae3"
+        "recipe_fingerprint": "2cf674bc47ef"
       },
       "id": "global_mmlu_full_el_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -2943,7 +2943,7 @@
         "name": "High school math in English",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "9832a34f09a5"
+        "recipe_fingerprint": "b3df761a79ec"
       },
       "id": "global_mmlu_full_en_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -3025,7 +3025,7 @@
         "name": "High school math in Spanish",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "a70acd3dad7c"
+        "recipe_fingerprint": "a06700e23ba3"
       },
       "id": "global_mmlu_full_es_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -3107,7 +3107,7 @@
         "name": "High school math in Persian",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "5eea6b90ba68"
+        "recipe_fingerprint": "2c45ceccaabf"
       },
       "id": "global_mmlu_full_fa_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -3189,7 +3189,7 @@
         "name": "High school math in Filipino",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "5579b8dbab3f"
+        "recipe_fingerprint": "69cf984d3837"
       },
       "id": "global_mmlu_full_fil_high_school_mathematics",
       "provider_id": "amortized-lm-eval",
@@ -3271,7 +3271,7 @@
         "name": "Physical intuition in Levantine Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "12a564154345"
+        "recipe_fingerprint": "fc52be2ddf43"
       },
       "id": "AraDiCE_piqa_lev",
       "provider_id": "amortized-lm-eval",
@@ -3366,7 +3366,7 @@
         "name": "Pronoun resolution (English, AraDiCE)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "5dd5f607eaa7"
+        "recipe_fingerprint": "2e2cdcbb39e7"
       },
       "id": "AraDiCE_winogrande_eng",
       "provider_id": "amortized-lm-eval",
@@ -3461,7 +3461,7 @@
         "name": "Activity completion (Arabic MT)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "52d63dea9017"
+        "recipe_fingerprint": "cb7e507a8708"
       },
       "id": "arabic_mt_hellaswag",
       "provider_id": "amortized-lm-eval",
@@ -3549,7 +3549,7 @@
         "name": "Physical intuition (Arabic MT)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "a26e7e7220dd"
+        "recipe_fingerprint": "139cdb6489d0"
       },
       "id": "arabic_mt_piqa",
       "provider_id": "amortized-lm-eval",
@@ -3637,7 +3637,7 @@
         "name": "Cause & effect reasoning (Arabic)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "3155c3eeffd7"
+        "recipe_fingerprint": "7e21db787575"
       },
       "id": "copa_ar",
       "provider_id": "amortized-lm-eval",
@@ -3724,7 +3724,7 @@
         "name": "Cause & effect reasoning (colloquial Indonesian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "6285115d667a"
+        "recipe_fingerprint": "3e0bca80d703"
       },
       "id": "copal_id_colloquial",
       "provider_id": "amortized-lm-eval",
@@ -3806,7 +3806,7 @@
         "name": "Activity completion in Standard Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "943a0934d6dd"
+        "recipe_fingerprint": "4ad8e7137c0d"
       },
       "id": "hellaswag_ar",
       "provider_id": "amortized-lm-eval",
@@ -3896,7 +3896,7 @@
         "name": "Passage comprehension (Arabic MT, light)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "aaee3d83a042"
+        "recipe_fingerprint": "549588894c9d"
       },
       "id": "arabic_mt_race_light",
       "provider_id": "amortized-lm-eval",
@@ -3984,7 +3984,7 @@
         "name": "Graduate-level passage analysis",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "33c57cb83575"
+        "recipe_fingerprint": "3c4b7f83725d"
       },
       "id": "bigbench_gre_reading_comprehension_multiple_choice",
       "provider_id": "amortized-lm-eval",
@@ -4066,7 +4066,7 @@
         "name": "Reading comprehension in Basque",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "bdf532c013e0"
+        "recipe_fingerprint": "a480eacc28c5"
       },
       "id": "eus_reading",
       "provider_id": "amortized-lm-eval",
@@ -4145,7 +4145,7 @@
         "name": "Open-ended scientific paper Q&A",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "be0ceb3f0a98"
+        "recipe_fingerprint": "5b65f6f29743"
       },
       "id": "qasper_freeform",
       "provider_id": "amortized-lm-eval",
@@ -4225,7 +4225,7 @@
         "name": "Economics knowledge (high school, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "10965b9ca5c0"
+        "recipe_fingerprint": "908c8e526938"
       },
       "id": "AraDiCE_ArabicMMLU_high_social-science_economics_egy",
       "provider_id": "amortized-lm-eval",
@@ -4323,7 +4323,7 @@
         "name": "Geography knowledge (high school, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "187f9115325a"
+        "recipe_fingerprint": "a046038ce775"
       },
       "id": "AraDiCE_ArabicMMLU_high_social-science_geography_lev",
       "provider_id": "amortized-lm-eval",
@@ -4421,7 +4421,7 @@
         "name": "Computer science knowledge (high school, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "5963467eb29d"
+        "recipe_fingerprint": "ccfdbecc68df"
       },
       "id": "AraDiCE_ArabicMMLU_high_stem_computer-science_egy",
       "provider_id": "amortized-lm-eval",
@@ -4519,7 +4519,7 @@
         "name": "Physics knowledge (high school, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "527100125390"
+        "recipe_fingerprint": "4a90927a3951"
       },
       "id": "AraDiCE_ArabicMMLU_high_stem_physics_lev",
       "provider_id": "amortized-lm-eval",
@@ -4617,7 +4617,7 @@
         "name": "Civics knowledge (middle school, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "21e7f6f4d53c"
+        "recipe_fingerprint": "78e43ed6d874"
       },
       "id": "AraDiCE_ArabicMMLU_middle_social-science_civics_egy",
       "provider_id": "amortized-lm-eval",
@@ -4715,7 +4715,7 @@
         "name": "Economics knowledge (middle school, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "aca87a0e5ee1"
+        "recipe_fingerprint": "2a7262350276"
       },
       "id": "AraDiCE_ArabicMMLU_middle_social-science_economics_lev",
       "provider_id": "amortized-lm-eval",
@@ -4813,7 +4813,7 @@
         "name": "Social science knowledge (middle school, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "59b86bf0fcf5"
+        "recipe_fingerprint": "c8778c7e31b6"
       },
       "id": "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy",
       "provider_id": "amortized-lm-eval",
@@ -4911,7 +4911,7 @@
         "name": "Computer science knowledge (middle school, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "71ad0fbeacee"
+        "recipe_fingerprint": "e41617d9c051"
       },
       "id": "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev",
       "provider_id": "amortized-lm-eval",
@@ -5009,7 +5009,7 @@
         "name": "Geography basics (primary, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "099a15d104ef"
+        "recipe_fingerprint": "3dc9fb984a55"
       },
       "id": "AraDiCE_ArabicMMLU_primary_social-science_geography_egy",
       "provider_id": "amortized-lm-eval",
@@ -5107,7 +5107,7 @@
         "name": "Social science basics (primary, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "030f2904c1a2"
+        "recipe_fingerprint": "def4aa4d9ef8"
       },
       "id": "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev",
       "provider_id": "amortized-lm-eval",
@@ -5205,7 +5205,7 @@
         "name": "Natural science basics (primary, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "f074cfd2210b"
+        "recipe_fingerprint": "de89fb0d4c75"
       },
       "id": "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev",
       "provider_id": "amortized-lm-eval",
@@ -5303,7 +5303,7 @@
         "name": "Accounting knowledge (university, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "0039a4b60d73"
+        "recipe_fingerprint": "e59cccddb3dd"
       },
       "id": "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev",
       "provider_id": "amortized-lm-eval",
@@ -5401,7 +5401,7 @@
         "name": "Political science knowledge (university, Egyptian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "fe3a50ea7b07"
+        "recipe_fingerprint": "a2cc56880842"
       },
       "id": "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy",
       "provider_id": "amortized-lm-eval",
@@ -5499,7 +5499,7 @@
         "name": "Computer science knowledge (university, Levantine)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "76384c530a98"
+        "recipe_fingerprint": "9061b164a41a"
       },
       "id": "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev",
       "provider_id": "amortized-lm-eval",
@@ -5597,7 +5597,7 @@
         "name": "College biology in Arabic (light)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "231dc68cc9c8"
+        "recipe_fingerprint": "b6546130b0d7"
       },
       "id": "arabic_leaderboard_arabic_mmlu_college_biology_light",
       "provider_id": "amortized-lm-eval",
@@ -5685,7 +5685,7 @@
         "name": "Formal logic (Chinese civil service)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "1e18d5da6f65"
+        "recipe_fingerprint": "d6138570427f"
       },
       "id": "agieval_logiqa_zh",
       "provider_id": "amortized-lm-eval",
@@ -5772,7 +5772,7 @@
         "name": "Causal responsibility judgment (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "812f000c1ca0"
+        "recipe_fingerprint": "605b4cd7a771"
       },
       "id": "bbh_cot_fewshot_causal_judgement",
       "provider_id": "amortized-lm-eval",
@@ -5853,7 +5853,7 @@
         "name": "Bracket matching & parsing (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "292fc3a29326"
+        "recipe_fingerprint": "59c5f52d209e"
       },
       "id": "bbh_cot_fewshot_dyck_languages",
       "provider_id": "amortized-lm-eval",
@@ -5934,7 +5934,7 @@
         "name": "Adjective order judgment (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "74ddb51af61e"
+        "recipe_fingerprint": "870a9b186e6d"
       },
       "id": "bbh_cot_fewshot_hyperbaton",
       "provider_id": "amortized-lm-eval",
@@ -6015,7 +6015,7 @@
         "name": "Ordering puzzle \u2014 3 objects (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "ceceafd3c40a"
+        "recipe_fingerprint": "c0341eb76e11"
       },
       "id": "bbh_cot_fewshot_logical_deduction_three_objects",
       "provider_id": "amortized-lm-eval",
@@ -6096,7 +6096,7 @@
         "name": "Spatial navigation tracking (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "a333060ea9a3"
+        "recipe_fingerprint": "7990319dabcf"
       },
       "id": "bbh_cot_fewshot_navigate",
       "provider_id": "amortized-lm-eval",
@@ -6177,7 +6177,7 @@
         "name": "Object attribute reasoning (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "6335a0ef726b"
+        "recipe_fingerprint": "8438d2e623d1"
       },
       "id": "bbh_cot_fewshot_reasoning_about_colored_objects",
       "provider_id": "amortized-lm-eval",
@@ -6258,7 +6258,7 @@
         "name": "Sarcasm detection (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "1e372341902f"
+        "recipe_fingerprint": "e8e385a4c87d"
       },
       "id": "bbh_cot_fewshot_snarks",
       "provider_id": "amortized-lm-eval",
@@ -6339,7 +6339,7 @@
         "name": "Object position tracking \u2014 5 items (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "0a05ff6f776d"
+        "recipe_fingerprint": "8e1d5f541ce9"
       },
       "id": "bbh_cot_fewshot_tracking_shuffled_objects_five_objects",
       "provider_id": "amortized-lm-eval",
@@ -6420,7 +6420,7 @@
         "name": "Truth-value chain evaluation (5-shot)",
         "no_score": "",
         "num_few_shot": 3,
-        "recipe_fingerprint": "23c471850c03"
+        "recipe_fingerprint": "15ec098ef9f6"
       },
       "id": "bbh_cot_fewshot_web_of_lies",
       "provider_id": "amortized-lm-eval",
@@ -6501,7 +6501,7 @@
         "name": "Causal responsibility judgment (zero-shot)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "c66093d13780"
+        "recipe_fingerprint": "3bc0230cf572"
       },
       "id": "bbh_cot_zeroshot_causal_judgement",
       "provider_id": "amortized-lm-eval",
@@ -6582,7 +6582,7 @@
         "name": "Bracket matching & parsing (zero-shot)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "1aff87f2f66b"
+        "recipe_fingerprint": "520e3ca2f72f"
       },
       "id": "bbh_cot_zeroshot_dyck_languages",
       "provider_id": "amortized-lm-eval",
@@ -6663,7 +6663,7 @@
         "name": "Human anatomy knowledge in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "6044715fe960"
+        "recipe_fingerprint": "5b038cf85d42"
       },
       "id": "arabic_leaderboard_arabic_mmlu_anatomy",
       "provider_id": "amortized-lm-eval",
@@ -6751,7 +6751,7 @@
         "name": "Clinical medicine knowledge in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "2f9b984ee675"
+        "recipe_fingerprint": "7899297b69bb"
       },
       "id": "arabic_leaderboard_arabic_mmlu_clinical_knowledge",
       "provider_id": "amortized-lm-eval",
@@ -6839,7 +6839,7 @@
         "name": "Medical genetics knowledge in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "1a8c36afa110"
+        "recipe_fingerprint": "0e1c583406d4"
       },
       "id": "arabic_leaderboard_arabic_mmlu_medical_genetics",
       "provider_id": "amortized-lm-eval",
@@ -6927,7 +6927,7 @@
         "name": "Professional medicine in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "4adf53771ffb"
+        "recipe_fingerprint": "c77a3069c900"
       },
       "id": "arabic_leaderboard_arabic_mmlu_professional_medicine",
       "provider_id": "amortized-lm-eval",
@@ -7015,7 +7015,7 @@
         "name": "Human anatomy in Amharic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "232cf1267afb"
+        "recipe_fingerprint": "75544810ba5e"
       },
       "id": "global_mmlu_full_am_anatomy",
       "provider_id": "amortized-lm-eval",
@@ -7097,7 +7097,7 @@
         "name": "Clinical medicine in Amharic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "e36f46632ca0"
+        "recipe_fingerprint": "c857241be156"
       },
       "id": "global_mmlu_full_am_clinical_knowledge",
       "provider_id": "amortized-lm-eval",
@@ -7179,7 +7179,7 @@
         "name": "Medical genetics in Amharic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "ea9d3c7f029d"
+        "recipe_fingerprint": "f466e8078359"
       },
       "id": "global_mmlu_full_am_medical_genetics",
       "provider_id": "amortized-lm-eval",
@@ -7261,7 +7261,7 @@
         "name": "Professional medicine in Amharic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "01502c306f89"
+        "recipe_fingerprint": "6da841ea0bbc"
       },
       "id": "global_mmlu_full_am_professional_medicine",
       "provider_id": "amortized-lm-eval",
@@ -7343,7 +7343,7 @@
         "name": "Human anatomy in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "451a65644162"
+        "recipe_fingerprint": "35cf483a7ae4"
       },
       "id": "global_mmlu_full_ar_anatomy",
       "provider_id": "amortized-lm-eval",
@@ -7425,7 +7425,7 @@
         "name": "Clinical medicine in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "cb5b9feb6055"
+        "recipe_fingerprint": "0309ab5ec49f"
       },
       "id": "global_mmlu_full_ar_clinical_knowledge",
       "provider_id": "amortized-lm-eval",
@@ -7507,7 +7507,7 @@
         "name": "Medical genetics in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "4cd242f4f031"
+        "recipe_fingerprint": "fa6b04d5f55f"
       },
       "id": "global_mmlu_full_ar_medical_genetics",
       "provider_id": "amortized-lm-eval",
@@ -7589,7 +7589,7 @@
         "name": "Professional medicine in Arabic",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "f67abc412f93"
+        "recipe_fingerprint": "12abc920a919"
       },
       "id": "global_mmlu_full_ar_professional_medicine",
       "provider_id": "amortized-lm-eval",
@@ -7671,7 +7671,7 @@
         "name": "Human anatomy in Bengali",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "81e74944db9e"
+        "recipe_fingerprint": "b20923340c79"
       },
       "id": "global_mmlu_full_bn_anatomy",
       "provider_id": "amortized-lm-eval",
@@ -7753,7 +7753,7 @@
         "name": "Final word prediction (English)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "e26c336f69f1"
+        "recipe_fingerprint": "601ef39882e5"
       },
       "id": "lambada_openai",
       "provider_id": "amortized-lm-eval",
@@ -7844,7 +7844,7 @@
         "name": "Final word prediction (English MT)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "21700ae547a9"
+        "recipe_fingerprint": "6296d226713c"
       },
       "id": "lambada_openai_mt_en",
       "provider_id": "amortized-lm-eval",
@@ -7935,7 +7935,7 @@
         "name": "Final word prediction (Italian)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "26bbac7ed0ee"
+        "recipe_fingerprint": "0b30fe731fea"
       },
       "id": "lambada_openai_mt_it",
       "provider_id": "amortized-lm-eval",
@@ -8026,7 +8026,7 @@
         "name": "Final word prediction (Spanish)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "85545ef57fd3"
+        "recipe_fingerprint": "9e173f4b843e"
       },
       "id": "lambada_openai_mt_stablelm_es",
       "provider_id": "amortized-lm-eval",
@@ -8117,7 +8117,7 @@
         "name": "Final word prediction (Dutch)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "2ccab5ec7f9e"
+        "recipe_fingerprint": "e96d8fff2c8f"
       },
       "id": "lambada_openai_mt_stablelm_nl",
       "provider_id": "amortized-lm-eval",
@@ -8208,7 +8208,7 @@
         "name": "Wikipedia article modeling",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "c785d3cfc9ae"
+        "recipe_fingerprint": "5cb55036332c"
       },
       "id": "wikitext",
       "provider_id": "amortized-lm-eval",
@@ -8298,7 +8298,7 @@
         "name": "Truthfulness test (Levantine Arabic, MC)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "6530d5d27707"
+        "recipe_fingerprint": "326486ab2f0a"
       },
       "id": "AraDiCE_truthfulqa_mc1_lev",
       "provider_id": "amortized-lm-eval",
@@ -8393,7 +8393,7 @@
         "name": "Truthfulness under answer reordering",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "558be3876698"
+        "recipe_fingerprint": "3220bf1d10d1"
       },
       "id": "metabench_truthfulqa_permute",
       "provider_id": "amortized-lm-eval",
@@ -8475,7 +8475,7 @@
         "name": "Quick truthfulness check",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "f8c9195e3221"
+        "recipe_fingerprint": "534d737c6af2"
       },
       "id": "tinyTruthfulQA",
       "provider_id": "amortized-lm-eval",
@@ -8549,7 +8549,7 @@
         "name": "Code line explanation",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "b3c908157496"
+        "recipe_fingerprint": "1dbf87419cfa"
       },
       "id": "bigbench_code_line_description_multiple_choice",
       "provider_id": "amortized-lm-eval",
@@ -8631,7 +8631,7 @@
         "name": "Programming concepts (Chinese)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "0046278a8fdd"
+        "recipe_fingerprint": "c9ecd5ece945"
       },
       "id": "ceval-valid_college_programming",
       "provider_id": "amortized-lm-eval",
@@ -8719,7 +8719,7 @@
         "name": "JavaScript code summarization",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "f48fba457ce8"
+        "recipe_fingerprint": "ab9182972777"
       },
       "id": "code2text_javascript",
       "provider_id": "amortized-lm-eval",
@@ -8797,7 +8797,7 @@
         "name": "Ruby code summarization",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "746d0f3d7cff"
+        "recipe_fingerprint": "4210c0ed28ad"
       },
       "id": "code2text_ruby",
       "provider_id": "amortized-lm-eval",
@@ -8875,7 +8875,7 @@
         "name": "Precise instruction adherence",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "104b5c517036"
+        "recipe_fingerprint": "06942ab49233"
       },
       "id": "leaderboard_ifeval",
       "provider_id": "amortized-lm-eval",
@@ -8976,7 +8976,7 @@
         "name": "Graduate-level multidomain reasoning",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "05fe1e05d1a3"
+        "recipe_fingerprint": "faa8b539dbb0"
       },
       "id": "leaderboard_mmlu_pro",
       "provider_id": "amortized-lm-eval",
@@ -9054,7 +9054,7 @@
         "name": "Ambiguity & social bias Q&A",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "ef17163dc150"
+        "recipe_fingerprint": "9a629f4e139b"
       },
       "id": "bbq",
       "provider_id": "amortized-lm-eval",
@@ -9178,7 +9178,7 @@
         "name": "Social bias & stereotyping detection",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "72dc8a20c48b"
+        "recipe_fingerprint": "30bf48eba424"
       },
       "id": "crows_pairs_english",
       "provider_id": "amortized-lm-eval",
@@ -9269,7 +9269,7 @@
         "name": "Commonsense moral judgment",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "22a6a108f88b"
+        "recipe_fingerprint": "875559080706"
       },
       "id": "ethics_cm",
       "provider_id": "amortized-lm-eval",
@@ -9350,7 +9350,7 @@
         "name": "Implicit toxicity detection",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "a0d3ac83c38f"
+        "recipe_fingerprint": "72e512a20e29"
       },
       "id": "toxigen",
       "provider_id": "amortized-lm-eval",
@@ -9438,7 +9438,7 @@
         "name": "Helpfulness, honesty & harmlessness (HHH)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "db01f4dc3c98"
+        "recipe_fingerprint": "b475224845ce"
       },
       "id": "bigbench_hhh_alignment_multiple_choice",
       "provider_id": "amortized-lm-eval",
@@ -9520,7 +9520,7 @@
         "name": "Gender bias in pronoun resolution",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "cca6c5da3a22"
+        "recipe_fingerprint": "1a8c07fff6e4"
       },
       "id": "winogender",
       "provider_id": "amortized-lm-eval",
@@ -9603,7 +9603,7 @@
         "name": "Instruction Following Evaluation (IFEval)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "ea8d66118402"
+        "recipe_fingerprint": "1c5ef1b11c30"
       },
       "id": "ifeval",
       "provider_id": "amortized-lm-eval",
@@ -9704,7 +9704,7 @@
         "name": "JSONSchemaBench (Easy)",
         "no_score": "",
         "num_few_shot": 2,
-        "recipe_fingerprint": "2e494fd1962a"
+        "recipe_fingerprint": "be1d5c51aab0"
       },
       "id": "jsonschema_bench_easy",
       "provider_id": "amortized-lm-eval",
@@ -9797,7 +9797,7 @@
         "name": "JSONSchemaBench (Medium)",
         "no_score": "",
         "num_few_shot": 2,
-        "recipe_fingerprint": "6ced40d3810f"
+        "recipe_fingerprint": "19a8a42afccc"
       },
       "id": "jsonschema_bench_medium",
       "provider_id": "amortized-lm-eval",
@@ -9890,7 +9890,7 @@
         "name": "JSONSchemaBench (Hard)",
         "no_score": "",
         "num_few_shot": 2,
-        "recipe_fingerprint": "7aa0b8315128"
+        "recipe_fingerprint": "f9578ebe7016"
       },
       "id": "jsonschema_bench_hard",
       "provider_id": "amortized-lm-eval",
@@ -9983,7 +9983,7 @@
         "name": "Everyday activity completion",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "40ec536cb0d5"
+        "recipe_fingerprint": "6dddaa049565"
       },
       "id": "hellaswag",
       "provider_id": "amortized-lighteval",
@@ -10052,7 +10052,7 @@
         "name": "Pronoun common sense",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "9ce93aff9b4d"
+        "recipe_fingerprint": "5c5995cf7ac2"
       },
       "id": "winogrande",
       "provider_id": "amortized-lighteval",
@@ -10121,7 +10121,7 @@
         "name": "Open-book science reasoning",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "4c81ecd3507f"
+        "recipe_fingerprint": "046c94d6fe11"
       },
       "id": "openbookqa",
       "provider_id": "amortized-lighteval",
@@ -10190,7 +10190,7 @@
         "name": "Basic science Q&A",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "7f265c46beba"
+        "recipe_fingerprint": "490f9ea61194"
       },
       "id": "arc:easy",
       "provider_id": "amortized-lighteval",
@@ -10259,7 +10259,7 @@
         "name": "Hard science Q&A",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "de689e16343d"
+        "recipe_fingerprint": "80e4cc7569e7"
       },
       "id": "arc:challenge",
       "provider_id": "amortized-lighteval",
@@ -10328,7 +10328,7 @@
         "name": "Physical interaction intuition",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "f313e07cc040"
+        "recipe_fingerprint": "16f68737b847"
       },
       "id": "piqa",
       "provider_id": "amortized-lighteval",
@@ -10397,7 +10397,7 @@
         "name": "Misconception resistance (multiple choice)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "6b7037ec8cad"
+        "recipe_fingerprint": "361c070b8c77"
       },
       "id": "truthfulqa:mc",
       "provider_id": "amortized-lighteval",
@@ -10480,7 +10480,7 @@
         "name": "Misconception resistance (generative)",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "d14f6b0e8e25"
+        "recipe_fingerprint": "d53d95fecf4b"
       },
       "id": "truthfulqa:gen",
       "provider_id": "amortized-lighteval",
@@ -10549,7 +10549,7 @@
         "name": "Grade-school math word problems",
         "no_score": "",
         "num_few_shot": 8,
-        "recipe_fingerprint": "7af3eb77b3b0"
+        "recipe_fingerprint": "dc2e925b4397"
       },
       "id": "gsm8k",
       "provider_id": "amortized-lighteval",
@@ -10619,7 +10619,7 @@
         "name": "Competition algebra",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "f8fdbe22fb9c"
+        "recipe_fingerprint": "5966c6094527"
       },
       "id": "math:algebra",
       "provider_id": "amortized-lighteval",
@@ -10688,7 +10688,7 @@
         "name": "Counting & probability problems",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "242b27a5ad17"
+        "recipe_fingerprint": "74201d10ff13"
       },
       "id": "math:counting_and_probability",
       "provider_id": "amortized-lighteval",
@@ -10757,7 +10757,7 @@
         "name": "Aime 2024",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "c6f35d93129a"
+        "recipe_fingerprint": "59f6ae433b2b"
       },
       "id": "aime24",
       "provider_id": "amortized-lighteval",
@@ -10840,7 +10840,7 @@
         "name": "Aime 2025",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "00c585cdb0a1"
+        "recipe_fingerprint": "b06e2ed8e856"
       },
       "id": "aime25",
       "provider_id": "amortized-lighteval",
@@ -10923,7 +10923,7 @@
         "name": "Trivia factual recall",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "0b7150d771db"
+        "recipe_fingerprint": "30f7ee4aaaa7"
       },
       "id": "triviaqa",
       "provider_id": "amortized-lighteval",
@@ -10992,7 +10992,7 @@
         "name": "Grammatical acceptability",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "3030c4a47a66"
+        "recipe_fingerprint": "256c89a4e658"
       },
       "id": "glue:cola",
       "provider_id": "amortized-lighteval",
@@ -11075,7 +11075,7 @@
         "name": "Sentiment classification",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "40d087ed092f"
+        "recipe_fingerprint": "61a6fd196f3c"
       },
       "id": "glue:sst2",
       "provider_id": "amortized-lighteval",
@@ -11144,7 +11144,7 @@
         "name": "Paraphrase detection",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "fb516fe8a5da"
+        "recipe_fingerprint": "7531b5f650ca"
       },
       "id": "glue:mrpc",
       "provider_id": "amortized-lighteval",
@@ -11227,7 +11227,7 @@
         "name": "MATH-500 competition problems",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "6548bf5c7cfd"
+        "recipe_fingerprint": "d8722f123098"
       },
       "id": "math_500",
       "provider_id": "amortized-lighteval",
@@ -11296,7 +11296,7 @@
         "name": "LiveCodeBench v6 \u2014 code generation",
         "no_score": "",
         "num_few_shot": 0,
-        "recipe_fingerprint": "7a197a9e5f0e"
+        "recipe_fingerprint": "5a7c67b663c7"
       },
       "id": "lcb:codegeneration_v6",
       "provider_id": "amortized-lighteval",

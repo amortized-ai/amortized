@@ -19,6 +19,7 @@
         "avg@n:n=1": true,
         "pass@k:k=1": true
       },
+      "question_count": 30,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -44,6 +45,7 @@
         "avg@n:n=1": true,
         "pass@k:k=1&n=1": true
       },
+      "question_count": 30,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -68,6 +70,7 @@
       "directions": {
         "acc": true
       },
+      "question_count": 1172,
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -92,6 +95,7 @@
       "directions": {
         "acc": true
       },
+      "question_count": 2376,
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -173,6 +177,7 @@
         "acc": true,
         "mcc": true
       },
+      "question_count": 1043,
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -198,6 +203,7 @@
         "acc": true,
         "loglikelihood_f1": true
       },
+      "question_count": 408,
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -222,6 +228,7 @@
       "directions": {
         "acc": true
       },
+      "question_count": 872,
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -246,6 +253,7 @@
       "directions": {
         "gpqa_pass@k:k=1": true
       },
+      "question_count_unknown": "DatasetNotFoundError: Dataset 'Idavidrein/gpqa' is a gated dataset on the Hub. You must be authenticated to access it.",
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -270,6 +278,7 @@
       "directions": {
         "extractive_match": true
       },
+      "question_count": 1319,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -294,6 +303,7 @@
       "directions": {
         "em": true
       },
+      "question_count": 10042,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -374,6 +384,7 @@
       "directions": {
         "codegen_pass@1:16": true
       },
+      "question_count": 175,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -395,7 +406,8 @@
           "task": "gsm8k"
         },
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "algebra",
           "splits": [
@@ -404,7 +416,8 @@
           "task": "math:algebra"
         },
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "counting_and_probability",
           "splits": [
@@ -424,7 +437,7 @@
       ],
       "directions": {
         "extractive_match": true,
-        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer at 0x7f8e08825f80>&normalize_gold=<function math_normalizer at 0x7f8e08825f80>": true,
+        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer>&normalize_gold=<function math_normalizer>": true,
         "pass@k:k=1&n=1": true
       },
       "scoring": "generative",
@@ -442,7 +455,8 @@
       "answers_per_question": 4,
       "datasets": [
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "algebra",
           "splits": [
@@ -452,8 +466,9 @@
         }
       ],
       "directions": {
-        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer at 0x7f8e08825f80>&normalize_gold=<function math_normalizer at 0x7f8e08825f80>": true
+        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer>&normalize_gold=<function math_normalizer>": true
       },
+      "question_count": 1187,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -466,7 +481,8 @@
       "answers_per_question": 4,
       "datasets": [
         {
-          "hf_repo": "DigitalLearningGmbH/MATH-lighteval",
+          "hf_repo": "SevenAIGmbH/MATH-lighteval",
+          "hf_repo_as_written": "DigitalLearningGmbH/MATH-lighteval",
           "hf_revision": null,
           "hf_subset": "counting_and_probability",
           "splits": [
@@ -476,8 +492,9 @@
         }
       ],
       "directions": {
-        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer at 0x7f8e08825f80>&normalize_gold=<function math_normalizer at 0x7f8e08825f80>": true
+        "maj@n:n=4&strip_strings=True&normalize_pred=<function math_normalizer>&normalize_gold=<function math_normalizer>": true
       },
+      "question_count": 474,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -502,6 +519,7 @@
       "directions": {
         "pass@k:k=1&n=1": true
       },
+      "question_count": 500,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -535,6 +553,7 @@
       "directions": {
         "em": true
       },
+      "question_count": 1000,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -583,6 +602,7 @@
       "directions": {
         "em": true
       },
+      "question_count": 1838,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -641,6 +661,7 @@
       "directions": {
         "em": true
       },
+      "question_count": 17944,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -701,6 +722,7 @@
       "directions": {
         "em": true
       },
+      "question_count": 817,
       "scoring": "generative",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -726,6 +748,7 @@
         "truthfulqa_mc1": true,
         "truthfulqa_mc2": true
       },
+      "question_count": 817,
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",
@@ -750,6 +773,7 @@
       "directions": {
         "acc": true
       },
+      "question_count": 1267,
       "scoring": "likelihood",
       "settings_profile": "lighteval-endpoint-v1",
       "status": "known",

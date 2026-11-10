@@ -30,11 +30,6 @@ ARTIFACTS = {
 }
 SERVED = catalog.Capability.from_model({"training_job_id": "job-1"})
 ENDPOINT = catalog.Capability.from_model({"endpoint": {"base_url": "http://m/v1", "model": "m"}})
-SHORTLIST = {
-    "resource": {"id": "amortized-benchmarks-v1"},
-    "name": "Amortized benchmarks v1",
-    "benchmarks": [{"provider_id": "amortized-lighteval", "id": "gsm8k"}],
-}
 
 
 class FakeHub:
@@ -61,9 +56,7 @@ class FakeHub:
         if self.fail:
             raise httpx.ConnectError("hub down")
         response = MagicMock()
-        if path == "/evaluations/collections":
-            response.json.return_value = {"items": [SHORTLIST]}
-        elif path == "/evaluations/providers/amortized-lighteval":
+        if path == "/evaluations/providers/amortized-lighteval":
             response.json.return_value = self.provider
         elif path == "/evaluations/providers/amortized-lm-eval":
             response.json.return_value = self.lm_eval
@@ -293,22 +286,15 @@ async def test_unknown_name_offers_no_substitute(hub):
 
 async def test_browse_drills_down_to_a_card_then_selects(hub):
     loaded = await entries(hub)
-    shortlists = await catalog.load_shortlists(hub)
-    first = catalog.find(loaded, SERVED, shortlists=shortlists)
+    first = catalog.find(loaded, SERVED)
     assert (first["step"], first["facet"], first["display"]) == ("question", "area", "card")
-    titles = [o["title"] for o in first["options"]]
-    assert titles[0] == "Knowledge & reasoning"
-    assert "Shortlist: Amortized benchmarks v1" in titles
+    assert first["options"][0]["title"] == "Knowledge & reasoning"
     assert len(first["options"]) <= catalog.CARD_LIMIT
 
-    kind = catalog.find(
-        loaded, SERVED, picks=first["picks"], answer="Knowledge & reasoning", shortlists=shortlists
-    )
+    kind = catalog.find(loaded, SERVED, picks=first["picks"], answer="Knowledge & reasoning")
     assert (kind["facet"], kind["picks"]) == ("kind", {"area": "knowledge_and_reasoning"})
-    # Shortlists are offered only at the first question.
-    assert not any(o["title"].startswith("Shortlist") for o in kind["options"])
 
-    math = catalog.find(loaded, SERVED, picks=kind["picks"], answer="Math", shortlists=shortlists)
+    math = catalog.find(loaded, SERVED, picks=kind["picks"], answer="Math")
     assert (math["step"], math["display"]) == ("benchmarks", "card")
     assert "gsm8k" in [o["value"] for o in math["options"]]
 
@@ -404,14 +390,16 @@ async def test_off_list_answer_is_rejected_with_the_allowed_values(hub):
         catalog.find(loaded, SERVED, picks={"area": "astrology"})
 
 
-async def test_shortlist_narrows_to_its_members(hub):
-    loaded = await entries(hub)
-    shortlists = await catalog.load_shortlists(hub)
-    result = catalog.find(
-        loaded, SERVED, answer="Shortlist: Amortized benchmarks v1", shortlists=shortlists
-    )
-    assert result["picks"] == {"shortlist": "amortized-benchmarks-v1"}
-    assert [o["value"] for o in result["options"]] == ["gsm8k"]
+async def test_question_counts_are_the_contracts_never_the_catalogs(both):
+    loaded = await entries(both)
+    lm_eval = catalog.find(loaded, SERVED, name="AraDiCE_ArabicMMLU_high_humanities_history_lev")
+    # lm-eval's catalog says 14042 for every ArabicMMLU subject; its run reported 760.
+    assert lm_eval["benchmarks"][0]["questions"] == 760
+    # LightEval's catalog has no size for it; LightEval's loader counted 175.
+    lcb = catalog.find(loaded, SERVED, name="lcb:codegeneration_v6")
+    assert lcb["benchmarks"][0]["questions"] == 175
+    # LightEval openbookqa asks its test and validation splits; the catalog says 500.
+    assert catalog.find(loaded, SERVED, name="openbookqa")["benchmarks"][0]["questions"] == 1000
 
 
 # --------------------------------------------------------------------------- #
@@ -539,13 +527,6 @@ async def test_named_model_needs_a_hugging_face_id_for_lm_eval(copies):
     assert catalog.find(await entries(copies), hf, name="arc_easy")["benchmarks"][0][
         "provider_id"
     ] == ("amortized-lm-eval")
-
-
-async def test_shortlist_member_brings_its_copies(copies):
-    loaded = await entries(copies)
-    shortlists = [{"id": "s", "name": "S", "members": {("amortized-lighteval", "arc:easy")}}]
-    result = catalog.find(loaded, SERVED, answer="Shortlist: S", shortlists=shortlists)
-    assert [o["value"] for o in result["options"]] == ["arc_easy"]
 
 
 async def test_lm_eval_recipe_uses_its_own_setting_names(copies):

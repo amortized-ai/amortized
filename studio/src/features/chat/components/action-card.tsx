@@ -182,8 +182,8 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   if (action.jobType === "eval" && action.benchmark) {
     const b = action.benchmark
     summary.push(["Benchmark", b.name])
-    if (b.metric) summary.push(["Metric", b.metric])
-    else if (b.noScore) summary.push(["Metric", `no score: ${b.noScore}`])
+    if (b.metric) summary.push(["Primary metric", b.metric])
+    else if (b.noScore) summary.push(["Primary metric", `none: ${b.noScore}`])
     if (b.numFewShot !== null) summary.push(["Few-shot", String(b.numFewShot)])
     summary.push(["Questions", b.maxSamples !== null ? String(b.maxSamples) : "all"])
     if (b.recipeFingerprint) summary.push(["Recipe", b.recipeFingerprint])
