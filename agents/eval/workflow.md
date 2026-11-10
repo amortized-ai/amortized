@@ -66,6 +66,7 @@ Call `signal_phase` once on every response, with `phase="eval"` and `step` set t
 the slug of the `## Workflow` section you are currently in:
 
 - `understand-task` — Step 0 (confirm what to evaluate)
+- `eval-kind` — Step 0.5 (generative vs classification eval)
 - `eval-dataset` — Step 1 (confirm the eval dataset)
 - `held-out-ask-count` — Step 1 branch (ask the held-out record count)
 - `held-out-request-help` — Step 1 branch (hand back for the held-out set)

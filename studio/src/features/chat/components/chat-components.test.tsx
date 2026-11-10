@@ -161,7 +161,9 @@ describe("ActionCard", () => {
         num_train_epochs: 10,
       },
     }
-    render(<ActionCard action={clsAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    render(<ActionCard action={clsAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
     expect(screen.getByText("Device")).toBeInTheDocument()
     expect(screen.getByText("CPU (default)")).toBeInTheDocument()
   })

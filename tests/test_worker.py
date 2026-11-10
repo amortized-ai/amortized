@@ -654,7 +654,8 @@ class TestTrainingHubConfig:
         assert parsed["max_seq_len"] == 64
         assert parsed["task"] == "sequence_classification"
         assert parsed["label_column"] == "category"
-        # use_peft is globally skip-keyed but classifier_sft re-adds it; trust_remote_code flows through
+        # use_peft is globally skip-keyed but classifier_sft re-adds it;
+        # trust_remote_code flows through
         assert parsed["use_peft"] is True
         assert parsed["trust_remote_code"] is True
         # no sequence-packing / data_output_dir / train_on_gpu leakage

@@ -260,9 +260,11 @@ class TestBuildGpuResources:
     async def test_classifier_sft_gpu_via_train_on_gpu_or_peft(self) -> None:
         base = {"algorithm": "classifier_sft", "model_name_or_path": "answerdotai/ModernBERT-base",
                 "data_path": "/d.parquet"}
-        r1 = await training_builder.build({"id": "c1", "type": "training"}, {**base, "train_on_gpu": True}, {})
+        job1 = {"id": "c1", "type": "training"}
+        r1 = await training_builder.build(job1, {**base, "train_on_gpu": True}, {})
         assert r1.resources.gpus == 1  # encoder GPU opt-in
-        r2 = await training_builder.build({"id": "c2", "type": "training"}, {**base, "use_peft": True}, {})
+        job2 = {"id": "c2", "type": "training"}
+        r2 = await training_builder.build(job2, {**base, "use_peft": True}, {})
         assert r2.resources.gpus == 1  # decoder LoRA -> 1 GPU
 
 

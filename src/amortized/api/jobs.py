@@ -531,7 +531,8 @@ _EMBEDDING_ALGORITHMS = {"embedding_sft", "embedding"}
 # Classification-family algorithms: a classifier head (classifier_sft) or an embedding router
 # (embedding_sft). Both train on flat text,category data and are scored with
 # eval_mode="classification" (head -> argmax accuracy/F1/ECE; router -> nearest-anchor routing).
-# Stored configs carry either the alias ("classifier"/"embedding") or the resolved name, so list all four.
+# Stored configs carry either the alias ("classifier"/"embedding") or the resolved name,
+# so list all four.
 _CLASSIFICATION_ALGORITHMS = {
     "classifier_sft",
     "classifier",
