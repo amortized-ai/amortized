@@ -197,6 +197,20 @@ class TestRunTrainingEstimate:
         with pytest.raises(TrainingEstimateError, match="no json here"):
             await run_training_estimate({})
 
+    async def test_skips_non_result_brace_lines_after_result(self) -> None:
+        self._use(
+            FakeBackend(
+                [json.dumps(RESULT), "--- stderr ---", "{'not': 'json'}", json.dumps({"x": 1})]
+            )
+        )
+        assert await run_training_estimate({}) == RESULT
+
+    async def test_incomplete_result_is_an_estimate_error(self) -> None:
+        partial = {k: v for k, v in RESULT.items() if k != "per_gpu"}
+        self._use(FakeBackend([json.dumps(partial)]))
+        with pytest.raises(TrainingEstimateError, match="estimate job failed"):
+            await run_training_estimate({})
+
     async def test_timeout_cleans_up(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(training_estimate, "_TIMEOUT_S", -1)
         backend = self._use(FakeBackend([], polls_running=10))

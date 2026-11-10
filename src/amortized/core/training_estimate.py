@@ -76,13 +76,20 @@ async def run_training_estimate(request: dict[str, Any]) -> dict[str, Any]:
                 logger.warning("could not clean up estimate job %s", job_id, exc_info=True)
 
 
+_RESULT_KEYS = frozenset({"training_hub_version", "num_params", "single_gpu", "per_gpu"})
+
+
 def _parse_result(lines: list[str]) -> dict[str, Any] | None:
+    # Keep scanning past non-result brace lines: the local backend yields stderr after stdout,
+    # so a dict-like stderr line can come after the real result in reversed order.
     for line in reversed(lines):
         line = line.strip()
-        if line.startswith("{"):
-            try:
-                parsed: dict[str, Any] = json.loads(line)
-            except json.JSONDecodeError:
-                return None
+        if not line.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and parsed.keys() >= _RESULT_KEYS:
             return parsed
     return None
