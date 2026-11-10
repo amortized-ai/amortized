@@ -177,6 +177,56 @@ describe("ActionCard", () => {
     })
     expect(screen.queryByText("Device")).not.toBeInTheDocument()
   })
+
+  const evalAction = {
+    action: "Create EVAL Job",
+    description: "Submit this eval job?",
+    params: {},
+    jobType: "eval" as const,
+    config: {
+      training_job_id: "62d4af6b-0000-0000-0000-000000000000",
+      judge: { base_url: "http://gateway:5000/gateway", model: "gpt-oss" },
+      rubric: [{ name: "what" }, { name: "why" }],
+    },
+    dataRecordCount: 150,
+  }
+
+  it("shows the judge model and eval dataset size on an eval card", () => {
+    render(<ActionCard action={evalAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
+    expect(screen.getByText("Judge model")).toBeInTheDocument()
+    expect(screen.getByText("gpt-oss")).toBeInTheDocument()
+    expect(screen.getByText("Eval dataset size")).toBeInTheDocument()
+    expect(screen.getByText("150")).toBeInTheDocument()
+  })
+
+  it("shows max_samples alongside the dataset size when it caps the eval", () => {
+    render(
+      <ActionCard
+        action={{ ...evalAction, config: { ...evalAction.config, max_samples: 10 } }}
+        onConfirm={vi.fn()}
+        onReject={vi.fn()}
+      />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText("Eval dataset size")).toBeInTheDocument()
+    expect(screen.getByText("Max samples")).toBeInTheDocument()
+    expect(screen.getByText("10")).toBeInTheDocument()
+  })
+
+  it("omits the judge model row when the eval config has no judge", () => {
+    const noJudge = { ...evalAction.config, judge: undefined }
+    render(
+      <ActionCard
+        action={{ ...evalAction, config: noJudge }}
+        onConfirm={vi.fn()}
+        onReject={vi.fn()}
+      />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.queryByText("Judge model")).not.toBeInTheDocument()
+  })
 })
 
 describe("PlanProgress", () => {

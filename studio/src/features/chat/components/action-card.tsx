@@ -100,6 +100,8 @@ function extractEvalSummary(config: Record<string, unknown>): [string, string][]
   if (config.training_job_id) rows.push(["Training job", String(config.training_job_id).slice(0, 8)])
   if (config.model_name_or_path && !endpointModel) rows.push(["Model", String(config.model_name_or_path)])
   if (config.eval_data_run_id) rows.push(["Eval data run", String(config.eval_data_run_id).slice(0, 8)])
+  const judgeModel = (config.judge as Record<string, unknown> | undefined)?.model
+  if (judgeModel) rows.push(["Judge model", String(judgeModel)])
   const rubric = config.rubric as { name?: string }[] | undefined
   if (rubric?.length) rows.push(["Rubric", rubric.map((c) => c.name).join(", ")])
   if (config.max_samples) rows.push(["Max samples", String(config.max_samples)])
@@ -163,10 +165,17 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   const summary = action.config
     ? extractConfigSummary(action.jobType, action.config, action.outputPrompt, action.prompts)
     : []
-  // The training dataset's record count is resolved by the backend (not in the
-  // config), so the user always sees how many records they're about to train on.
-  if (action.jobType === "training" && typeof action.dataRecordCount === "number") {
-    summary.push(["Training records", action.dataRecordCount.toLocaleString()])
+  // The dataset's record count is resolved by the backend (not in the config), so
+  // the user always sees how much data the job reads. Eval labels it as the dataset
+  // size because max_samples (its own row) can cap how many records are evaluated.
+  const recordsLabel =
+    action.jobType === "training"
+      ? "Training records"
+      : action.jobType === "eval"
+        ? "Eval dataset size"
+        : null
+  if (recordsLabel && typeof action.dataRecordCount === "number") {
+    summary.push([recordsLabel, action.dataRecordCount.toLocaleString()])
   }
   // A benchmark's facts come from the server's pinned recipe, so the user approves
   // exactly what will run (recipe = short fingerprint checked again on Confirm).

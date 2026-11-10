@@ -94,13 +94,22 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
     elif algorithm == "lora_sft":
-        # `thub lora-sft` uses micro_batch_size + its own learning_rate default (2e-4) and has no
-        # max_tokens_per_gpu knob. Kept as-is (incl. the harmless, ignored max_batch_len) to avoid
-        # changing the established lora_sft behavior.
-        batch = thub_config.pop("micro_batch_size", 2)
-        thub_config.setdefault("effective_batch_size", batch * 4)
+        # `thub lora-sft` is one process even on several GPUs (model splitting, not data
+        # parallel), so it runs micro = effective_batch_size // gradient_accumulation_steps.
+        # Derive effective from per-device x grad-accum so the caller's per-device batch is
+        # what actually runs; without one, keep the established default of 8.
+        micro = thub_config.pop("micro_batch_size", None)
+        grad_accum = int(thub_config.get("gradient_accumulation_steps") or 1)
+        if micro is not None:
+            thub_config.setdefault("effective_batch_size", int(micro) * grad_accum)
+        else:
+            thub_config.setdefault("effective_batch_size", 2 * 4)
         thub_config.setdefault("max_seq_len", 2048)
-        thub_config.setdefault("max_batch_len", 60000)
+        # `thub lora-sft` runs as a single process (no torchrun), so with nproc_per_node > 1 the
+        # extra GPUs would sit idle. enable_model_splitting shards the model across all visible
+        # GPUs (device_map="balanced"). An explicit enable_model_splitting in the config wins.
+        if int(thub_config.get("nproc_per_node") or 1) > 1:
+            thub_config.setdefault("enable_model_splitting", True)
     elif algorithm == "embedding_sft":
         # Contrastive embedding fine-tuning (classifiers/routers). It uses
         # ``batch_size`` (not micro_batch_size) and has none of the SFT/OSFT
