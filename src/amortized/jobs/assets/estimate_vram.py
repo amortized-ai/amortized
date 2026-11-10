@@ -71,7 +71,10 @@ def main(request: str) -> None:
         kwargs["enable_model_splitting"] = True
 
     single_gpu = me.estimate(num_gpus=1, **kwargs)
-    per_gpu = {str(n): me.estimate(num_gpus=n, **kwargs)[1] for n in req["gpu_counts"]}
+    per_gpu = {
+        str(n): single_gpu[1] if n == 1 else me.estimate(num_gpus=n, **kwargs)[1]
+        for n in req["gpu_counts"]
+    }
     print(
         json.dumps(
             {
