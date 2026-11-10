@@ -146,7 +146,7 @@ evalhub-describe-lm-eval:
 
 # Runs in the server pod of a deployment whose Hub registers the pinned images (one GPU,
 # hours). Resumes where it stopped; the pod keeps its copy of the evidence in EVALHUB_POD_DIR.
-# Example: make evalhub-conform EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-xyang"
+# Example: make evalhub-conform EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-<user>"
 evalhub-conform: ## Run every benchmark a served model can take through Eval Hub and record what each adapter reports
 	@for p in $(EVALHUB_PROVIDERS); do \
 	  $(EVALHUB_KUBECTL) exec -i $(EVALHUB_SERVER) -c server -- sh -c "mkdir -p $(EVALHUB_POD_DIR) && cat > $(EVALHUB_POD_DIR)/$$p.described.json" < $(EVALHUB_DIR)/described/$$p.json || exit 1; \

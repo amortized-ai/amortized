@@ -197,8 +197,7 @@ match the pins, the catalog or the code.
 
 ### The steps
 
-Run them from the repository root, with the dev environment active. On the KIND
-devbox, run from the `evalhub-test/` checkout.
+Run them from the repository root, with the dev environment active.
 
 1. **Describe** (no GPU; needs docker and network):
 
@@ -215,11 +214,11 @@ devbox, run from the `evalhub-test/` checkout.
    - one free GPU in the jobs namespace. The model is served there for the whole run,
      so users' GPU jobs wait meanwhile.
 
-3. **Conform** (one GPU; both providers took 26 minutes on the devbox):
+3. **Conform** (one GPU; both providers took 26 minutes on a KIND test cluster):
 
    ```bash
    setsid nohup make evalhub-conform \
-     EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-xyang" \
+     EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-<user>" \
      > conform.log 2>&1 < /dev/null &
    ```
 
@@ -274,7 +273,7 @@ Each entry keeps the question count it ran with, so `REPORT.md` then shows it as
 **Where the run records live.** In the server pod (`/data/conformance/<provider>.json`),
 saved after every Hub job, and copied back to `conformance/` when the command ends.
 
-**How long it takes** (2026-11-09, KIND devbox, Qwen/Qwen3-0.6B, 10 questions per entry):
+**How long it takes** (2026-11-09, KIND test cluster, Qwen/Qwen3-0.6B, 10 questions per entry):
 
 - starting the model server: 2.5 minutes per provider (5 the first time, pulling the image);
 - a Hub job of 8 entries: 30 to 45 seconds once the adapter image is on the node, 2.5

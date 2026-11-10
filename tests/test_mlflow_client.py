@@ -55,7 +55,7 @@ class TestGatewayMlflowClient:
         token.write_text("sa-token")
         s = config_mod.settings
         monkeypatch.setattr(s, "mlflow_tracking_token_file", str(token))
-        monkeypatch.setattr(s, "mlflow_workspace", "amortized-xyang-jobs")
+        monkeypatch.setattr(s, "mlflow_workspace", "amortized-user-jobs")
         monkeypatch.setattr(s, "mlflow_ca_bundle", "")
         monkeypatch.setattr(s, "mlflow_tracking_insecure_tls", False)
 
@@ -69,7 +69,7 @@ class TestGatewayMlflowClient:
         # KIND: private workspaced tracking MLflow, shared gateway MLflow (workspaces off,
         # rejects the header).
         settings(
-            "https://mlflow-ws.amortized-xyang.svc:5000",
+            "https://mlflow-ws.amortized-user.svc:5000",
             "http://mlflow.amortized.svc:5000/gateway/mlflow/v1",
         )
         client = gateway_mlflow_client()
@@ -84,7 +84,7 @@ class TestGatewayMlflowClient:
         assert client._base == "https://mlflow.ns.svc:5000"
         assert client._auth.headers() == {
             "Authorization": "Bearer sa-token",
-            "X-MLFLOW-WORKSPACE": "amortized-xyang-jobs",
+            "X-MLFLOW-WORKSPACE": "amortized-user-jobs",
         }
 
     @pytest.mark.parametrize("gateway", ["", "http://litellm:4000/v1"])
