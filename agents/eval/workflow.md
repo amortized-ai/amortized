@@ -302,7 +302,8 @@ model and set the eval's `endpoint` — then go to Step 3. If the model is in
 `known_endpoints` (from `get_eval_endpoint_suggestions`), use the
 `base_url` it gives; otherwise find it with `list_models` and set
 `base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` =
-its id. Only
+its id. If validation rejects that name, ask the user for the endpoint URL
+rather than guessing one. Only
 present the options below when the subject is still open — the user said
 "evaluate a model" without naming one, or wants a non-trained endpoint.
 

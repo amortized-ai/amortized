@@ -212,10 +212,11 @@ async def build(
     )
     upload_dir = sdg_output_dir(config)
 
-    all_cmds = [*doc_setup_cmds, dd_cmd]
+    # The output check runs in the main command, not post_commands: the worker drops
+    # post_commands when there is no MLflow run.
+    all_cmds = [*doc_setup_cmds, dd_cmd, require_nonempty_dir_cmd(upload_dir)]
     cmd = ["sh", "-c", " && ".join(all_cmds)]
 
-    check_cmd = require_nonempty_dir_cmd(upload_dir)
     post_cmd = (
         f"mlflow artifacts log-artifacts"
         f" -l {shlex.quote(upload_dir)}"
@@ -244,7 +245,7 @@ async def build(
         config_files=config_files,
         env=env,
         pre_commands=pre_commands,
-        post_commands=[check_cmd, post_cmd],
+        post_commands=[post_cmd],
         resources=Resources(gpus=0),
         image=config_mod.job_image("data-designer"),
         resolved_config=resolved_config,

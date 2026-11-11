@@ -33,7 +33,7 @@ def test_output_dir_follows_schema_transform_only(processors: list, expected: st
 
 
 @pytest.mark.asyncio
-async def test_build_checks_output_before_upload_for_drop_columns() -> None:
+async def test_build_checks_output_in_main_command_for_drop_columns() -> None:
     config = {
         "columns": [
             {
@@ -48,8 +48,10 @@ async def test_build_checks_output_before_upload_for_drop_columns() -> None:
         "num_records": 5,
     }
     result = await sdg_builder.build({"id": "job-drop"}, config, {})
-    check, upload = result.post_commands
-    assert check == sdg_builder.require_nonempty_dir_cmd(PARQUET)
+    # The check ends the main command so it runs even without an MLflow run (the
+    # worker drops post_commands then); only the upload is a post-command.
+    assert result.command[2].endswith(sdg_builder.require_nonempty_dir_cmd(PARQUET))
+    (upload,) = result.post_commands
     assert f"-l {PARQUET}" in upload
     assert "-a generated_data" in upload
 
