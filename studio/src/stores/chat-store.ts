@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import type { ActionBlocked } from "@/features/chat/types"
 
 export interface PersistedMessage {
   id: string
@@ -31,6 +32,8 @@ export interface PersistedMessage {
   // Set on a job-completion continuation turn so the plan deriver can mark the phase
   // terminal even when the driver never emits a "complete" signal_phase (see ChatMessage).
   terminal?: boolean
+  // The user confirmed this message's card but the model check blocked the job.
+  actionBlocked?: ActionBlocked
 }
 
 export interface PersistedConversation {

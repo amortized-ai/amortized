@@ -57,6 +57,18 @@ class Settings(BaseSettings):
         "endpoint eval) are never gated. Set to match the namespace GPU ResourceQuota "
         "(the per-user GPU_PER_USER on RHOAI); the default of 1 never over-subscribes.",
     )
+    model_check_url: str = Field(
+        "",
+        description="Base URL of the model-liveness check service (deployed in the jobs "
+        "namespace). Empty runs the check in-process — for local development.",
+    )
+    model_check_deadline_seconds: float = Field(
+        20.0,
+        gt=0,
+        le=30,
+        description="Total time budget for checking a job's LLM endpoints at validate/create "
+        "time. A dead endpoint fails within it; HTTP timeouts are derived from it.",
+    )
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
     mlflow_tracking_token_file: str = Field(
         "",

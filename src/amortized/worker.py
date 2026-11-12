@@ -15,6 +15,7 @@ import amortized.config as config_mod
 from amortized._mlflow_job_sitecustomize import SITECUSTOMIZE_SOURCE
 from amortized.backends import BackendHandle, Capability, JobSpec
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
+from amortized.core.job_env import forwarded_env
 from amortized.core.jobs import deserialize_handle, estimate_gpu_demand
 from amortized.db.repository import Repository
 from amortized.jobs import get_builder
@@ -374,11 +375,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             return
 
     # --- Environment ---
-    spec_env: dict[str, str] = {}
-    for env_name in config_mod.settings.forward_env:
-        value = os.environ.get(env_name)
-        if value:
-            spec_env[env_name] = value
+    spec_env: dict[str, str] = forwarded_env()
 
     if config_mod.settings.mlflow_tracking_uri:
         mlflow_experiment = f"amortized/{job_type}/{job_id[:8]}"

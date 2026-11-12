@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl, ApiError } from "@/lib/api-client"
 import { useChatStore, type PersistedMessage } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
+import { jobTypeLabel } from "@/features/jobs/lib/format"
 import { modelDisplayName } from "../models"
 import { getLogger } from "@/lib/logger"
 
@@ -33,6 +34,7 @@ function toChatMessage(m: PersistedMessage): ChatMessage {
     phase: m.phase,
     streamStartedAt: m.streamStartedAt,
     model: m.model,
+    actionBlocked: m.actionBlocked,
   }
 }
 
@@ -46,6 +48,44 @@ function modelFailureMessage(err: unknown, modelName: string): string | null {
     return `Model "${modelName}" could not be reached. Check your provider or model configuration.`
   }
   return null
+}
+
+// Blocked-confirmation notices being delivered right now, by message id. Module-level so
+// every mounted useChat (page, panel, sidebar) shares it: one delivery per message at a time, and
+// a remount can tell an in-flight delivery from one a reload interrupted.
+const blockedNoticeInFlight = new Set<string>()
+const REQUEST_LOCK_TIMEOUT_MS = 15_000
+
+// The event id is derived from the blocked message, so every send of the same notice — automatic
+// or a user Retry — is the same event to the server, which runs it at most once.
+function blockedNoticeEventId(messageId: string): string {
+  return `confirmation_blocked:${messageId}`
+}
+
+// The sanitized failure from a model_check_failed response — the envelope's message alone, not
+// the per-endpoint detail bullets formatErrorBody appends.
+function blockedMessage(err: ApiError): string {
+  const body = err.body
+  if (body && typeof body === "object") {
+    const message = (body as Record<string, unknown>).message
+    if (typeof message === "string" && message) return message
+  }
+  return err.message
+}
+
+// Wait (bounded) until this conversation's request lock is free, then take it.
+async function acquireRequestLock(convId: string, timeoutMs = REQUEST_LOCK_TIMEOUT_MS): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (!useChatStore.getState().tryStartRequest(convId)) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return false
+    await new Promise<void>((resolve) => {
+      let unsubscribe = () => {}
+      const timer = setTimeout(() => { unsubscribe(); resolve() }, remaining)
+      unsubscribe = useChatStore.subscribe(() => { clearTimeout(timer); unsubscribe(); resolve() })
+    })
+  }
+  return true
 }
 
 // Resolve the model for a send and pin it: use the conversation's own model if set,
@@ -264,6 +304,7 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         dataRecordCount: validated.dataRecordCount,
         outputPrompt: validated.outputPrompt,
         prompts: validated.prompts,
+        modelChecks: validated.modelChecks,
       }
     }
   }
@@ -740,6 +781,142 @@ export function useChat() {
     ],
   )
 
+  // One automatic (system-event) turn: a job-completion wake-up, or a blocked confirmation. The
+  // caller holds the conversation's request lock. Renders Morty's reply — including a fresh
+  // confirmation card if it re-validates — and returns whether Morty answered.
+  const runSystemEventTurn = useCallback(async (
+    convId: string,
+    text: string,
+    opts: {
+      event: string
+      outcome?: string
+      jobType?: string
+      mode?: string
+      terminal?: boolean
+      fallbackError: string
+      // false: on failure drop the placeholder instead of persisting an error turn (the caller
+      // reports the failure itself and may retry).
+      keepFailedTurn?: boolean
+      // Stable id making the send idempotent server-side (see SendOptions.eventId).
+      eventId?: string
+    },
+  ): Promise<boolean> => {
+    const placeholderId = generateId()
+    addMessage(convId, {
+      id: placeholderId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date().toISOString(),
+    })
+    // Automatic turns belong to the conversation — use (and stamp) its model too, so they don't
+    // silently run on a different model or render unlabeled.
+    const modelToSend = resolveAndPinModel(convId, placeholderId)
+    try {
+      const args = [convId, text, modelToSend, opts.event, opts.outcome, opts.jobType, opts.mode] as const
+      const response = opts.eventId
+        ? await sendOpenCodeMessage(...args, { eventId: opts.eventId })
+        : await sendOpenCodeMessage(...args)
+      const parsed = parseOpenCodeResponse(response)
+      const sessionMessages = await fetchSessionMessages(convId)
+      const session = extractSessionData(sessionMessages, parsed.toolResults)
+      const toolResults = dedupeConsecutiveOptions(convId, session.tools)
+      // An automatic turn may re-validate (a failed job whose config the agent then fixes, or
+      // a blocked confirmation's corrected endpoint), so it can carry a confirmation card.
+      const proposedAction = buildProposedAction(toolResults)
+      useChatStore.getState().updateMessageFields(convId, placeholderId, {
+        content: session.text || parsed.content,
+        toolResults,
+        proposedAction,
+        phase: extractPhase(toolResults),
+        ...(opts.terminal ? { terminal: true } : {}),
+      })
+      return true
+    } catch (err) {
+      const rawMsg = err instanceof Error ? err.message : String(err)
+      if (opts.keepFailedTurn === false) {
+        useChatStore.getState().removeMessage(convId, placeholderId)
+      } else {
+        // An automatic turn bypasses the composer's unavailable-model block. A model/auth failure
+        // shows the abstracted message; otherwise the caller's fallback. (We never silently
+        // switch the model here.)
+        const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
+          content: errMsg ?? opts.fallbackError,
+          // Flag as an error so context replay skips it (a failed turn isn't assistant output),
+          // while the chat still shows the persisted text.
+          error: true,
+        })
+      }
+      logger.error("system event turn failed", { event: opts.event, error: rawMsg })
+      return false
+    }
+  }, [addMessage])
+
+  // Tell Morty a confirmed job was blocked by the model check. No job was created, so no
+  // job_complete will ever wake Morty — this is the only signal it gets. One automatic delivery
+  // (sendOpenCodeMessage retries the transport, idempotently via the event id); if it fails the
+  // bubble offers Retry, which resends the same event. The "Not submitted" explanation stays
+  // visible either way. Always delivered to the conversation the card was confirmed in.
+  const deliverBlockedNotice = useCallback(async (convId: string, messageId: string) => {
+    if (blockedNoticeInFlight.has(messageId)) return
+    const findBlocked = () =>
+      useChatStore.getState().getConversationMessages(convId).find((m) => m.id === messageId)?.actionBlocked
+    const blocked = findBlocked()
+    if (!blocked) return
+    blockedNoticeInFlight.add(messageId)
+    const setNotify = (notify: "sending" | "delivered" | "failed") => {
+      const current = findBlocked()
+      if (current) useChatStore.getState().updateMessageFields(convId, messageId, { actionBlocked: { ...current, notify } })
+    }
+    setNotify("sending")
+    try {
+      if (!useChatStore.getState().conversations.some((c) => c.id === convId)) return
+      if (!(await acquireRequestLock(convId))) {
+        setNotify("failed")
+        return
+      }
+      let delivered = false
+      try {
+        delivered = await runSystemEventTurn(
+          convId,
+          `${jobTypeLabel(blocked.jobType)} submission was blocked before creating a job. ${blocked.message}`,
+          {
+            event: "confirmation_blocked",
+            jobType: blocked.jobType,
+            fallbackError: "",
+            keepFailedTurn: false,
+            eventId: blockedNoticeEventId(messageId),
+          },
+        )
+      } finally {
+        useChatStore.getState().finishRequest(convId)
+      }
+      setNotify(delivered ? "delivered" : "failed")
+    } finally {
+      blockedNoticeInFlight.delete(messageId)
+    }
+  }, [runSystemEventTurn])
+
+  const retryBlockedNotice = useCallback((messageId: string) => {
+    const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+    if (convId) void deliverBlockedNotice(convId, messageId)
+  }, [currentConversationId, deliverBlockedNotice])
+
+  // A notice still "sending" after a reload or remount was interrupted (deliveries are tracked in
+  // memory): show Retry instead of resending automatically, so it's never delivered twice.
+  const hasHydrated = useChatStore((s) => s._hasHydrated)
+  useEffect(() => {
+    if (!hasHydrated) return
+    const store = useChatStore.getState()
+    for (const conv of store.conversations) {
+      for (const m of store.getConversationMessages(conv.id)) {
+        if (m.actionBlocked?.notify === "sending" && !blockedNoticeInFlight.has(m.id)) {
+          store.updateMessageFields(conv.id, m.id, { actionBlocked: { ...m.actionBlocked, notify: "failed" } })
+        }
+      }
+    }
+  }, [hasHydrated])
+
   const confirmAction = useCallback(async () => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
     if (!convId) return
@@ -760,6 +937,7 @@ export function useChat() {
 
     if (!useChatStore.getState().tryStartRequest(convId)) return
 
+    let blockedMessageId: string | null = null
     try {
       const job = await createJob(endpoint, body)
 
@@ -784,11 +962,22 @@ export function useChat() {
       // wake (processJobNotifyQueue), which is the only point Morty needs it.
     } catch (err) {
       useChatStore.getState().setJobInFlight(convId, false)
-      useChatStore.getState().setRequestError(convId, err instanceof Error ? err.message : "Failed to submit job")
+      if (err instanceof ApiError && err.code === "model_check_failed") {
+        // The job was not created: replace the card with the reason, then hand the
+        // failure to Morty in this conversation so it can help fix it and re-validate.
+        useChatStore.getState().updateMessageFields(convId, actionMsg.id, {
+          proposedAction: null,
+          actionBlocked: { message: blockedMessage(err), jobType: jobType ?? "", notify: "sending" },
+        })
+        blockedMessageId = actionMsg.id
+      } else {
+        useChatStore.getState().setRequestError(convId, err instanceof Error ? err.message : "Failed to submit job")
+      }
     } finally {
       useChatStore.getState().finishRequest(convId)
     }
-  }, [currentConversationId])
+    if (blockedMessageId) void deliverBlockedNotice(convId, blockedMessageId)
+  }, [currentConversationId, deliverBlockedNotice])
 
   const rejectAction = useCallback(async () => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
@@ -864,69 +1053,31 @@ export function useChat() {
 
         if (!useChatStore.getState().tryStartRequest(nextConvId)) continue
         const { jobId, jobType, status, convId, mode } = jobNotifyQueueRef.current.shift()!
-        const placeholderId = generateId()
 
         try {
           useChatStore.getState().setJobInFlight(convId, false)
-
-          addMessage(convId, {
-            id: placeholderId,
-            role: "assistant",
-            content: "",
-            timestamp: new Date().toISOString(),
-          })
-
-          // Job-completion turns belong to the conversation — use (and stamp) its model
-          // too, so they don't silently run on a different model or render unlabeled.
-          const modelToSend = resolveAndPinModel(convId, placeholderId)
-
-          try {
-            const response = await sendOpenCodeMessage(
-              convId,
-              // Neutral FACT only. The behaviour (orchestrator → present next steps; subagent →
-              // hand back on its deliverable) lives in the resident prompts, not in this shared
-              // user-text — which reaches whoever is active, so an orchestrator-worded routing
-              // instruction here reaches subagents too and countermands their hand-back. status /
-              // jobType / mode ride the structured fields below; the proxy reads those, not this text.
-              `Job ${jobId} (${jobType}) finished with status: ${status}.`,
-              modelToSend,
-              "job_complete",
-              status,
+          const answered = await runSystemEventTurn(
+            convId,
+            // Neutral FACT only. The behaviour (orchestrator → present next steps; subagent →
+            // hand back on its deliverable) lives in the resident prompts, not in this shared
+            // user-text — which reaches whoever is active, so an orchestrator-worded routing
+            // instruction here reaches subagents too and countermands their hand-back. status /
+            // jobType / mode ride the structured fields below; the proxy reads those, not this text.
+            `Job ${jobId} (${jobType}) finished with status: ${status}.`,
+            {
+              event: "job_complete",
+              outcome: status,
               jobType,
               mode,
-            )
-
-            const parsed = parseOpenCodeResponse(response)
-            const sessionMessages = await fetchSessionMessages(convId)
-            const session = extractSessionData(sessionMessages, parsed.toolResults)
-            const notifyToolResults = dedupeConsecutiveOptions(convId, session.tools)
-            // A job-finished turn may self-heal and re-validate (e.g. a failed job
-            // whose config the agent then fixes), so it can carry a confirmation card.
-            const proposedAction = buildProposedAction(notifyToolResults)
-
-            useChatStore.getState().updateMessageFields(convId, placeholderId, {
-              content: session.text || parsed.content,
-              toolResults: notifyToolResults,
-              proposedAction,
-              phase: extractPhase(notifyToolResults),
               terminal: true,
-            })
-
+              fallbackError: "I wasn't able to suggest next steps. You can ask me what to do next.",
+            },
+          )
+          if (answered) {
             useChatStore.getState().addNotifiedJob(convId, jobId)
             jobNotifyAttemptsRef.current.delete(jobId)
             consecutiveFailures = 0
-          } catch (err) {
-            const rawMsg = err instanceof Error ? err.message : String(err)
-            // A job-completion turn runs automatically, so it bypasses the composer's
-            // unavailable-model block. A model/auth failure shows the abstracted message;
-            // otherwise a generic fallback. (We never silently switch the model here.)
-            const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
-            useChatStore.getState().updateMessageFields(convId, placeholderId, {
-              content: errMsg ?? "I wasn't able to suggest next steps. You can ask me what to do next.",
-              // Flag as an error so context replay skips it (a failed turn isn't assistant output),
-              // while the chat still shows the persisted text.
-              error: true,
-            })
+          } else {
             consecutiveFailures++
             const attempts = (jobNotifyAttemptsRef.current.get(jobId) ?? 0) + 1
             jobNotifyAttemptsRef.current.set(jobId, attempts)
@@ -936,7 +1087,7 @@ export function useChat() {
               useChatStore.getState().addNotifiedJob(convId, jobId)
               jobNotifyAttemptsRef.current.delete(jobId)
             }
-            logger.error("job completion notification failed", { jobId, attempts, consecutiveFailures, error: rawMsg })
+            logger.error("job completion notification failed", { jobId, attempts, consecutiveFailures })
           }
         } finally {
           useChatStore.getState().finishRequest(convId)
@@ -945,7 +1096,7 @@ export function useChat() {
     } finally {
       jobNotifyRunningRef.current = false
     }
-  }, [addMessage])
+  }, [runSystemEventTurn])
 
   const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string, mode?: string) => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
@@ -1001,6 +1152,7 @@ export function useChat() {
     proposedAction: latestAction,
     confirmAction,
     rejectAction,
+    retryBlockedNotice,
     notifyJobComplete,
   }
 }

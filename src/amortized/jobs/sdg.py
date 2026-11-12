@@ -10,6 +10,7 @@ from typing import Any
 import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.core.model_catalog import enabled_provider_defs, inject_enabled_provider_keys
+from amortized.core.model_endpoints import ConfigError, ModelEndpoint, provider_endpoint
 from amortized.core.placeholders import find_prompt_refs, resolve_prompt_refs
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
@@ -38,6 +39,40 @@ _STALE_CONFIG_KEYS = (
 
 class SDGBuildError(JobBuildError):
     """Raised when SDG config building fails and the job should be marked failed."""
+
+
+def model_checks(
+    config: dict[str, Any], env: dict[str, str]
+) -> tuple[list[ModelEndpoint], list[ConfigError]]:
+    """The teacher models this SDG job will call: only ``model_configs`` entries a column
+    references (an unused model config can't block the job). Keys resolve as ``build()``
+    delivers them — the forwarded server env plus every enabled provider's key."""
+    referenced = {
+        str(col.get("model_alias") or col.get("model_config_alias"))
+        for col in config.get("columns") or []
+        if isinstance(col, dict) and (col.get("model_alias") or col.get("model_config_alias"))
+    }
+    job_env = dict(env)
+    inject_enabled_provider_keys(job_env)
+    endpoints: list[ModelEndpoint] = []
+    errors: list[ConfigError] = []
+    for model_config in config.get("model_configs") or []:
+        if not isinstance(model_config, dict):
+            continue
+        alias = str(model_config.get("alias") or "")
+        if alias not in referenced:
+            continue
+        resolved = provider_endpoint(
+            f"teacher {alias}",
+            str(model_config.get("provider") or ""),
+            str(model_config.get("model") or ""),
+            job_env,
+        )
+        if isinstance(resolved, ConfigError):
+            errors.append(resolved)
+        else:
+            endpoints.append(resolved)
+    return endpoints, errors
 
 
 async def build(

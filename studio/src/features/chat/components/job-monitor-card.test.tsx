@@ -192,3 +192,19 @@ describe("JobMonitorCard — success links route through the basename", () => {
     expect(link.getAttribute("href")).toContain(`${BASENAME}/datasets`)
   })
 })
+
+describe("JobMonitorCard — model-check warnings", () => {
+  it("shows an endpoint left unverified when the job was created", async () => {
+    getJob.mockResolvedValue({
+      ...job("running"),
+      model_checks: [{
+        label: "judge", model: "gpt-oss", base_url: "http://gw/v1",
+        outcome: "unverified", reason: "checker_busy", detail: "",
+      }],
+    })
+    render(<JobMonitorCard jobId="34bd1852-e8bd-433c-aca0-4a42181210f4" jobType="EVAL" />)
+    await waitFor(() =>
+      expect(screen.getByText(/Judge gpt-oss not verified: the model check service was busy/)).toBeInTheDocument(),
+    )
+  })
+})

@@ -84,7 +84,19 @@ async def create_job(
     parent_job_id: str = "",
     user_id: str = "",
     retry_of: str = "",
+    models_checked: bool = False,
+    model_check_report: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    # A job type whose builder declares the LLM endpoints it calls must be created through job
+    # admission (api/job_admission.py), which checks them first. This guard keeps a new route
+    # from bypassing the check by calling create_job directly.
+    from amortized.jobs import get_builder
+
+    if not models_checked and hasattr(get_builder(job_type.value), "model_checks"):
+        raise InvalidJobStateError(
+            f"{job_type.value} jobs must be created through job admission (model check required)"
+        )
+
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
 
@@ -153,6 +165,7 @@ async def create_job(
         user_id=user_id,
         k8s_namespace=_settings.compute_namespace,
         retry_of=retry_of,
+        model_check_report=model_check_report,
     )
 
     logger.info("Created %s job %s", job_type.value, job_id)

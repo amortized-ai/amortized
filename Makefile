@@ -6,7 +6,7 @@ STUDIO_DIR    ?= $(REPO_ROOT)/studio
 SERVER_IMAGE  ?= ghcr.io/amortized-ai/amortized:latest
 STUDIO_IMAGE  ?= ghcr.io/amortized-ai/studio:latest
 
-.PHONY: help build build-server build-studio prompt deploy-dev lint typecheck test
+.PHONY: help build build-server build-studio build-model-check prompt deploy-dev lint typecheck test
 
 # ──────────────────────────────────────────────
 # Help
@@ -20,13 +20,17 @@ help: ## Show this help
 # Build
 # ──────────────────────────────────────────────
 
-build: build-server build-studio ## Build all images
+build: build-server build-studio build-model-check ## Build all images
 
 build-server: ## Build amortized server image
 	@echo "Removing old amortized-server images from Docker..."
 	@docker images --format '{{.Repository}}:{{.Tag}}' | grep '^amortized-server:' | xargs -r docker rmi 2>/dev/null || true
 	@echo "Building amortized-server:$(IMAGE_TAG)..."
 	docker build -t amortized-server:$(IMAGE_TAG) -f Dockerfile .
+
+build-model-check: ## Build the model-liveness check service image
+	@echo "Building amortized-model-check:$(IMAGE_TAG)..."
+	docker build -t amortized-model-check:$(IMAGE_TAG) -f containers/model-check/Dockerfile .
 
 build-studio: ## Build studio image
 	@echo "Removing old amortized-studio images from Docker..."

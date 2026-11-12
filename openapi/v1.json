@@ -138,7 +138,7 @@
           "jobs"
         ],
         "summary": "Retry/rerun a FAILED or cancelled job (SDG, training, or eval) by cloning its original request config. With no overrides it re-runs the job UNCHANGED (for eval the new scores land in the same Evaluation tab comparison group); pass `overrides` to change specific knobs (e.g. num_train_epochs, num_records). The caller confirms before this creates the job \u2014 it is not a silent dispatch. Note: external-endpoint API keys are not retained, so keyed endpoints need resubmission.",
-        "description": "Clone a failed/cancelled job's original config into a new job of the same type.\n\nGeneralized from the former eval-only path: the shared mirror.clone drops each\ntype's runtime/lineage fields from the pre-dispatch snapshot and applies any\ncaller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind\na confirmation step, so re-running an expensive training/SDG job is never a\nsingle misclick.",
+        "description": "Clone a failed/cancelled job's original config into a new job of the same type.\n\nGeneralized from the former eval-only path: the shared mirror.clone drops each\ntype's runtime/lineage fields from the pre-dispatch snapshot and applies any\ncaller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind\na confirmation step, so re-running an expensive training/SDG job is never a\nsingle misclick. Goes through job admission, so the retried job's LLM endpoints are\nchecked exactly like a fresh create.",
         "operationId": "retry_job",
         "parameters": [
           {
@@ -4296,6 +4296,13 @@
             "type": "string",
             "title": "Retry Of",
             "default": ""
+          },
+          "model_checks": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCheckResult"
+            },
+            "type": "array",
+            "title": "Model Checks"
           }
         },
         "type": "object",
@@ -5060,6 +5067,18 @@
               }
             ],
             "title": "Job Mode"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
           }
         },
         "type": "object",
@@ -5076,6 +5095,50 @@
         ],
         "title": "ModalityDataType",
         "description": "Data type formats for multimodal data."
+      },
+      "ModelCheckResult": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unverified"
+            ],
+            "title": "Outcome"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "model",
+          "base_url",
+          "outcome",
+          "reason"
+        ],
+        "title": "ModelCheckResult",
+        "description": "Outcome of checking one LLM endpoint a job will call. URLs are redacted."
       },
       "ModelConfig": {
         "properties": {
@@ -7333,6 +7396,13 @@
             },
             "type": "array",
             "title": "Trainer Default Fields"
+          },
+          "model_checks": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCheckResult"
+            },
+            "type": "array",
+            "title": "Model Checks"
           }
         },
         "type": "object",

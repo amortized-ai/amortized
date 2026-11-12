@@ -14,7 +14,9 @@ def _pod(
 ) -> SimpleNamespace:
     state = SimpleNamespace(
         waiting=SimpleNamespace(**waiting) if waiting else None,
-        terminated=SimpleNamespace(**terminated) if terminated else None,
+        # V1ContainerStateTerminated always carries `message` (None unless the container
+        # wrote /dev/termination-log).
+        terminated=SimpleNamespace(**{"message": None, **terminated}) if terminated else None,
     )
     cs = SimpleNamespace(
         state=state,
@@ -132,6 +134,20 @@ class TestPodFailureReason:
         reason = _run(_backend()._get_pod_failure_reason("job1", api_client=None))
         assert reason is not None
         assert "exited with code 1" in reason
+
+    def test_terminated_with_termination_message(self, monkeypatch) -> None:
+        # The eval judge preflight writes its reason to /dev/termination-log.
+        msg = "judge model 'gpt-oss' at 'http://example/v1' did not answer a test request (404)"
+        pod = _pod("Failed", terminated={"exit_code": 1, "reason": "Error", "message": msg})
+        _patch_core(monkeypatch, [pod])
+        reason = _run(_backend()._get_pod_failure_reason("job1", api_client=None))
+        assert reason == f"{msg} (exit code 1)"
+
+    def test_termination_message_capped(self, monkeypatch) -> None:
+        pod = _pod("Failed", terminated={"exit_code": 1, "reason": "Error", "message": "x" * 2000})
+        _patch_core(monkeypatch, [pod])
+        reason = _run(_backend()._get_pod_failure_reason("job1", api_client=None))
+        assert reason == "x" * 500 + " (exit code 1)"
 
     def test_no_pods_returns_none(self, monkeypatch) -> None:
         _patch_core(monkeypatch, [])

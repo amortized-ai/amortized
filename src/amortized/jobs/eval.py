@@ -33,6 +33,13 @@ from typing import Any
 import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.core.model_catalog import inject_enabled_provider_keys, resolve_provider
+from amortized.core.model_endpoints import (
+    ConfigError,
+    ModelEndpoint,
+    endpoint_with_credential,
+    is_http_url,
+    is_valid_http_url,
+)
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import resolve_training_model, set_mlflow_run_tag
 
@@ -78,6 +85,77 @@ def _endpoint_spec(
         "api_key_env": env_name,
         "provider_type": provider_type,
     }
+
+
+def _external_model_key(config: dict[str, Any]) -> str | None:
+    """Config key of the external model-under-test endpoint, or None when the eval serves its
+    own model (a training job or HF model, and no explicit ``endpoint``)."""
+    has_model_source = bool(
+        str(config.get("training_job_id", "")).strip()
+        or str(config.get("model_name_or_path", "")).strip()
+    )
+    if has_model_source and not config.get("endpoint"):
+        return None
+    if config.get("endpoint"):
+        return "endpoint"
+    return "endpoint_tuned" if config.get("endpoint_tuned") else "endpoint_base"
+
+
+def model_checks(
+    config: dict[str, Any], env: dict[str, str]
+) -> tuple[list[ModelEndpoint], list[ConfigError]]:
+    """The LLM endpoints this eval will call (judge, and an external model under test), with
+    credentials resolved exactly as ``build()`` delivers them: the forwarded server env, then
+    every enabled provider's key, then any inline key."""
+    if config.get("eval_mode") == "classification":
+        return [], []
+    job_env = dict(env)
+    inject_enabled_provider_keys(job_env)
+    targets: list[tuple[str, str, str]] = []
+    external_key = _external_model_key(config)
+    if external_key and isinstance(config.get(external_key), dict):
+        targets.append(("model under test", external_key, "EVAL_MODEL_API_KEY"))
+    if isinstance(config.get("judge"), dict):
+        targets.append(("judge", "judge", "EVAL_JUDGE_API_KEY"))
+
+    endpoints: list[ModelEndpoint] = []
+    errors: list[ConfigError] = []
+    for label, key, default_key_env in targets:
+        endpoint_cfg = config[key]
+        base_url = str(endpoint_cfg.get("base_url") or "")
+        if not base_url or not endpoint_cfg.get("model"):
+            continue  # request validation already rejects a missing base_url/model
+        if not is_http_url(base_url) and resolve_provider(base_url) is None:
+            errors.append(
+                ConfigError(
+                    label,
+                    "invalid_base_url",
+                    f"{label}: base_url {base_url!r} is neither an http(s) URL nor the name of"
+                    " a provider configured on the server",
+                )
+            )
+            continue
+        if is_http_url(base_url) and not is_valid_http_url(base_url):
+            errors.append(
+                ConfigError(
+                    label,
+                    "invalid_base_url",
+                    f"{label}: base_url is not a valid URL (check the host and port)",
+                )
+            )
+            continue
+        spec = _endpoint_spec({key: endpoint_cfg}, key, default_key_env, job_env)
+        endpoints.append(
+            endpoint_with_credential(
+                label,
+                spec["base_url"],
+                spec["model"],
+                spec["provider_type"],
+                spec["api_key_env"],
+                job_env,
+            )
+        )
+    return endpoints, errors
 
 
 def _resolve_named_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
@@ -339,11 +417,8 @@ async def build(
     image = config_mod.job_image("eval")
 
     # --- Model under evaluation: embedded serving or external endpoint ---
-    has_model_source = bool(
-        str(config.get("training_job_id", "")).strip()
-        or str(config.get("model_name_or_path", "")).strip()
-    )
-    embedded = has_model_source and not config.get("endpoint")
+    external_key = _external_model_key(config)
+    embedded = external_key is None
 
     if embedded:
         pre_commands, main_script, extras = await _build_embedded_serving(config, env)
@@ -375,13 +450,7 @@ async def build(
             with open(os.path.join(_ASSETS_DIR, asset)) as f:
                 config_files[asset] = f.read()
     else:
-        model_key = (
-            "endpoint"
-            if config.get("endpoint")
-            else "endpoint_tuned"
-            if config.get("endpoint_tuned")
-            else "endpoint_base"
-        )
+        model_key = external_key or "endpoint_base"
         model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY", env)
         pre_commands = []
         extras = {}
