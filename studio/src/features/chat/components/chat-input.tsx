@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Send } from "lucide-react"
 import { useChatStore } from "@/stores/chat-store"
+import { findApiKeys, redactApiKeys } from "../utils/detect-api-key"
+import { ApiKeyWarning } from "./api-key-warning"
 
 interface ChatInputProps {
   onSend: (message: string) => void
@@ -27,6 +29,9 @@ export function ChatInput({
     [convId],
   )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [keyHeld, setKeyHeld] = useState(false)
+  // Hide the warning once the text no longer has a key (removed or edited out).
+  const showKeyWarning = keyHeld && findApiKeys(value).length > 0
 
   useEffect(() => {
     const el = textareaRef.current
@@ -35,11 +40,20 @@ export function ChatInput({
     if (value) el.style.height = `${Math.min(el.scrollHeight, 160)}px`
   }, [value])
 
+  function send(text: string) {
+    onSend(text)
+    setValue("")
+    setKeyHeld(false)
+  }
+
   function handleSubmit() {
     const trimmed = value.trim()
     if (!trimmed || disabled) return
-    onSend(trimmed)
-    setValue("")
+    if (findApiKeys(trimmed).length > 0) {
+      setKeyHeld(true)
+      return
+    }
+    send(trimmed)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -60,6 +74,18 @@ export function ChatInput({
     <div className="border-t bg-background/80 backdrop-blur-sm p-4">
       <div className="mx-auto max-w-3xl space-y-2">
         {aboveSlot}
+        {showKeyWarning && (
+          <ApiKeyWarning
+            onRemove={() => {
+              setValue(redactApiKeys(value))
+              setKeyHeld(false)
+            }}
+            onSendAnyway={() => {
+              const trimmed = value.trim()
+              if (trimmed && !disabled) send(trimmed)
+            }}
+          />
+        )}
         <div className="flex items-end gap-2">
           {leftSlot}
           <textarea

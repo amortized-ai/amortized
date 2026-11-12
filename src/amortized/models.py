@@ -535,24 +535,37 @@ class SDGJobRequest(_ConfigJsonMixin):
 # ---------------------------------------------------------------------------
 
 
+INLINE_API_KEY_ERROR = (
+    "API keys are not accepted in job configs. Add the endpoint under Settings > Custom"
+    " endpoints (name, base URL, API key), or ask your administrator to configure it, then"
+    " set base_url to the endpoint's name."
+)
+
+
 class EvalEndpoint(BaseModel):
     base_url: str = Field(
         ...,
         min_length=1,
-        description="OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)",
+        description=(
+            "The name of a configured provider or custom endpoint (e.g. openai), which"
+            " supplies the URL and key, or the URL of an endpoint that needs no key"
+            " (e.g. http://vllm:8000/v1)"
+        ),
     )
     model: str = Field(
         ...,
         min_length=1,
         description="Model name sent as 'model' in chat completion requests",
     )
-    api_key: str = Field(
-        "",
-        description=(
-            "Optional bearer token. Never echoed in API responses;"
-            " scrubbed from the DB once the job is dispatched."
-        ),
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_api_key(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "api_key" in data:
+            if data["api_key"] not in (None, ""):
+                raise ValueError(INLINE_API_KEY_ERROR)
+            return {k: v for k, v in data.items() if k != "api_key"}
+        return data
 
 
 class EvalRubricCriterion(BaseModel):
@@ -583,8 +596,8 @@ class EvalJobConfig(BaseModel):
         None,
         description=(
             "External OpenAI-compatible endpoint serving the model to evaluate"
-            " (e.g. a gateway model). When omitted, set training_job_id or"
-            " model_name_or_path and the eval job serves the model itself."
+            " (a provider model or a custom endpoint). When omitted, set training_job_id"
+            " or model_name_or_path and the eval job serves the model itself."
         ),
     )
     training_job_id: str = Field(

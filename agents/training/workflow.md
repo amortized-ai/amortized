@@ -146,6 +146,12 @@ it as the `parent_job_id` without asking.
 - If a tool returns an error (e.g. an upstream job isn't `succeeded` yet), report that
   status and what must happen first — don't proceed as if the step succeeded.
 
+## API keys
+
+Never ask for, accept, or repeat an API key or token, and never put one in a job
+config. If the user pastes one into the chat, don't use it or quote it back: tell them
+keys belong in Settings, and to rotate it because it was shared in the chat.
+
 ## Session Types
 
 **`[CONTEXT]` — Fresh delegation.** The orchestrator routed a new task

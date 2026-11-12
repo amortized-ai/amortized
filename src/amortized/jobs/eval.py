@@ -11,8 +11,9 @@ Two modes:
   GPU allocation matches training jobs: the pod requests
   ``nvidia.com/gpu`` (``nproc_per_node``) and is bounded by the user's
   namespace quota — GPUs are assumed free, so no occupancy checking.
-- **External endpoint**: ``endpoint`` points at an OpenAI-compatible URL
-  (e.g. a gateway model). CPU-only, no GPU.
+- **External endpoint**: ``endpoint`` names a provider or custom endpoint
+  (resolved to its URL + key env var), or a keyless OpenAI-compatible URL.
+  CPU-only, no GPU.
 
 Training Hub exports of VLM text backbones (e.g. Qwen3.5) carry a bare
 text config that stock vLLM cannot serve; those are handled through
@@ -35,10 +36,9 @@ from amortized.backends import Resources
 from amortized.core.model_catalog import inject_enabled_provider_keys, resolve_provider
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import resolve_training_model, set_mlflow_run_tag
+from amortized.models import INLINE_API_KEY_ERROR
 
 logger = logging.getLogger("amortized.jobs.eval")
-
-_ENDPOINT_KEYS = ("endpoint", "endpoint_base", "endpoint_tuned", "judge")
 
 DEFAULT_SERVE_PORT = 8000
 
@@ -49,29 +49,25 @@ _ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 SERVE_STARTUP_TIMEOUT = 900
 
 
-def _endpoint_spec(
-    config: dict[str, Any], key: str, env_name: str, env: dict[str, str]
-) -> dict[str, str]:
+def _endpoint_spec(config: dict[str, Any], key: str, env_name: str) -> dict[str, str]:
     endpoint = config.get(key)
     if not isinstance(endpoint, dict) or not endpoint.get("base_url") or not endpoint.get("model"):
         raise JobBuildError(f"{key}: base_url and model are required")
+    if endpoint.get("api_key"):
+        raise JobBuildError(f"{key}.api_key: {INLINE_API_KEY_ERROR}")
     base_url = str(endpoint["base_url"])
-    api_key = endpoint.get("api_key", "")
-    # A base_url that names an enabled provider (e.g. "openai") resolves to that
-    # provider's real endpoint + its injected key env-var — the same catalog SDG
-    # uses — so a BYOK-stripped judge/endpoint still authenticates with the
-    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...). The
-    # provider_type (openai|anthropic) selects the runner's calling paradigm so the
-    # judge supports exactly what the SDG teacher does (incl. native Anthropic).
+    # A base_url that names an enabled provider or custom endpoint (e.g. "openai")
+    # resolves to its real endpoint + its injected key env-var — the same catalog SDG
+    # uses — so the job authenticates with the forwarded key (OPENAI_API_KEY,
+    # CUSTOM_ENDPOINT_<NAME>_API_KEY, ...). The provider_type (openai|anthropic)
+    # selects the runner's calling paradigm so the judge supports exactly what the
+    # SDG teacher does (incl. native Anthropic). Any other base_url is a keyless URL.
     provider_type = "openai"
     provider = resolve_provider(base_url)
     if provider:
         base_url = provider.get("endpoint", base_url)
         provider_type = provider.get("provider_type") or "openai"
-        if not api_key:
-            env_name = provider.get("api_key", env_name)
-    if api_key:
-        env[env_name] = api_key
+        env_name = provider.get("api_key", env_name)
     return {
         "base_url": base_url.rstrip("/"),
         "model": str(endpoint["model"]),
@@ -382,7 +378,7 @@ async def build(
             if config.get("endpoint_tuned")
             else "endpoint_base"
         )
-        model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY", env)
+        model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY")
         pre_commands = []
         extras = {}
         resources = Resources(gpus=0, cpus=2, memory_gb=4)
@@ -400,9 +396,7 @@ async def build(
             " must set `judge` explicitly (there is no default judge)"
         )
     if judge_cfg:
-        endpoints["judge"] = _endpoint_spec(
-            {"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY", env
-        )
+        endpoints["judge"] = _endpoint_spec({"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY")
 
     eval_data_path = config.get("eval_data_path", "")
     eval_data_run_id = config.get("eval_data_run_id", "")
@@ -441,12 +435,6 @@ async def build(
     )
 
     resolved_config = dict(config)
-    for key in _ENDPOINT_KEYS:
-        endpoint = resolved_config.get(key)
-        if isinstance(endpoint, dict):
-            scrubbed = dict(endpoint)
-            scrubbed.pop("api_key", None)
-            resolved_config[key] = scrubbed
     resolved_config["eval_data_path"] = eval_data_path
     resolved_config.update(extras)
 

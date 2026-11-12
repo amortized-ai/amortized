@@ -139,18 +139,44 @@ class TestCreateEvalJob:
         assert "succeeded" in response.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_api_key_not_echoed_in_response(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(
-            client,
-            endpoint={
-                "base_url": "http://tuned:8000/v1",
-                "model": "qwen-tuned",
-                "api_key": "sk-secret",
+    @pytest.mark.parametrize("path", ["/api/v1/jobs/eval", "/api/v1/jobs/eval/validate"])
+    async def test_inline_api_key_rejected_and_not_stored(
+        self, client: httpx.AsyncClient, path: str
+    ) -> None:
+        response = await client.post(
+            path,
+            json={
+                **EVAL_BODY,
+                "judge": {**JUDGE, "api_key": "sk-judge-secret"},
             },
         )
-        assert response.status_code == 201
-        config = response.json()["config"]
-        assert "api_key" not in config["endpoint"]
+        assert response.status_code == 422
+        body = response.text
+        assert "Settings > Custom endpoints" in body
+        assert "sk-judge-secret" not in body
+
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            leaked = await conn.fetchval(
+                "SELECT count(*) FROM jobs"
+                " WHERE config::text LIKE '%sk-judge%' OR request_config::text LIKE '%sk-judge%'"
+            )
+        assert leaked == 0
+
+    @pytest.mark.asyncio
+    async def test_api_key_in_untyped_endpoint_rejected(self, client: httpx.AsyncClient) -> None:
+        # Legacy endpoint_* fields are untyped extras, so the schema cannot catch the key;
+        # the config-wide check does.
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={
+                **EVAL_BODY,
+                "endpoint_tuned": {"base_url": "http://t:8000/v1", "model": "m", "api_key": "k"},
+            },
+        )
+        assert response.status_code == 422
+        assert "endpoint_tuned.api_key" in response.json()["message"]
 
 
 
@@ -446,7 +472,9 @@ class TestEvalBuilder:
         assert runner["endpoints"]["model"]["model"] == "legacy-tuned"
 
     @pytest.mark.asyncio
-    async def test_build_scrubs_api_keys_from_resolved_config(self) -> None:
+    async def test_build_rejects_inline_api_key(self) -> None:
+        from amortized.jobs.base import JobBuildError
+
         config = {
             **EVAL_BODY,
             "judge": JUDGE,
@@ -456,10 +484,8 @@ class TestEvalBuilder:
                 "api_key": "sk-secret",
             },
         }
-        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
-
-        assert result.env["EVAL_MODEL_API_KEY"] == "sk-secret"
-        assert "api_key" not in result.resolved_config["endpoint"]
+        with pytest.raises(JobBuildError, match="Settings > Custom endpoints"):
+            await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
     @pytest.mark.asyncio
     async def test_build_no_judge_without_rubric(self) -> None:
@@ -1022,10 +1048,10 @@ class TestEvalEndpointSuggestions:
 
 
 class TestJudgeProviderResolution:
-    """The judge/endpoint api-key wiring: a base_url naming an enabled provider
-    resolves to that provider's real endpoint + its injected key env-var, so a
-    BYOK-stripped judge authenticates with the forwarded provider key (the same
-    keys SDG forwards). A literal URL with an inline key is left untouched (KIND)."""
+    """The judge/endpoint api-key wiring: a base_url naming an enabled provider or
+    custom endpoint resolves to its real endpoint + its injected key env-var, so the
+    job authenticates with the forwarded key (the same keys SDG forwards). Any other
+    base_url is a keyless URL."""
 
     def test_provider_name_resolves_to_endpoint_and_injected_key(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -1040,29 +1066,42 @@ class TestJudgeProviderResolution:
             if name == "openai"
             else None,
         )
-        env: dict[str, str] = {}
         spec = eval_builder._endpoint_spec(
             {"judge": {"base_url": "openai", "model": "gpt-5"}},
             "judge",
             "EVAL_JUDGE_API_KEY",
-            env,
         )
         assert spec["base_url"] == "https://api.openai.com/v1"
         # points at the injected provider key var, not the bespoke (unset) one
         assert spec["api_key_env"] == "OPENAI_API_KEY"
 
-    def test_literal_url_with_inline_key_unchanged(self, monkeypatch) -> None:
+    def test_literal_url_is_keyless(self, monkeypatch) -> None:
         monkeypatch.setattr(eval_builder, "resolve_provider", lambda name: None)
-        env: dict[str, str] = {}
         spec = eval_builder._endpoint_spec(
-            {"judge": {"base_url": "http://judge:8000/v1", "model": "m", "api_key": "sk-x"}},
+            {"judge": {"base_url": "http://judge:8000/v1", "model": "m"}},
             "judge",
             "EVAL_JUDGE_API_KEY",
-            env,
         )
         assert spec["base_url"] == "http://judge:8000/v1"
         assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
-        assert env["EVAL_JUDGE_API_KEY"] == "sk-x"
+
+    @pytest.mark.asyncio
+    async def test_custom_endpoint_name_delivers_its_key_to_the_job(self, monkeypatch) -> None:
+        monkeypatch.setenv("CUSTOM_ENDPOINT_MY_VLLM_BASE_URL", "https://vllm.example.com/v1/")
+        monkeypatch.setenv("CUSTOM_ENDPOINT_MY_VLLM_API_KEY", "sk-custom-secret")
+        config = {**EVAL_BODY, "endpoint": {"base_url": "my-vllm", "model": "qwen"}}
+
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["endpoints"]["model"]["base_url"] == "https://vllm.example.com/v1"
+        assert runner["endpoints"]["model"]["api_key_env"] == "CUSTOM_ENDPOINT_MY_VLLM_API_KEY"
+        # the key travels only in the job's env (a per-job Secret), never in its config
+        assert result.env["CUSTOM_ENDPOINT_MY_VLLM_API_KEY"] == "sk-custom-secret"
+        assert "sk-custom-secret" not in result.config_files["config.json"]
+        assert "sk-custom-secret" not in json.dumps(result.resolved_config)
 
 
 class TestAdaptBodyForParamError:

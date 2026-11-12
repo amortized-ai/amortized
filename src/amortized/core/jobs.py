@@ -12,7 +12,7 @@ from amortized.backends import BackendHandle
 from amortized.config import settings as _settings
 from amortized.core.compute import get_backend
 from amortized.core.placeholders import find_prompt_refs, find_unresolved_placeholders
-from amortized.models import JobStatus, JobType
+from amortized.models import INLINE_API_KEY_ERROR, JobStatus, JobType
 
 if TYPE_CHECKING:
     from amortized.db.repository import Repository
@@ -110,6 +110,33 @@ def gpu_budget_error(job_type: JobType, config: dict[str, Any]) -> str | None:
     )
 
 
+def _api_key_paths(value: Any, path: str = "") -> list[str]:
+    if isinstance(value, dict):
+        found: list[str] = []
+        for key, item in value.items():
+            child = f"{path}.{key}" if path else str(key)
+            if str(key).lower().replace("-", "_") in ("api_key", "apikey"):
+                if item not in (None, ""):
+                    found.append(child)
+            else:
+                found.extend(_api_key_paths(item, child))
+        return found
+    if isinstance(value, list):
+        return [p for i, item in enumerate(value) for p in _api_key_paths(item, f"{path}[{i}]")]
+    return []
+
+
+def inline_credential_error(config: dict[str, Any]) -> str | None:
+    """Error when a job config carries an API key, else None.
+
+    A config is stored, shown on the confirmation card and in the API, and copied by
+    retries, so a key in it would leak through all of those."""
+    paths = _api_key_paths(config)
+    if not paths:
+        return None
+    return f"{', '.join(paths)}: {INLINE_API_KEY_ERROR}"
+
+
 async def create_job(
     repo: Repository,
     *,
@@ -122,6 +149,10 @@ async def create_job(
 ) -> dict[str, Any]:
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
+
+    credential_error = inline_credential_error(config)
+    if credential_error:
+        raise InvalidJobStateError(credential_error)
 
     # Placeholder tokens are agent-resolution hints, never valid values. The form
     # strips them, but the agent/API path could still submit one — reject it here

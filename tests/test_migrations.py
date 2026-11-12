@@ -88,3 +88,41 @@ class TestAlembicMigrations:
             ["alembic", "upgrade", "head"], capture_output=True, text=True, env=env
         )
         assert result2.returncode == 0
+
+    @pytest.mark.asyncio
+    async def test_0005_strips_stored_api_keys(self) -> None:
+        import json
+
+        env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
+        subprocess.run(["alembic", "upgrade", "0004"], capture_output=True, env=env, check=True)
+
+        leaked = {
+            "endpoint": {"base_url": "http://vllm:8000/v1", "model": "m", "api_key": "sk-a"},
+            "judge": {"base_url": "openai", "model": "gpt-5", "api_key": "sk-b"},
+            "rubric": [{"name": "r", "description": "d"}],
+        }
+        clean = {"algorithm": "sft", "data_run_id": "run-1"}
+        conn = await asyncpg.connect(TEST_DATABASE_URL)
+        await conn.execute(
+            """INSERT INTO jobs (id, type, status, config, request_config, created_at) VALUES
+               ('leaky', 'eval', 'failed', $1::jsonb, $2::jsonb, now()),
+               ('clean', 'training', 'succeeded', $3::jsonb, $3::jsonb, now())""",
+            json.dumps({**leaked, "endpoint": {"base_url": "http://vllm:8000/v1", "model": "m"}}),
+            json.dumps(leaked),
+            json.dumps(clean),
+        )
+        await conn.close()
+
+        subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
+
+        conn = await asyncpg.connect(TEST_DATABASE_URL)
+        rows = {
+            r["id"]: (json.loads(r["config"]), json.loads(r["request_config"]))
+            for r in await conn.fetch("SELECT id, config, request_config FROM jobs")
+        }
+        await conn.close()
+        config, request_config = rows["leaky"]
+        assert "sk-" not in json.dumps(config) + json.dumps(request_config)
+        assert request_config["judge"] == {"base_url": "openai", "model": "gpt-5"}
+        assert request_config["rubric"] == leaked["rubric"]
+        assert rows["clean"] == (clean, clean)

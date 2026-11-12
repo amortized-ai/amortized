@@ -329,6 +329,102 @@ function serverEnvForProvider(name, credential) {
   return {};
 }
 
+// --- Per-user custom endpoints ------------------------------------------------
+// OpenAI-compatible endpoints (name, base URL, API key) the user's eval and SDG jobs reach by
+// name. Stored per user in the gateway namespace and written into the server env as
+// CUSTOM_ENDPOINT_<NAME>_BASE_URL / _API_KEY pairs (model_catalog turns each pair into a
+// provider). Server-side only: never given to the Morty sandbox, so a change restarts the
+// server but not Morty. This is how keys reach jobs — job configs reject inline keys.
+const ENDPOINT_NAME_RE = /^[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
+// Names taken by built-in providers (keep in sync with model_catalog._RESERVED_PROVIDER_NAMES).
+const RESERVED_ENDPOINT_NAMES = new Set([
+  'nvidia', 'openai', 'openrouter', 'anthropic', 'maas', 'enmaas', 'enmaas-anthropic', 'enmaas-openai', 'vertex', 'gateway',
+]);
+const MAX_ENDPOINTS = 20;
+
+function endpointsSecretName(ns) { return `amz-endpoints-${slugForNs(ns)}`; }
+
+// { <name>: { baseURL, apiKey } } from the gateway-namespace secret; {} when unset.
+async function readUserEndpoints(ns) {
+  try {
+    const res = await coreApi.readNamespacedSecret({ name: endpointsSecretName(ns), namespace: GATEWAY_NAMESPACE });
+    const data = res?.data || res?.body?.data || {};
+    const out = {};
+    for (const [name, val] of Object.entries(data)) {
+      if (!ENDPOINT_NAME_RE.test(name) || !val) continue;
+      const { baseURL, apiKey } = parseOpenAICompatCredential(Buffer.from(val, 'base64').toString('utf8'));
+      if (baseURL && apiKey) out[name] = { baseURL, apiKey };
+    }
+    return out;
+  } catch (err) {
+    const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
+    if (code === 404) return {};
+    throw err;
+  }
+}
+
+async function writeUserEndpoints(ns, endpoints) {
+  const data = {};
+  for (const [name, endpoint] of Object.entries(endpoints)) {
+    data[name] = Buffer.from(JSON.stringify(endpoint)).toString('base64');
+  }
+  const body = {
+    apiVersion: 'v1',
+    kind: 'Secret',
+    metadata: {
+      name: endpointsSecretName(ns),
+      namespace: GATEWAY_NAMESPACE,
+      labels: { app: 'amortized', 'app.kubernetes.io/managed-by': FIELD_MANAGER, 'amortized.ai/user-ns': ns },
+    },
+    type: 'Opaque',
+    data,
+  };
+  await upsertSecret(GATEWAY_NAMESPACE, endpointsSecretName(ns), body);
+}
+
+function serverEnvForEndpoints(endpoints) {
+  const env = {};
+  for (const [name, { baseURL, apiKey }] of Object.entries(endpoints)) {
+    const slug = name.toUpperCase().replace(/-/g, '_');
+    env[`CUSTOM_ENDPOINT_${slug}_BASE_URL`] = baseURL;
+    env[`CUSTOM_ENDPOINT_${slug}_API_KEY`] = apiKey;
+  }
+  return env;
+}
+
+// Validate one endpoint (throws on invalid); returns the canonical { name, baseURL, apiKey }.
+// Same URL rule as model_catalog.custom_endpoint_url_allowed: the key is sent to this URL.
+function validateEndpoint(name, baseURL, apiKey) {
+  const n = String(name || '').trim();
+  if (!ENDPOINT_NAME_RE.test(n)) {
+    throw new Error('Endpoint name must be lowercase letters, digits and hyphens, start with a letter, and be at most 32 characters');
+  }
+  if (RESERVED_ENDPOINT_NAMES.has(n)) {
+    throw new Error(`'${n}' is the name of a built-in provider; pick another name`);
+  }
+  let url;
+  try { url = new URL(String(baseURL || '').trim()); } catch { url = null; }
+  const host = (url?.hostname || '').toLowerCase();
+  const inCluster = host.endsWith('.svc') || host.endsWith('.svc.cluster.local');
+  if (!url || !(url.protocol === 'https:' || (url.protocol === 'http:' && inCluster))) {
+    throw new Error('Base URL must be an HTTPS URL (plain HTTP only for in-cluster *.svc hosts) because the API key is sent to it');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('Base URL must not embed credentials or query parameters; put the key in the API key field');
+  }
+  const key = String(apiKey || '').trim();
+  if (!key || /\s/.test(key)) {
+    throw new Error('API key is required and must not contain spaces');
+  }
+  return { name: n, baseURL: `${url.origin}${url.pathname}`.replace(/\/$/, ''), apiKey: key };
+}
+
+function listEndpoints(endpoints) {
+  return Object.entries(endpoints)
+    .map(([name, { baseURL }]) => ({ name, baseURL }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // Create the Secret, or replace it if it already exists. A full replace (PUT) must
 // carry the current metadata.resourceVersion, so read it back first; retry if the
 // object changes underneath us.
@@ -377,18 +473,22 @@ async function writeUserProviders(ns, providers) {
   await upsertSecret(GATEWAY_NAMESPACE, keySecretName(ns), body);
 }
 
-// Stamp the per-user KEY-provider credentials into the USER namespace as the chart's
-// teacherKeys secret (env-var name -> key), so the same keys reach the server env
-// (model_catalog -> list_models + SDG teacher), not just the Morty sandbox. Reflects the
-// CURRENT set: providers the user removed drop out, so a re-stamp clears stale keys.
-// Vertex (ADC) is Morty-chat-only and contributes nothing here. The secret is always
-// (re)written — possibly empty — so it exists for the chart's envFrom (see helmInstall).
+// Stamp the per-user KEY-provider credentials and custom endpoints into the USER namespace as
+// the chart's teacherKeys secret (env-var name -> value), so they reach the server env
+// (model_catalog -> list_models + SDG teacher + eval), not just the Morty sandbox. Reflects the
+// CURRENT sets: providers or endpoints the user removed drop out, so a re-stamp clears stale
+// keys. The endpoints are read here so every stamp carries them. Vertex (ADC) is
+// Morty-chat-only and contributes nothing here. The secret is always (re)written — possibly
+// empty — so it exists for the chart's envFrom (see helmInstall).
 async function ensureServerKeySecret(ns, providers) {
   const data = {};
   for (const [name, cred] of Object.entries(providers)) {
     for (const [envName, val] of Object.entries(serverEnvForProvider(name, cred))) {
       if (val) data[envName] = Buffer.from(val).toString('base64');
     }
+  }
+  for (const [envName, val] of Object.entries(serverEnvForEndpoints(await readUserEndpoints(ns)))) {
+    data[envName] = Buffer.from(val).toString('base64');
   }
   const body = {
     apiVersion: 'v1',
@@ -934,11 +1034,28 @@ function validateCredential(provider, credential) {
 // optionally restart the server so it re-reads them, then recreate the Morty sandbox with
 // the full set (or delete it when none remain). No re-helm: teacherKeys is always wired
 // (see provision), so a secret update + restart is all the server needs.
-async function reconcileStack(ns, providers, { restart }) {
+async function reconcileStack(ns, providers, { restart, sandbox }) {
   await ensureServerKeySecret(ns, providers);
   if (restart) await restartServer(ns);
+  if (!sandbox) {
+    // Keep the stack 'provisioning' (clean 503s) until the restarted server answers, instead
+    // of flipping to ready while its pod is still starting. Recreating the sandbox below
+    // covers that window on the other path.
+    if (restart) await waitForRestartedServer(ns);
+    return;
+  }
   await run(OPENSHELL_BIN, ['-g', OPENSHELL_GATEWAY, 'sandbox', 'delete', mortyName(ns)], { timeout: OPENSHELL_TIMEOUT_MS }).catch(() => {});
   if (Object.keys(providers).length) await ensureSandbox(ns, providers);
+}
+
+async function waitForRestartedServer(ns) {
+  await new Promise((r) => setTimeout(r, 3000));
+  const deadline = Date.now() + 2 * 60 * 1000;
+  while (Date.now() < deadline) {
+    if (await serverAvailable(ns)) return;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(`server in ${ns} did not come back within 2 minutes of the restart`);
 }
 
 // Kick off a best-effort reconcile, tracked as the in-memory entry. A reconcile (server
@@ -950,17 +1067,21 @@ async function reconcileStack(ns, providers, { restart }) {
 // Crucially, a reconcile failure that leaves the SERVER up keeps the stack 'ready' (only
 // Morty/chat degraded) — it must NOT flip the whole stack to 'error' (that would 500 every
 // /api call, not just chat). Only a genuinely-down server yields 'error'.
-function startReconcile(ns, { restart }) {
+// `sandbox: false` (a custom-endpoint change) skips the Morty sandbox recreate; coalesced
+// follow-ups recreate it if any queued change needed it.
+function startReconcile(ns, { restart, sandbox = true }) {
   const active = reconcilers.get(ns);
   if (active) {
     active.pending.requested = true;
     active.pending.restart = active.pending.restart || restart;
+    active.pending.sandbox = active.pending.sandbox || sandbox;
     return active.entry;
   }
   const entry = { state: 'provisioning', error: null };
-  const pending = { requested: false, restart: false };
+  const pending = { requested: false, restart: false, sandbox: false };
   const drive = async () => {
     let doRestart = restart;
+    let doSandbox = sandbox;
     try {
       for (;;) {
         try {
@@ -968,7 +1089,7 @@ function startReconcile(ns, { restart }) {
           // like a reconcile failure, not reject the unobserved entry.promise (which would crash
           // Node for every user).
           const providers = await readUserProviders(ns);
-          await reconcileStack(ns, providers, { restart: doRestart });
+          await reconcileStack(ns, providers, { restart: doRestart, sandbox: doSandbox });
           entry.state = 'ready';
           entry.error = null;
         } catch (err) {
@@ -980,7 +1101,9 @@ function startReconcile(ns, { restart }) {
         if (!pending.requested) break;
         pending.requested = false;
         doRestart = pending.restart;
+        doSandbox = pending.sandbox;
         pending.restart = false;
+        pending.sandbox = false;
       }
     } finally {
       // Always deregister, even on an unexpected throw, so a later save starts a fresh driver
@@ -1061,6 +1184,63 @@ async function removeUserProvider(user, provider) {
   });
 }
 
+// Custom endpoints feed the server env through the per-user model-key secret, which is wired
+// only in the BYOK hybrid (Morty enabled; see provision).
+function customEndpointsEnabled() { return MORTY_ENABLED; }
+
+// Apply a saved endpoint set: restart the server so it reads the new env (Morty is untouched).
+// Before the stack exists the set is only persisted; provisioning stamps it.
+async function applyEndpointChange(ns, endpoints) {
+  const up = reconcilers.has(ns) || stacks.get(ns)?.state === 'ready' || (await serverAvailable(ns));
+  if (!up) {
+    return { ns, state: stacks.get(ns)?.state || 'unprovisioned', error: null, endpoints: listEndpoints(endpoints) };
+  }
+  const entry = startReconcile(ns, { restart: true, sandbox: false });
+  return { ns, state: entry.state, error: entry.error, endpoints: listEndpoints(endpoints) };
+}
+
+// Add or replace ONE custom endpoint (the others are preserved). Serialized with the provider
+// mutations, since both re-stamp the same server secret.
+async function setUserEndpoint(user, { name, baseURL, apiKey } = {}) {
+  if (!customEndpointsEnabled()) {
+    throw new Error('Custom endpoints are not available on this deployment (OpenShell mTLS certs not mounted)');
+  }
+  const endpoint = validateEndpoint(name, baseURL, apiKey);
+  const ns = nsForUser(user);
+  return withProviderLock(ns, async () => {
+    const current = await readUserEndpoints(ns);
+    if (!(endpoint.name in current) && Object.keys(current).length >= MAX_ENDPOINTS) {
+      throw new Error(`At most ${MAX_ENDPOINTS} custom endpoints; remove one first`);
+    }
+    const endpoints = { ...current, [endpoint.name]: { baseURL: endpoint.baseURL, apiKey: endpoint.apiKey } };
+    await writeUserEndpoints(ns, endpoints);
+    return applyEndpointChange(ns, endpoints);
+  });
+}
+
+async function removeUserEndpoint(user, name) {
+  if (!customEndpointsEnabled()) {
+    throw new Error('Custom endpoints are not available on this deployment (OpenShell mTLS certs not mounted)');
+  }
+  const ns = nsForUser(user);
+  return withProviderLock(ns, async () => {
+    const current = await readUserEndpoints(ns);
+    if (!(name in current)) {
+      return { ns, state: stacks.get(ns)?.state || 'unprovisioned', error: null, endpoints: listEndpoints(current) };
+    }
+    const endpoints = { ...current };
+    delete endpoints[name];
+    await writeUserEndpoints(ns, endpoints);
+    return applyEndpointChange(ns, endpoints);
+  });
+}
+
+// Names and base URLs for the settings UI (never the keys).
+async function getUserEndpoints(user) {
+  const ns = nsForUser(user);
+  return { ns, endpoints: listEndpoints(await readUserEndpoints(ns)) };
+}
+
 // Current provider status for the settings UI: which providers are supported and which the
 // user has configured (never returns the credential values).
 async function getProviderStatus(user) {
@@ -1069,4 +1249,7 @@ async function getProviderStatus(user) {
   return { ns, supported: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
 }
 
-module.exports = { ensureUserStack, getState, markForRetry, setUserProvider, removeUserProvider, getProviderStatus, nsForUser };
+module.exports = {
+  ensureUserStack, getState, markForRetry, setUserProvider, removeUserProvider, getProviderStatus, nsForUser,
+  customEndpointsEnabled, getUserEndpoints, setUserEndpoint, removeUserEndpoint,
+};

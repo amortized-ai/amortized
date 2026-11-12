@@ -20,6 +20,7 @@ from amortized.core.jobs import (
     JobNotFoundError,
     deserialize_handle,
     gpu_budget_error,
+    inline_credential_error,
 )
 from amortized.core.jobs import (
     cancel_job as core_cancel_job,
@@ -465,9 +466,10 @@ def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
             names = ", ".join(p["name"] for p in enabled_provider_defs()) or "none configured"
             errors.append(
                 f"{key}.base_url {base_url!r} is neither an http(s) URL nor a configured"
-                f" provider — set it to the model's provider name (one of: {names}) or to"
-                " the endpoint's full URL (get_eval_endpoint_suggestions lists the URLs of"
-                " pre-registered endpoints in known_endpoints)"
+                f" provider or custom endpoint — set it to one of: {names}, or to the URL of"
+                " an endpoint that needs no key (get_eval_endpoint_suggestions lists the URLs"
+                " of pre-registered endpoints in known_endpoints). An endpoint that needs an"
+                " API key must first be added under Settings > Custom endpoints."
             )
     return errors
 
@@ -815,8 +817,6 @@ async def create_eval_job(
         " Evaluation tab comparison group); pass `overrides` to change"
         " specific knobs (e.g. num_train_epochs, num_records). The caller"
         " confirms before this creates the job — it is not a silent dispatch."
-        " Note: external-endpoint API keys are not retained, so keyed"
-        " endpoints need resubmission."
     ),
 )
 async def retry_job(
@@ -939,6 +939,9 @@ async def validate_sdg_job(
 ) -> ValidatedJobConfig:
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
+    credential_error = inline_credential_error(config)
+    if credential_error:
+        raise HTTPException(status_code=422, detail=credential_error)
     # The config stores `<prompt:...>` refs (small at emission); resolve them to full
     # text for the review card only, keeping `config` ref-form for create to store.
     # Fail closed if a ref has no stored prompt — the card must show real text.
@@ -1259,6 +1262,9 @@ async def validate_training_job(
     errors = await _validate_training_data(config, parent_job_id, db)
     model_errors, model_warnings = await _validate_model_source(config, db)
     errors.extend(model_errors)
+    credential_error = inline_credential_error(config)
+    if credential_error:
+        errors.append(credential_error)
     budget_error = gpu_budget_error(JobType.training, config)
     if budget_error:
         errors.append(budget_error)
@@ -1348,6 +1354,9 @@ async def validate_eval_job(
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
     errors.extend(_validate_eval_endpoints(config))
+    credential_error = inline_credential_error(config)
+    if credential_error:
+        errors.append(credential_error)
     budget_error = gpu_budget_error(JobType.eval, config)
     if budget_error:
         errors.append(budget_error)

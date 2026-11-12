@@ -12,7 +12,10 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const { createProxyMiddleware, responseInterceptor } = require('http-proxy-middleware');
-const { ensureUserStack, getState, markForRetry, setUserProvider, removeUserProvider, getProviderStatus, nsForUser } = require('./provision');
+const {
+  ensureUserStack, getState, markForRetry, setUserProvider, removeUserProvider, getProviderStatus, nsForUser,
+  customEndpointsEnabled, getUserEndpoints, setUserEndpoint, removeUserEndpoint,
+} = require('./provision');
 const { renderSplash } = require('./splash');
 const { resolveUser, identityDebug } = require('./auth');
 
@@ -138,6 +141,43 @@ app.delete('/gateway/provider/:provider', async (req, res) => {
   try {
     const state = await removeUserProvider(user, req.params.provider);
     res.json({ user, ...state });
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
+// The caller's custom endpoints (OpenAI-compatible URL + key, reached by name from eval and
+// SDG jobs): names and base URLs only, never the keys. 404 = not available here, so the
+// settings card hides itself.
+app.get('/gateway/endpoints', async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'no authenticated user' });
+  if (!customEndpointsEnabled()) return res.status(404).json({ error: 'custom endpoints are not available on this deployment' });
+  try {
+    res.json({ user, ...(await getUserEndpoints(user)) });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Add or replace ONE custom endpoint. Like the provider route, the body is parsed only here
+// and the key is never logged or echoed back.
+app.post('/gateway/endpoints', express.json({ limit: '16kb' }), async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'no authenticated user' });
+  const { name, baseURL, apiKey } = req.body || {};
+  try {
+    res.json({ user, ...(await setUserEndpoint(user, { name, baseURL, apiKey })) });
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
+app.delete('/gateway/endpoints/:name', async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'no authenticated user' });
+  try {
+    res.json({ user, ...(await removeUserEndpoint(user, req.params.name)) });
   } catch (err) {
     res.status(400).json({ error: String(err.message || err) });
   }

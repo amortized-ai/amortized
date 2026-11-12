@@ -22,6 +22,7 @@ import { SearchInput } from "@/components/search-input"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { PrerequisitesCard } from "./components/prerequisites-card"
 import { ModelProviderCard } from "./components/model-provider-card"
+import { CustomEndpointsCard } from "./components/custom-endpoints-card"
 import { useModelProvider } from "./api/use-model-provider"
 import {
   useHealth,
@@ -289,6 +290,9 @@ export default function SettingsPage() {
 
       {/* Model Provider — per-user BYOK key that powers Morty (hybrid gateway) */}
       <ModelProviderCard />
+
+      {/* Custom Endpoints — keyed endpoints eval/SDG jobs reach by name (hybrid gateway) */}
+      <CustomEndpointsCard />
 
       {/* Connection Status */}
       <div id="section-system" className="scroll-mt-6">
