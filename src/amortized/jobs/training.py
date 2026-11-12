@@ -218,6 +218,13 @@ async def build(
         resources=Resources(gpus=gpus),
         image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
         resolved_config=dict(config),
+        # training-hub's sft/osft memory estimates assume expandable segments; without them
+        # the allocator fragments and reserves well beyond what it allocates.
+        env=(
+            {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
+            if algorithm in ("sft", "osft")
+            else {}
+        ),
     )
 
 

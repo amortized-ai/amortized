@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from amortized.config import settings
-from amortized.core.training_estimate import TrainingEstimateError, run_training_estimate
+from amortized.core.training_estimate import TrainingEstimateError, run_training_estimates
 
 logger = logging.getLogger("amortized.api.costs")
 
@@ -132,6 +132,11 @@ class TrainingEstimateRequest(BaseModel):
         "runs effective_batch_size // gradient_accumulation_steps samples",
     )
     lora_r: int = Field(32, ge=1, description="LoRA rank (lora/qlora only)")
+    enable_model_splitting: bool = Field(
+        True,
+        description="lora/qlora only: same value as the job config (default true). If false, "
+        "the job runs on one GPU, so every GPU count needs the single-GPU VRAM",
+    )
     unfreeze_rank_ratio: float = Field(
         0.2, ge=0.0, le=1.0, description="OSFT unfreeze ratio (osft only)"
     )
@@ -166,22 +171,78 @@ class TrainingEstimateResponse(BaseModel):
     summary=(
         "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the "
         "HuggingFace model id and method. Returns the single-GPU need and the per-GPU need "
-        "for 1/2/4/8 GPUs, to suggest nproc_per_node."
+        "for 1/2/4/8 GPUs, to suggest nproc_per_node. To compare several models or methods, "
+        "use estimate_training_resources_batch (one call for the whole card)."
     ),
 )
 async def estimate_training_resources(
     body: TrainingEstimateRequest,
 ) -> TrainingEstimateResponse:
-    method = _METHODS.get(body.method.lower())
-    if method is None:
+    if body.method.lower() not in _METHODS:
         raise HTTPException(status_code=400, detail=f"Unknown training method: {body.method}")
+    batch = await estimate_training_resources_batch(TrainingEstimateBatchRequest(requests=[body]))
+    (item,) = batch.estimates
+    if item.estimate is None:
+        raise HTTPException(status_code=502, detail=item.error)
+    return item.estimate
+
+
+class TrainingEstimateBatchRequest(BaseModel):
+    requests: list[TrainingEstimateRequest] = Field(..., min_length=1, max_length=32)
+
+
+class TrainingEstimateBatchItem(BaseModel):
+    estimate: TrainingEstimateResponse | None = None
+    error: str | None = Field(None, description="Why this entry could not be estimated")
+
+
+class TrainingEstimateBatchResponse(BaseModel):
+    estimates: list[TrainingEstimateBatchItem] = Field(..., description="In request order")
+
+
+@router.post(
+    "/training/estimate/batch",
+    response_model=TrainingEstimateBatchResponse,
+    operation_id="estimate_training_resources_batch",
+    summary=(
+        "Estimate several training jobs in one call (e.g. every candidate model, or every "
+        "method for the chosen model) — same fields per entry as estimate_training_resources. "
+        "A failed entry reports an error without failing the others."
+    ),
+)
+async def estimate_training_resources_batch(
+    body: TrainingEstimateBatchRequest,
+) -> TrainingEstimateBatchResponse:
+    items = [TrainingEstimateBatchItem() for _ in body.requests]
+    to_run: dict[int, dict[str, Any]] = {}
+    for i, r in enumerate(body.requests):
+        if r.method.lower() not in _METHODS:
+            items[i].error = f"Unknown training method: {r.method}"
+        else:
+            to_run[i] = _build_request(r)
+    if to_run:
+        try:
+            results = await run_training_estimates(list(to_run.values()))
+        except TrainingEstimateError as exc:
+            results = [{"error": str(exc)}] * len(to_run)
+        for i, result in zip(to_run, results, strict=True):
+            if "error" in result:
+                name = body.requests[i].model_name_or_path
+                items[i].error = f"Could not estimate {name!r} with training-hub: {result['error']}"
+            else:
+                items[i].estimate = _to_response(body.requests[i], result)
+    return TrainingEstimateBatchResponse(estimates=items)
+
+
+def _build_request(body: TrainingEstimateRequest) -> dict[str, Any]:
+    method = _METHODS[body.method.lower()]
 
     # lora/qlora run one process that takes effective_batch_size // gradient_accumulation_steps
     # samples per step (training-hub lora.py); sft/osft are bounded by max_tokens_per_gpu.
     batch_size = body.effective_batch_size
     if method in ("lora", "qlora"):
         batch_size = max(1, batch_size // body.gradient_accumulation_steps)
-    request = {
+    return {
         "model": body.model_name_or_path.strip(),
         "method": method,
         "batch_size": batch_size,
@@ -189,16 +250,12 @@ async def estimate_training_resources(
         "max_tokens_per_gpu": body.max_tokens_per_gpu or _DEFAULT_MAX_TOKENS_PER_GPU,
         "lora_r": body.lora_r,
         "unfreeze_rank_ratio": body.unfreeze_rank_ratio,
+        "enable_model_splitting": body.enable_model_splitting,
         "gpu_counts": list(_GPU_COUNTS),
     }
-    try:
-        result = await run_training_estimate(request)
-    except TrainingEstimateError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Could not estimate {body.model_name_or_path!r} with training-hub: {exc}",
-        ) from exc
 
+
+def _to_response(body: TrainingEstimateRequest, result: dict[str, Any]) -> TrainingEstimateResponse:
     to_gb = 1024**3
     low, mid, high = result["single_gpu"]
     return TrainingEstimateResponse(

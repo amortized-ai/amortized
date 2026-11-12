@@ -899,7 +899,7 @@
         "tags": [
           "costs"
         ],
-        "summary": "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the HuggingFace model id and method. Returns the single-GPU need and the per-GPU need for 1/2/4/8 GPUs, to suggest nproc_per_node.",
+        "summary": "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the HuggingFace model id and method. Returns the single-GPU need and the per-GPU need for 1/2/4/8 GPUs, to suggest nproc_per_node. To compare several models or methods, use estimate_training_resources_batch (one call for the whole card).",
         "operationId": "estimate_training_resources",
         "requestBody": {
           "content": {
@@ -918,6 +918,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrainingEstimateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/costs/training/estimate/batch": {
+      "post": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Estimate several training jobs in one call (e.g. every candidate model, or every method for the chosen model) \u2014 same fields per entry as estimate_training_resources. A failed entry reports an error without failing the others.",
+        "operationId": "estimate_training_resources_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingEstimateBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingEstimateBatchResponse"
                 }
               }
             }
@@ -2911,6 +2952,12 @@
             },
             "type": "array",
             "title": "Available Backends"
+          },
+          "gpu_budget": {
+            "type": "integer",
+            "title": "Gpu Budget",
+            "description": "Max GPUs one training job may use; 0 = CPU only",
+            "default": 0
           }
         },
         "type": "object",
@@ -6660,6 +6707,69 @@
         "title": "TraceType",
         "description": "Specifies the type of reasoning trace to capture for LLM columns.\n\nTraces capture the conversation history during LLM generation, which is\nuseful for debugging, analysis, and understanding model behavior.\n\nAttributes:\n    NONE: No trace is captured. This is the default.\n    LAST_MESSAGE: Only the final assistant message is captured.\n    ALL_MESSAGES: The full conversation history (system/user/assistant/tool)\n        is captured."
       },
+      "TrainingEstimateBatchItem": {
+        "properties": {
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainingEstimateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Why this entry could not be estimated"
+          }
+        },
+        "type": "object",
+        "title": "TrainingEstimateBatchItem"
+      },
+      "TrainingEstimateBatchRequest": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingEstimateRequest"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Requests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requests"
+        ],
+        "title": "TrainingEstimateBatchRequest"
+      },
+      "TrainingEstimateBatchResponse": {
+        "properties": {
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingEstimateBatchItem"
+            },
+            "type": "array",
+            "title": "Estimates",
+            "description": "In request order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "estimates"
+        ],
+        "title": "TrainingEstimateBatchResponse"
+      },
       "TrainingEstimateRequest": {
         "properties": {
           "model_name_or_path": {
@@ -6720,6 +6830,12 @@
             "title": "Lora R",
             "description": "LoRA rank (lora/qlora only)",
             "default": 32
+          },
+          "enable_model_splitting": {
+            "type": "boolean",
+            "title": "Enable Model Splitting",
+            "description": "lora/qlora only: same value as the job config (default true). If false, the job runs on one GPU, so every GPU count needs the single-GPU VRAM",
+            "default": true
           },
           "unfreeze_rank_ratio": {
             "type": "number",

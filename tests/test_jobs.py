@@ -6,6 +6,7 @@ import httpx
 import pytest
 from conftest import TEST_DATABASE_URL
 
+from amortized import main
 from amortized.main import app
 
 
@@ -424,6 +425,7 @@ class TestConfig:
         assert "mlflow_gateway_uri" in data
         assert "available_backends" in data
         assert "version" in data
+        assert data["gpu_budget"] == main._settings.gpu_budget
 
 
 class TestJobLogs:

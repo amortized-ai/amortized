@@ -127,6 +127,7 @@ const UI_TOOLS = new Set([
   "show_model_pricing",
   "show_prompt",
   "estimate_training_resources",
+  "estimate_training_resources_batch",
   "show_vram_estimate",
   "submit_recipe_job",
   "create_sdg_job",

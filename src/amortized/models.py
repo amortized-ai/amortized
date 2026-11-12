@@ -413,6 +413,7 @@ class ConfigResponse(BaseModel):
     mlflow_gateway_uri: str = ""
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)
+    gpu_budget: int = Field(0, description="Max GPUs one training job may use; 0 = CPU only")
 
 
 # ---------------------------------------------------------------------------
