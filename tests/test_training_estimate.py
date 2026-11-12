@@ -53,7 +53,7 @@ class TestEndpoint:
     async def test_reports_gpu_budget(
         self, calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(config_mod.settings, "gpu_budget", 3)
+        monkeypatch.setattr(costs.settings, "gpu_budget", 3)
         resp = await self._estimate(model_name_or_path="Qwen/Qwen3-8B")
         assert resp.gpu_budget == 3
 
