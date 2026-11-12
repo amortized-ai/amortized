@@ -228,6 +228,89 @@ class TestUpstreamDependencyPrecondition:
         assert "succeeded" in str(resp.json()).lower()
 
     @pytest.mark.asyncio
+    async def test_validate_training_rejects_gpu_over_budget(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The budget check used to run only at create (the user's Confirm click), so the
+        # agent never saw it; the validate tool now 422s and names the knob to change.
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        body = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "./data.parquet",
+            "train_on_gpu": True,
+        }
+        resp = await client.post("/api/v1/jobs/training/validate", json=body)
+        assert resp.status_code == 422
+        assert "set train_on_gpu=false" in str(resp.json())
+
+        resp = await client.post(
+            "/api/v1/jobs/training/validate", json={**body, "train_on_gpu": False}
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_gpu_over_budget(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An eval that serves its model in-pod needs a GPU; with none in the budget the
+        # validate tool must say so instead of the create call failing at Confirm.
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        body = {"model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct", "eval_data_path": "./e.jsonl"}
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        detail = str(resp.json())
+        assert "per-user GPU budget is 0" in detail
+        # nproc_per_node can't go below 1, so a zero budget points at an endpoint instead.
+        assert "evaluate through an endpoint" in detail
+        assert "reduce nproc_per_node" not in detail
+
+    @pytest.mark.asyncio
+    async def test_training_rejects_parent_and_data_run_together(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Both set once trained on the parent's full SDG output, held-out rows included.
+        # The agent-facing validate tool and create both 422 and name the one to keep.
+        body = {
+            **TRAINING_BODY,
+            "data_path": "",
+            "parent_job_id": "abc-123",
+            "data_run_id": "d" * 32,
+        }
+        for path in ("/api/v1/jobs/training/validate", "/api/v1/jobs/training"):
+            resp = await client.post(path, json=body)
+            assert resp.status_code == 422
+            detail = str(resp.json())
+            assert "keep data_run_id" in detail
+            assert "remove parent_job_id" in detail
+
+    @pytest.mark.asyncio
+    async def test_retry_legacy_training_with_both_sources_keeps_data_run(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A training job stored before both data sources were rejected carries a parent
+        # and a data_run_id. Retrying it must not hit a 422 the caller can't act on (the
+        # stored parent wins over overrides): the retry keeps data_run_id, drops the parent.
+        created = await _create_training(client, data_run_id="d" * 32, data_path="")
+        job_id = created.json()["id"]
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE jobs SET status = 'failed', parent_job_id = 'legacy-sdg' WHERE id = $1",
+                job_id,
+            )
+        resp = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert resp.status_code == 201, resp.text
+        new_job = resp.json()
+        assert new_job["config"]["data_run_id"] == "d" * 32
+        assert not new_job.get("parent_job_id")
+
+    @pytest.mark.asyncio
     async def test_validate_eval_rejects_unsucceeded_dataset_parent(
         self, client: httpx.AsyncClient
     ) -> None:
@@ -294,12 +377,11 @@ class TestEvalConfirmCardFacts:
         assert "data_record_count" not in data["config"]
 
     @pytest.mark.asyncio
-    async def test_validate_eval_record_count_prefers_parent_over_eval_data_run(
+    async def test_validate_eval_record_count_prefers_eval_data_run_over_parent(
         self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # With BOTH a parent and eval_data_run_id set, the eval job scores the PARENT's
-        # dataset — resolve_parent_artifacts injects the parent output as eval_data_path
-        # unconditionally — so the card's count must be the parent's run, not eval_data_run_id.
+        # With BOTH a parent and eval_data_run_id set, the eval job scores eval_data_run_id
+        # (e.g. a held-out split; the parent stays lineage only), so the card counts it.
         import amortized.api.jobs as jobs_mod
         import amortized.db.connection as _db_conn
         from amortized.db.repository import Repository
@@ -329,8 +411,8 @@ class TestEvalConfirmCardFacts:
         resp = await client.post("/api/v1/jobs/eval/validate", json=body)
         assert resp.status_code == 200, resp.text
         assert resp.json()["data_record_count"] == 150
-        # The parent's run wins over eval_data_run_id (matches resolve_parent_artifacts).
-        assert seen == ["parent-run-xyz"]
+        # eval_data_run_id wins over the parent's run (matches resolve_parent_artifacts).
+        assert seen == [eval_run]
 
 
 class TestListJobs:
@@ -440,3 +522,39 @@ class TestJobLogs:
     async def test_logs_nonexistent_job(self, client: httpx.AsyncClient) -> None:
         response = await client.get("/api/v1/jobs/nonexistent/logs")
         assert response.status_code == 404
+
+
+class TestEvalEndpointBaseUrl:
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_unknown_base_url(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # "gateway" is neither a URL nor a configured provider: the eval pod called it as
+        # a URL and every sample errored. The validate tool now 422s with usable names.
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        body = {
+            "eval_data_path": "./e.jsonl",
+            "endpoint": {"base_url": "gateway", "model": "gpt-4o-mini"},
+            "judge": {"base_url": "gateway", "model": "gpt-4o-mini"},
+            "rubric": [{"name": "relevance", "description": "stays on topic"}],
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        detail = str(resp.json())
+        assert "endpoint.base_url 'gateway' is neither" in detail
+        assert "judge.base_url 'gateway' is neither" in detail
+        assert "openai" in detail
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_accepts_provider_name_and_url(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        body = {
+            "eval_data_run_id": "e" * 32,
+            "endpoint": {"base_url": "openai", "model": "gpt-4o-mini"},
+            "judge": {"base_url": "https://llm.example.com/v1", "model": "judge-model"},
+            "rubric": [{"name": "relevance", "description": "stays on topic"}],
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 200, resp.json()

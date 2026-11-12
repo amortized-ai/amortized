@@ -106,6 +106,23 @@ class TestCreateJob:
         assert "train_on_gpu" not in str(exc.value)
 
     @pytest.mark.asyncio
+    async def test_zero_budget_does_not_suggest_reducing_nproc(
+        self, repo: Repository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # nproc_per_node is at least 1, so with no GPU budget "reduce nproc_per_node" can't
+        # be followed; the error says what can run instead.
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        with pytest.raises(InvalidJobStateError, match="only CPU training") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.training,
+                config={"algorithm": "sft", "model_name_or_path": "t", "data_path": "t.jsonl"},
+            )
+        assert "reduce nproc_per_node" not in str(exc.value)
+
+    @pytest.mark.asyncio
     async def test_create_rejects_embedding_gpu_over_budget_names_train_on_gpu(
         self, repo: Repository, monkeypatch: pytest.MonkeyPatch
     ) -> None:

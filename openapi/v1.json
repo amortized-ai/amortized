@@ -281,7 +281,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Do NOT call signal_subagent_completion in this turn \u2014 wait for the user. Any hyperparameter you mention to the user must be an explicit field in this config; fields you leave unset use the trainer default and the card shows them as such \u2014 do not state a value you did not set. Set parent_job_id to chain from a completed SDG job.",
+        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Do NOT call signal_subagent_completion in this turn \u2014 wait for the user. Any hyperparameter you mention to the user must be an explicit field in this config; fields you leave unset use the trainer default and the card shows them as such \u2014 do not state a value you did not set. Set parent_job_id to chain from a completed SDG job, or data_run_id to train on a dataset run (upload or split) \u2014 never both.",
         "description": "Validate a training job config without creating it.",
         "operationId": "validate_training_job",
         "requestBody": {
@@ -1613,7 +1613,7 @@
         "tags": [
           "eval"
         ],
-        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and gateway models. Eval jobs with a training_job_id or model_name_or_path serve the model themselves.",
+        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and any pre-registered serving endpoints (known_endpoints; empty when none are configured). A model from list_models is evaluated with endpoint.base_url set to its provider name. Eval jobs with a training_job_id or model_name_or_path serve the model themselves.",
         "operationId": "get_eval_endpoint_suggestions",
         "parameters": [
           {
@@ -1729,7 +1729,7 @@
         "tags": [
           "models"
         ],
-        "summary": "List available models (MLflow AI Gateway, or direct providers via dropped-in keys).",
+        "summary": "List available models and the provider each one belongs to.",
         "operationId": "list_models",
         "responses": {
           "200": {

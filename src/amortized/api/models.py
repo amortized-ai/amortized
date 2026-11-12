@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api/v1", tags=["models"])
     "/models",
     response_model=ModelsResponse,
     operation_id="list_models",
-    summary="List available models (MLflow AI Gateway, or direct providers via dropped-in keys).",
+    summary="List available models and the provider each one belongs to.",
 )
 async def list_models() -> ModelsResponse:
     tracking_uri = config_mod.settings.mlflow_tracking_uri

@@ -20,9 +20,11 @@ router = APIRouter(prefix="/api/v1/eval", tags=["eval"])
     operation_id="get_eval_endpoint_suggestions",
     summary=(
         "Suggest eval endpoints: model-name defaults for a training job"
-        " (base from its config, tuned from its registered model) and"
-        " gateway models. Eval jobs with a training_job_id or"
-        " model_name_or_path serve the model themselves."
+        " (base from its config, tuned from its registered model) and any"
+        " pre-registered serving endpoints (known_endpoints; empty when none"
+        " are configured). A model from list_models is evaluated with"
+        " endpoint.base_url set to its provider name. Eval jobs with a"
+        " training_job_id or model_name_or_path serve the model themselves."
     ),
 )
 async def get_eval_endpoint_suggestions(

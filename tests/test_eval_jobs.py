@@ -157,6 +157,26 @@ class TestCreateEvalJob:
 
 class TestClassificationEvalBuilder:
     @pytest.mark.asyncio
+    async def test_eval_scores_eval_data_run_even_with_parent(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # The worker's sequence: with a parent SDG job AND eval_data_run_id, the eval
+        # downloads eval_data_run_id (e.g. a held-out split), not the parent's output.
+        job = {"id": "e2", "type": "eval", "parent_job_id": "sdg-1"}
+        config = {
+            "eval_mode": "classification",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "eval_data_run_id": "split-run",
+            "class_labels": ["A", "B"],
+        }
+        config, parent_pre = await _resolve_parent_artifacts(job, config)
+        result = await eval_builder.build(job, config, {})
+        downloads = [c for c in parent_pre + result.pre_commands if "artifacts download" in c]
+        assert downloads == [
+            "mlflow artifacts download -r split-run -a generated_data -d /amortized/work/eval_data"
+        ]
+
+    @pytest.mark.asyncio
     async def test_build_classification_eval_base_model(self) -> None:
         import json
 
@@ -781,6 +801,28 @@ class TestRetryEvalJob:
         assert "eval_data_path" not in config
         assert "port" not in config
         assert config["topic"] == "rfe"
+
+    @pytest.mark.asyncio
+    async def test_retry_rejects_unresolvable_endpoint_base_url(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A job stored before endpoint validation existed can carry base_url "gateway";
+        # retrying it hits the same 422 as create instead of failing every sample.
+        job_id = await self._seed_failed_eval(client)
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE jobs
+                      SET request_config = jsonb_set(
+                          request_config, '{judge}',
+                          '{"base_url": "gateway", "model": "judge-model"}'::jsonb)
+                    WHERE id = $1""",
+                job_id,
+            )
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert response.status_code == 422
+        assert "judge.base_url 'gateway' is neither" in response.text
 
     @pytest.mark.asyncio
     async def test_retry_legacy_row_strips_runtime_keys(

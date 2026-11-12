@@ -29,6 +29,8 @@ logger = logging.getLogger("amortized.api.evals")
 
 router = APIRouter(prefix="/api/v1/evaluations", tags=["evaluations"])
 
+CLASSIFICATION_METRICS = ("accuracy", "macro_f1")
+
 
 def _tags(run: dict[str, Any]) -> dict[str, str]:
     return {t["key"]: t["value"] for t in run.get("data", {}).get("tags", [])}
@@ -52,6 +54,10 @@ def _metric_set_signature(cfg: dict[str, Any]) -> str:
     so those evals must not share a comparison group.
     """
     metrics = sorted(m for m in (cfg.get("metrics") or []) if m)
+    if not metrics and cfg.get("eval_mode") == "classification":
+        # The classification runner always reports these (classify_eval.py); they are
+        # never listed in the config, which otherwise counts as "0 metrics".
+        metrics = list(CLASSIFICATION_METRICS)
     rubric = sorted(
         (c.get("name", ""), c.get("description", "") or "")
         for c in (cfg.get("rubric") or [])

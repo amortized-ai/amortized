@@ -183,6 +183,18 @@ async def build(
 
     config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
 
+    # Raw SDG parquet uses large_string columns, which leave embedding_sft's encoded
+    # labels as strings (training crashes with "too many dimensions 'str'"). Only the
+    # job's own downloaded copy is rewritten, never a caller-supplied data_path.
+    data_path = str(config.get("data_path") or "")
+    if algorithm == "embedding_sft" and data_path.startswith("/amortized/work/"):
+        assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+        with open(os.path.join(assets_dir, "normalize_parquet_strings.py")) as f:
+            config_files["normalize_parquet_strings.py"] = f.read()
+        model_pre_commands.append(
+            f"python3 /amortized/normalize_parquet_strings.py {shlex.quote(data_path)}"
+        )
+
     if resume_parent is not None:
         parent_config = resume_parent.get("config") or {}
         config["model_name_or_path"] = str(

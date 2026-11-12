@@ -201,26 +201,33 @@ async def resolve_parent_artifacts(
     from amortized.db.repository import Repository
     from amortized.models import JobType
 
-    # A direct dataset run reference (uploaded dataset or split) works
-    # without a parent job — mirror the parent-based download below.
+    # A direct dataset run reference (uploaded dataset or split) is what a training
+    # job trains on, with or without a parent job: a parent SDG run's full output
+    # would also include any rows a split held out for evaluation.
+    data_run_id = str(config.get("data_run_id", "") or "")
+    if job["type"] == JobType.training.value and data_run_id and not config.get("data_path"):
+        local_dir = "/amortized/work/data"
+        config = dict(config)
+        config["data_path"] = f"{local_dir}/generated_data"
+        download_cmd = (
+            f"mlflow artifacts download"
+            f" -r {shlex.quote(data_run_id)}"
+            f" -a generated_data"
+            f" -d {shlex.quote(local_dir)}"
+        )
+        logger.info(
+            "Will download training data from MLflow run %s to %s",
+            data_run_id,
+            local_dir,
+        )
+        return config, [download_cmd]
+
+    # Likewise an eval scores its explicit eval_data_run_id (the eval builder downloads
+    # it); a parent then stays lineage only, feeding reusable-set naming/recipe matching.
+    if job["type"] == JobType.eval.value and config.get("eval_data_run_id"):
+        return config, []
+
     if not parent_job_id:
-        data_run_id = str(config.get("data_run_id", "") or "")
-        if job["type"] == JobType.training.value and data_run_id and not config.get("data_path"):
-            local_dir = "/amortized/work/data"
-            config = dict(config)
-            config["data_path"] = f"{local_dir}/generated_data"
-            download_cmd = (
-                f"mlflow artifacts download"
-                f" -r {shlex.quote(data_run_id)}"
-                f" -a generated_data"
-                f" -d {shlex.quote(local_dir)}"
-            )
-            logger.info(
-                "Will download training data from MLflow run %s to %s",
-                data_run_id,
-                local_dir,
-            )
-            return config, [download_cmd]
         return config, []
 
     async with get_pool().acquire() as conn:

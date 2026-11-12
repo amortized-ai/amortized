@@ -58,6 +58,10 @@ class LocalBackend:
                     "/amortized/patch_model_config.py",
                     os.path.join(work_dir, "patch_model_config.py"),
                 )
+                .replace(
+                    "/amortized/normalize_parquet_strings.py",
+                    os.path.join(work_dir, "normalize_parquet_strings.py"),
+                )
                 .replace("/amortized/work", work_dir)
                 .replace("python3.11", sys.executable)
             )
