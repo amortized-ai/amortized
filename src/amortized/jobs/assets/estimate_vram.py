@@ -9,7 +9,8 @@ last line of stdout:
 
 All values are bytes. The flags passed to estimate() match how amortized runs each method:
 sft/osft use mini_trainer FSDP (count_fsdp_gather), osft runs without Liger kernels, and
-multi-GPU lora/qlora use model splitting (device_map="balanced").
+multi-GPU lora/qlora use model splitting (device_map="balanced"), for which training-hub
+returns the busiest GPU's memory.
 
 Usage: python3 estimate_vram.py '<request json>'
 """
@@ -21,33 +22,13 @@ import sys
 import warnings
 from importlib.metadata import version
 
-import torch
 from training_hub.profiling import memory_estimator as me
-from transformers import AutoConfig, AutoModel
 
 warnings.filterwarnings("ignore")
 
-_num_params: list[int] = []
-
-
-def _load_model_from_config(self, warn: str, trust_remote_code: bool = False) -> None:
-    """training-hub's _load_model downloads the full weights for any model missing from
-    its CSV cache. Build the same AutoModel on the meta device from config.json instead
-    (a few KB), which gives identical parameter shapes and counts."""
-    config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=trust_remote_code)
-    with torch.device("meta"):
-        self.model = AutoModel.from_config(config, trust_remote_code=trust_remote_code)
-    self.num_params = self.model.num_parameters(only_trainable=False)
-    self.num_trainable_params = self.model.num_parameters(only_trainable=True)
-    text_config = config.get_text_config()
-    self.num_layers = text_config.num_hidden_layers
-    self.hidden_size = text_config.hidden_size
-    _num_params.append(self.num_params)
-
-
-me.BasicEstimator._load_model = _load_model_from_config
-# The CSV cache lives in site-packages, which may not be writable in the job container.
-me.BasicEstimator._update_model_storage = lambda self: None
+# training-hub caches each model's sizes in a CSV. Its default location may not be
+# writable in the job container, so keep the cache in /tmp.
+me.MODEL_STORAGE_PATH = "/tmp/training_hub_model_storage.csv"
 
 
 def main(request: str) -> None:
@@ -71,6 +52,15 @@ def main(request: str) -> None:
         kwargs["enable_model_splitting"] = True
 
     single_gpu = me.estimate(num_gpus=1, **kwargs)
+    # The estimator builds the model on the meta device from config.json (no weight
+    # download) and counts the lm_head of untied models. This reuses the cached sizes.
+    num_params = me.BasicEstimator(
+        num_gpus=1,
+        model_path=req["model"],
+        batch_size=req["batch_size"],
+        max_seq_len=req["max_seq_len"],
+        verbose=0,
+    ).num_params
     per_gpu = {
         str(n): single_gpu[1] if n == 1 else me.estimate(num_gpus=n, **kwargs)[1]
         for n in req["gpu_counts"]
@@ -79,7 +69,7 @@ def main(request: str) -> None:
         json.dumps(
             {
                 "training_hub_version": version("training-hub"),
-                "num_params": _num_params[0],
+                "num_params": int(num_params),
                 "single_gpu": [int(x) for x in single_gpu],
                 "per_gpu": {k: int(v) for k, v in per_gpu.items()},
             }
