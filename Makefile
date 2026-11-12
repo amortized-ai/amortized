@@ -6,7 +6,19 @@ STUDIO_DIR    ?= $(REPO_ROOT)/studio
 SERVER_IMAGE  ?= ghcr.io/amortized-ai/amortized:latest
 STUDIO_IMAGE  ?= ghcr.io/amortized-ai/studio:latest
 
-.PHONY: help build build-server build-studio prompt deploy-dev lint typecheck test
+# Eval Hub benchmark catalog (vendored) and the adapter image it is checked against
+EVALHUB_CATALOG_COMMIT ?= 9a18b91657dae635d9ed56a2075ec1b808eb6345
+EVALHUB_DIR            := deploy/helm/amortized/files/evalhub
+LIGHTEVAL_IMAGE        ?= $(shell sed -n 's/^ *lightEvalImage: *//p' deploy/helm/amortized/values.yaml)
+LM_EVAL_IMAGE          ?= $(shell sed -n 's/^ *lmEvalImage: *//p' deploy/helm/amortized/values.yaml)
+EVALHUB_PROVIDERS      := amortized-lm-eval amortized-lighteval
+# Where make evalhub-conform runs: the server pod, with Hub, MLflow and a GPU quota.
+EVALHUB_KUBECTL        ?= kubectl
+EVALHUB_SERVER         ?= deploy/amortized-server
+EVALHUB_POD_DIR        ?= /data/conformance
+EVALHUB_CONFORM_ARGS   ?=
+
+.PHONY: help build build-server build-studio prompt deploy-dev lint typecheck test evalhub-catalog evalhub-describe evalhub-describe-lighteval evalhub-describe-lm-eval evalhub-conform evalhub-contract
 
 # ──────────────────────────────────────────────
 # Help
@@ -101,3 +113,53 @@ typecheck: ## Run type checker (mypy)
 
 test: ## Run test suite (pytest)
 	pytest tests/
+
+# The benchmark contract, re-built when an adapter image pin or the catalog commit changes:
+#   evalhub-catalog → evalhub-describe → evalhub-conform → evalhub-contract → review REPORT.md
+evalhub-catalog: ## Vendor Eval Hub's LightEval and lm-eval catalogs at EVALHUB_CATALOG_COMMIT (then rebuild the contract)
+	for name in lighteval lm_evaluation_harness; do \
+	  { printf '# Verbatim copy of https://github.com/eval-hub/eval-hub/blob/%s/config/providers/%s.yaml\n' $(EVALHUB_CATALOG_COMMIT) $$name; \
+	    printf '# Refresh with `make evalhub-catalog`; the Helm template overrides only id, runtime and resources.\n'; \
+	    curl -fsSL https://raw.githubusercontent.com/eval-hub/eval-hub/$(EVALHUB_CATALOG_COMMIT)/config/providers/$$name.yaml; \
+	  } > $(EVALHUB_DIR)/$$name.yaml.tmp && mv $(EVALHUB_DIR)/$$name.yaml.tmp $(EVALHUB_DIR)/$$name.yaml || exit 1; \
+	done
+
+# Needs network: LightEval's task registry downloads files when it loads, and both
+# helpers resolve Hugging Face dataset names to their canonical repo. No GPU.
+evalhub-describe: evalhub-describe-lighteval evalhub-describe-lm-eval ## Record what each benchmark needs, read from the task configs inside each pinned adapter image
+
+evalhub-describe-lighteval:
+	docker run --rm --entrypoint python -e HF_HOME=/tmp/hf \
+	  -v $(REPO_ROOT)/scripts/evalhub:/helper:ro -v $(REPO_ROOT)/$(EVALHUB_DIR):/catalog:ro \
+	  $(LIGHTEVAL_IMAGE) /helper/lighteval_compat.py --catalog /catalog/lighteval.yaml \
+	  --catalog-commit $(EVALHUB_CATALOG_COMMIT) --adapter-image $(LIGHTEVAL_IMAGE) \
+	  > $(EVALHUB_DIR)/described/amortized-lighteval.json.tmp
+	mv $(EVALHUB_DIR)/described/amortized-lighteval.json.tmp $(EVALHUB_DIR)/described/amortized-lighteval.json
+
+evalhub-describe-lm-eval:
+	docker run --rm --entrypoint /opt/app-root/bin/python -e HF_HOME=/tmp/hf_home -e HOME=/tmp/lmes \
+	  -v $(REPO_ROOT)/scripts/evalhub:/helper:ro -v $(REPO_ROOT)/$(EVALHUB_DIR):/catalog:ro \
+	  $(LM_EVAL_IMAGE) /helper/lm_eval_compat.py --catalog /catalog/lm_evaluation_harness.yaml \
+	  --catalog-commit $(EVALHUB_CATALOG_COMMIT) --adapter-image $(LM_EVAL_IMAGE) \
+	  > $(EVALHUB_DIR)/described/amortized-lm-eval.json.tmp
+	mv $(EVALHUB_DIR)/described/amortized-lm-eval.json.tmp $(EVALHUB_DIR)/described/amortized-lm-eval.json
+
+# Runs in the server pod of a deployment whose Hub registers the pinned images (one GPU,
+# hours). Resumes where it stopped; the pod keeps its copy of the evidence in EVALHUB_POD_DIR.
+# Example: make evalhub-conform EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-<user>"
+evalhub-conform: ## Run every benchmark a served model can take through Eval Hub and record what each adapter reports
+	@for p in $(EVALHUB_PROVIDERS); do \
+	  $(EVALHUB_KUBECTL) exec -i $(EVALHUB_SERVER) -c server -- sh -c "mkdir -p $(EVALHUB_POD_DIR) && cat > $(EVALHUB_POD_DIR)/$$p.described.json" < $(EVALHUB_DIR)/described/$$p.json || exit 1; \
+	  if [ -s $(EVALHUB_DIR)/conformance/$$p.json ] && ! $(EVALHUB_KUBECTL) exec $(EVALHUB_SERVER) -c server -- test -s $(EVALHUB_POD_DIR)/$$p.json; then \
+	    $(EVALHUB_KUBECTL) exec -i $(EVALHUB_SERVER) -c server -- sh -c "cat > $(EVALHUB_POD_DIR)/$$p.json" < $(EVALHUB_DIR)/conformance/$$p.json || exit 1; \
+	  fi; \
+	  $(EVALHUB_KUBECTL) exec $(EVALHUB_SERVER) -c server -- python -m amortized.integrations.evalhub.conformance \
+	    --provider $$p --described $(EVALHUB_POD_DIR)/$$p.described.json --evidence $(EVALHUB_POD_DIR)/$$p.json $(EVALHUB_CONFORM_ARGS); \
+	  status=$$?; \
+	  $(EVALHUB_KUBECTL) exec $(EVALHUB_SERVER) -c server -- sh -c "test ! -s $(EVALHUB_POD_DIR)/$$p.json || cat $(EVALHUB_POD_DIR)/$$p.json" > $(EVALHUB_DIR)/conformance/$$p.json.tmp \
+	    && { [ -s $(EVALHUB_DIR)/conformance/$$p.json.tmp ] && mv $(EVALHUB_DIR)/conformance/$$p.json.tmp $(EVALHUB_DIR)/conformance/$$p.json || rm -f $(EVALHUB_DIR)/conformance/$$p.json.tmp; }; \
+	  [ $$status -eq 0 ] || exit $$status; \
+	done
+
+evalhub-contract: ## Pick each benchmark's score from the conformance evidence; write compat/, REPORT.md and Studio's fixture
+	python -m amortized.integrations.evalhub.contract

@@ -14,6 +14,7 @@ import type {
 } from "@/lib/api-client"
 import { useDatasets, fetchDatasetByRun } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
+import { isRunAverage } from "@/features/jobs/lib/format"
 import type { DatasetRecord } from "@/types/api"
 
 interface EvaluationDetailPanelProps {
@@ -104,13 +105,14 @@ export function EvaluationDetailPanel({
                 Dataset
               </span>
               <button
+                disabled={!group.dataset.run_id}
                 type="button"
                 data-testid="eval-dataset-link"
                 onClick={() => {
                   onOpenChange(false)
                   setTimeout(() => navigate(`/datasets?run=${encodeURIComponent(group.dataset.run_id)}`), 200)
                 }}
-                className="inline-flex items-center gap-1 text-sm text-primary hover:underline text-right"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline text-right disabled:text-foreground disabled:no-underline"
               >
                 {group.dataset.name}
                 <ArrowRight className="h-3 w-3 shrink-0" />
@@ -257,9 +259,22 @@ export function EvaluationDetailPanel({
                   <tr key={row.name} className="border-b last:border-b-0">
                     <td className="px-4 py-3 font-medium sticky left-0 bg-card z-10">
                       {row.name}
+                      {row.name === group.primary_metric && (
+                        <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-normal text-primary">
+                          primary
+                        </span>
+                      )}
+                      {group.metric_metadata?.[row.name] && (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {group.metric_metadata[row.name]!.unit}
+                          {group.metric_metadata[row.name]!.direction && ` · ${group.metric_metadata[row.name]!.direction} is better`}
+                        </span>
+                      )}
                     </td>
                     {modelColumns.map((col) => {
                       const cell = row.cells[`${col.model}::${col.configKey}`]
+                      const metadata = group.metric_metadata?.[row.name]
+                      const fraction = !metadata || metadata.unit === "fraction"
                       return (
                         <td key={`${col.model}::${col.configKey}`} className="px-4 py-3">
                           {cell == null ? (
@@ -270,18 +285,18 @@ export function EvaluationDetailPanel({
                                 className="font-medium tabular-nums"
                                 title={
                                   cell.values.length > 1
-                                    ? `runs: ${cell.values.map((v) => formatScore(v)).join(", ")}`
+                                    ? `runs: ${cell.values.map((v) => formatScore(v, fraction)).join(", ")}`
                                     : undefined
                                 }
                               >
-                                {formatScore(cell.mean)}
+                                {formatScore(cell.mean, fraction)}
                                 {cell.std != null && (
                                   <span className="ml-1 text-xs font-normal text-muted-foreground">
-                                    ±{formatScore(cell.std!)}
+                                    ±{formatScore(cell.std!, fraction)}
                                   </span>
                                 )}
                               </span>
-                              <ScoreBar value={cell.mean} />
+                              {fraction && <ScoreBar value={cell.mean} />}
                             </div>
                           )}
                         </td>
@@ -294,7 +309,9 @@ export function EvaluationDetailPanel({
           </div>
 
           <p className="mt-3 text-xs text-muted-foreground">
-            Scores are 0–1 (0–100%); higher is better. Job IDs link to the Jobs page.
+            {group.metric_metadata
+              ? "Metrics retain their reported units and direction. Job IDs link to the Jobs page."
+              : "Scores are 0–1 (0–100%); higher is better. Job IDs link to the Jobs page."}
           </p>
         </div>
       </DialogContent>
@@ -326,8 +343,8 @@ function ScoreBar({ value }: { value: number }) {
   )
 }
 
-function formatScore(value: number): string {
-  return `${Math.round(value * 1000) / 10}%`
+function formatScore(value: number, fraction = true): string {
+  return fraction ? `${Math.round(value * 1000) / 10}%` : `${Number(value.toPrecision(6))}`
 }
 
 interface ModelColumn {
@@ -426,15 +443,19 @@ function buildMetricRows(group: EvaluationGroup): {
   name: string
   cells: Record<string, ScoreStat | null>
 }[] {
+  const primary = group.primary_metric
   const names = new Set<string>()
   for (const e of group.evals) {
-    for (const key of Object.keys(e.scores)) names.add(key)
+    for (const key of Object.keys(e.scores)) {
+      if (!primary || !isRunAverage(key, primary)) names.add(key)
+    }
   }
-  // Keep the group's declared metric order first, then any extras
-  const ordered = [
+  // The benchmark's score first, then the group's declared metric order, then any extras
+  const declared = [
     ...group.metric_names.filter((n) => names.has(n)),
     ...[...names].filter((n) => !group.metric_names.includes(n)).sort(),
   ]
+  const ordered = primary && names.has(primary) ? [primary, ...declared.filter((n) => n !== primary)] : declared
   const columns = mergeEvalColumns(group.evals)
   return ordered.map((name) => ({
     name,

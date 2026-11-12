@@ -429,6 +429,7 @@ async def build(
         "max_samples": config.get("max_samples", 0),
         "judge_max_samples": config.get("judge_max_samples", 0),
         "temperature": config.get("temperature", 0.0),
+        "evaluation": config.get("evaluation") or {},
         "output_dir": "/amortized/work/results",
     }
     config_files["config.json"] = json.dumps(runner_config)

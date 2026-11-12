@@ -20,7 +20,7 @@ rules:
       verbs: ["get", "list", "watch"]
     - apiGroups: [""]
       resources: ["secrets", "configmaps"]
-      verbs: ["create", "get", "patch", "delete"]
+      verbs: ["create", "get", "patch", "update", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -37,11 +37,27 @@ subjects:
   - kind: ServiceAccount
     name: amortized-server
     namespace: {{ .Values.namespace }}
+{{- if and .Values.evalhub.url .Values.evalhub.operator.apiRole }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-evalhub-client
+  namespace: {{ .Values.jobsNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.evalhub.operator.apiRole }}
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server
+    namespace: {{ .Values.namespace }}
+{{- end }}
 {{- if .Values.mlflow.enterprise.enabled }}
 ---
 {{- /*
 RHOAI enterprise MLflow workspace access. The bindings live in the MLflow workspace namespace
-(mlflow.enterprise.workspace, defaulting to .Values.namespace) so they match the
+(mlflow.enterprise.workspace; default jobsNamespace with Eval Hub on, else .Values.namespace) so they match the
 X-MLFLOW-WORKSPACE header. The operator SSAR splits read (view) / write (edit), so bind both
 ClusterRoles. Subjects: the server SA and the dispatched-job SA (`default` in the jobs
 namespace) — cross-namespace SA subjects are valid and let the job's bearer token +
@@ -65,6 +81,11 @@ subjects:
   - kind: ServiceAccount
     name: default
     namespace: {{ .Values.jobsNamespace }}
+  {{- with .Values.evalhub.operator.jobServiceAccount }}
+  - kind: ServiceAccount
+    name: {{ . }}
+    namespace: {{ $.Values.jobsNamespace }}
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -84,4 +105,9 @@ subjects:
   - kind: ServiceAccount
     name: default
     namespace: {{ .Values.jobsNamespace }}
+  {{- with .Values.evalhub.operator.jobServiceAccount }}
+  - kind: ServiceAccount
+    name: {{ . }}
+    namespace: {{ $.Values.jobsNamespace }}
+  {{- end }}
 {{- end }}

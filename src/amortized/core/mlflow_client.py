@@ -70,14 +70,35 @@ class _MLflowAuth:
         return headers
 
 
+def gateway_mlflow_client() -> MLflowClient | None:
+    """Client for the MLflow that hosts the AI gateway in ``gateway_url``.
+
+    Jobs reach gateway models through ``gateway_url``, so list them from that same
+    MLflow; a list read anywhere else can name endpoints the jobs' gateway lacks.
+    It can differ from the tracking MLflow (e.g. a shared gateway next to a
+    private, workspaced tracking server); then it gets no token or workspace.
+    Without a recognizable ``gateway_url``, this is the tracking MLflow, as before.
+    """
+    settings = config_mod.settings
+    tracking = settings.mlflow_tracking_uri.rstrip("/")
+    gateway_url = settings.gateway_url
+    if "/gateway/" in gateway_url:
+        base = gateway_url.split("/gateway/", 1)[0].rstrip("/")
+        if base and base != tracking:
+            return MLflowClient(base, auth=False)
+    return MLflowClient(tracking) if tracking else None
+
+
 class MLflowClient:
     """Thin async wrapper around the MLflow REST API."""
 
-    def __init__(self, tracking_uri: str, timeout: float = 30.0) -> None:
+    def __init__(self, tracking_uri: str, timeout: float = 30.0, *, auth: bool = True) -> None:
         self._base = tracking_uri.rstrip("/")
         self._timeout = timeout
         self._artifact_prefix_cache: dict[str, str] = {}
-        self._auth = _MLflowAuth.from_settings()
+        # auth=False is for an MLflow other than the tracking one: the token and
+        # workspace in settings belong to the tracking MLflow only.
+        self._auth = _MLflowAuth.from_settings() if auth else _MLflowAuth("", "", True)
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(

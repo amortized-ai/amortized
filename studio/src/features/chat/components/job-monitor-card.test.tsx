@@ -43,6 +43,25 @@ beforeEach(() => {
   getJobLogs.mockResolvedValue(["=== EVAL-STAGE: serving ==="])
 })
 
+describe("JobMonitorCard — engine handoff", () => {
+  it("keeps cancellation pending without firing a terminal completion", async () => {
+    getJob.mockResolvedValue({ ...job("running"), cancel_requested: true })
+    const complete = vi.fn()
+    render(<JobMonitorCard jobId="engine-job" jobType="EVAL" onComplete={complete} />)
+    await waitFor(() => expect(screen.getByText(/Cancellation requested/)).toBeInTheDocument())
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it("shows an unresolved submission and continues monitoring", async () => {
+    getJob.mockResolvedValue({ ...job("provisioning"), execution_phase: "uncertain", execution_sync_error: "No exact submission match visible yet" })
+    const complete = vi.fn()
+    render(<JobMonitorCard jobId="engine-job" jobType="EVAL" onComplete={complete} />)
+    await waitFor(() => expect(screen.getByText("Verifying evaluation submission")).toBeInTheDocument())
+    expect(screen.getByText("No exact submission match visible yet")).toBeInTheDocument()
+    expect(complete).not.toHaveBeenCalled()
+  })
+})
+
 describe("JobMonitorCard — eval jobs with embedded serving", () => {
   it("shows the serve stage from log markers while the model loads", async () => {
     render(

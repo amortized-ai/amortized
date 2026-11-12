@@ -89,6 +89,16 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            {{- if and .Values.evalhub.url .Values.evalhub.caConfigMap }}
+            - name: evalhub-ca
+              mountPath: /etc/evalhub-ca
+              readOnly: true
+            {{- end }}
+            {{- if .Values.evalhub.url }}
+            - name: evalhub-compat
+              mountPath: /etc/amortized/evalhub-compat
+              readOnly: true
+            {{- end }}
             {{- if and .Values.mlflow.enterprise.enabled (not .Values.mlflow.enterprise.insecureTls) }}
             - name: mlflow-ca
               mountPath: /etc/mlflow-ca
@@ -121,6 +131,16 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: amortized-server-data
+        {{- if and .Values.evalhub.url .Values.evalhub.caConfigMap }}
+        - name: evalhub-ca
+          configMap:
+            name: {{ .Values.evalhub.caConfigMap }}
+        {{- end }}
+        {{- if .Values.evalhub.url }}
+        - name: evalhub-compat
+          configMap:
+            name: amortized-evalhub-compat
+        {{- end }}
         {{- if and .Values.mlflow.enterprise.enabled (not .Values.mlflow.enterprise.insecureTls) }}
         # Service-CA bundle to verify the RHOAI MLflow TLS cert (auto-present configmap on OpenShift).
         - name: mlflow-ca

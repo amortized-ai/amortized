@@ -9,6 +9,8 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from amortized.evaluation.spec import EvaluationDefinition
+
 logger = logging.getLogger(__name__)
 
 
@@ -157,20 +159,15 @@ class TrainingJobConfig(BaseModel):
             " 'category' for the embedding-classifier SDG datasets."
         ),
     )
-    loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = (
-        Field(
-            None,
-            description=(
-                "embedding_sft contrastive loss: batch_all_triplet, "
-                "batch_hard_triplet, or mnrl"
-            ),
-        )
+    loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = Field(
+        None,
+        description=(
+            "embedding_sft contrastive loss: batch_all_triplet, batch_hard_triplet, or mnrl"
+        ),
     )
     batch_sampler: Literal["group_by_label", "no_duplicates", "default"] | None = Field(
         None,
-        description=(
-            "embedding_sft batch sampler: group_by_label, no_duplicates, or default"
-        ),
+        description=("embedding_sft batch sampler: group_by_label, no_duplicates, or default"),
     )
     warmup_ratio: float | None = Field(
         None,
@@ -264,6 +261,11 @@ class Job(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     retry_of: str = ""
+    execution_owner: str = "native"
+    cancel_requested: bool = False
+    execution_sync_error: str = ""
+    execution_observed_at: str | None = None
+    execution_phase: str = ""
 
 
 class PromptView(BaseModel):
@@ -281,6 +283,18 @@ class PromptView(BaseModel):
     # to the exact config slot.
     column: str
     text: str
+
+
+class BenchmarkView(BaseModel):
+    """Benchmark facts the eval confirmation card shows, from the server's catalog."""
+
+    id: str
+    name: str
+    metric: str = ""
+    no_score: str = ""  # why the benchmark has no score, when metric is empty
+    num_few_shot: int | None = None
+    max_samples: int | None = None
+    recipe_fingerprint: str = ""
 
 
 class ValidatedJobConfig(BaseModel):
@@ -308,6 +322,8 @@ class ValidatedJobConfig(BaseModel):
     # rendered as "trainer default" on the confirmation card. Kept out of `config` (never
     # re-submitted to the create endpoint). Empty for non-training validate paths.
     trainer_default_fields: list[str] = Field(default_factory=list)
+    # The pinned benchmark (eval benchmark jobs only); None otherwise.
+    benchmark: BenchmarkView | None = None
 
 
 class RecipeSummary(BaseModel):
@@ -571,6 +587,10 @@ class EvalRubricCriterion(BaseModel):
 class EvalJobConfig(BaseModel):
     model_config = {"extra": "allow"}
 
+    # None retains the existing rubric/embedding request contract. The server
+    # chooses execution ownership, never the model or the browser.
+    evaluation: "EvaluationDefinition | None" = None
+
     rubric: list[EvalRubricCriterion] = Field(
         default_factory=list,
         description=(
@@ -681,9 +701,7 @@ class EvalJobConfig(BaseModel):
     )
     label_column: str = Field(
         "label",
-        description=(
-            "Name of the label column in the eval dataset (classification mode)"
-        ),
+        description=("Name of the label column in the eval dataset (classification mode)"),
     )
     anchors_per_class: int = Field(
         16,
@@ -728,6 +746,28 @@ class EvalJobConfig(BaseModel):
                     "class_labels must be unique; duplicate name(s) would merge"
                     f" per-class metrics: {sorted(dupes)}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def check_evaluation_definition(self) -> "EvalJobConfig":
+        from amortized.evaluation.spec import BenchmarkEvaluation, TaskEvaluation
+
+        if isinstance(self.evaluation, BenchmarkEvaluation):
+            if self.eval_mode == "classification":
+                raise ValueError("benchmark and anchor/query classification modes are distinct")
+            if self.rubric:
+                raise ValueError("benchmark scoring is defined by its provider, not a task rubric")
+            if self.temperature != 0.0 or self.judge_max_samples or self.judge:
+                raise ValueError("benchmark generation/scoring settings belong to its provider")
+            from amortized.evaluation.spec import benchmark_limit
+
+            selected_limit = benchmark_limit(self.evaluation.parameters)
+            if self.max_samples and selected_limit and self.max_samples != selected_limit:
+                raise ValueError("Conflicting task and benchmark sample limits")
+        if isinstance(self.evaluation, TaskEvaluation):
+            names = [r.name for r in self.rubric]
+            if len(names) != len(set(names)):
+                raise ValueError("rubric criterion names must be unique")
         return self
 
     @model_validator(mode="after")
@@ -807,6 +847,7 @@ class DatasetSplitRequest(BaseModel):
     complement_name: str = Field(
         "", description="Label for the complement dataset (default: derived)"
     )
+
 
 class DatasetMergeRequest(BaseModel):
     """Merge several datasets into one dataset.

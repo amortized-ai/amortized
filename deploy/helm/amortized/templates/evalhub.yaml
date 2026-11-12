@@ -1,0 +1,124 @@
+{{- if .Values.evalhub.url }}
+---
+# The benchmark contract per pinned adapter image: what each benchmark needs, what it
+# reported when run through Eval Hub, and its score (make evalhub-contract; see
+# files/evalhub/REPORT.md). The server reads it at request time.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-evalhub-compat
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: server
+data:
+  {{- (.Files.Glob "files/evalhub/compat/*.json").AsConfig | nindent 2 }}
+{{- end }}
+{{- if .Values.evalhub.operator.createInstance }}
+---
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: EvalHub
+metadata:
+  name: {{ .Values.evalhub.operator.name }}
+  namespace: {{ required "evalhub.operator.namespace is required" .Values.evalhub.operator.namespace }}
+spec:
+  replicas: 1
+  database:
+    type: postgresql
+    secret: {{ required "evalhub.operator.databaseSecret with db-url is required" .Values.evalhub.operator.databaseSecret }}
+  providers:
+    - amortized
+    - amortized-lm-eval
+    - amortized-lighteval
+  env:
+    - name: MLFLOW_TRACKING_URI
+      value: {{ include "amortized.mlflowTrackingUri" . | quote }}
+    {{- if .Values.mlflow.enterprise.enabled }}
+    - name: MLFLOW_TOKEN_PATH
+      value: /var/run/secrets/kubernetes.io/serviceaccount/token
+    - name: MLFLOW_WORKSPACE
+      value: {{ .Values.jobsNamespace | quote }}
+    {{- end }}
+{{- end }}
+{{- if .Values.evalhub.operator.createProviders }}
+{{- $operatorNamespace := required "evalhub.operator.namespaceForProviders is required" .Values.evalhub.operator.namespaceForProviders }}
+{{- $taskImage := required "Pin evalhub.operator.taskAdapterImage to a built image digest" .Values.evalhub.operator.taskAdapterImage }}
+{{- if not (contains "@sha256:" $taskImage) }}
+{{- fail "evalhub.operator.taskAdapterImage must use an immutable digest" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-evalhub-task-provider
+  namespace: {{ $operatorNamespace }}
+  labels:
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: amortized
+data:
+  amortized.yaml: |
+    id: amortized
+    name: Amortized task evaluation v1
+    description: Versioned deterministic, rubric and anchor/query task scoring
+    runtime:
+      k8s:
+        image: {{ $taskImage | quote }}
+        image_pull_policy: if_not_present
+        entrypoint: [python, -m, amortized.evaluation.adapter]
+        cpu_request: 1000m
+        cpu_limit: 4000m
+        memory_request: 2Gi
+        memory_limit: 8Gi
+    benchmarks:
+      - id: task
+        name: User-approved task recipe
+        description: Dataset snapshot, scorer versions and optional approved-rubric judge
+{{- /* The upstream Eval Hub catalogs, vendored verbatim at a pinned commit. Only the
+id and runtime are replaced, so each registered adapter is its pinned image. */}}
+{{- /* Both adapters run through files/evalhub/adapter_launcher.py, which makes their
+       overall_score the catalog's primary_score metric, the score Hub and Amortized use. */}}
+{{- $launcher := dict "name" "AMORTIZED_ADAPTER_LAUNCHER" "value" (.Files.Get "files/evalhub/adapter_launcher.py") }}
+{{- $adapters := list
+      (dict "id" "amortized-lm-eval" "catalog" "lm_evaluation_harness.yaml" "value" "lmEvalImage"
+            "image" .Values.evalhub.operator.lmEvalImage
+            "entrypoint" (list "/bin/sh" "-c" "mkdir -p /tmp/lmes && cp /opt/app-root/src/main.py /tmp/lmes/ && exec /opt/app-root/bin/python -c \"$AMORTIZED_ADAPTER_LAUNCHER\" /tmp/lmes/main.py")
+            "env" (list (dict "name" "HF_HOME" "value" "/tmp/hf_home") (dict "name" "HOME" "value" "/tmp/lmes") $launcher))
+      (dict "id" "amortized-lighteval" "catalog" "lighteval.yaml" "value" "lightEvalImage"
+            "image" .Values.evalhub.operator.lightEvalImage
+            "entrypoint" (list "/bin/sh" "-c" "exec python -c \"$AMORTIZED_ADAPTER_LAUNCHER\" main.py")
+            "env" (list $launcher)) }}
+{{- range $adapters }}
+{{- if not (contains "@sha256:" .image) }}
+{{- fail (printf "evalhub.operator.%s must use an immutable digest" .value) }}
+{{- end }}
+{{- $provider := $.Files.Get (printf "files/evalhub/%s" .catalog) | fromYaml }}
+{{- $_ := set $provider "id" .id }}
+{{- /* The lm-eval image's HOME, HF_HOME and main.py's output/ folder are writable only by
+       OpenShift's group-0 UIDs, and Hub sets no pod group. Running the pinned main.py from a
+       copy under /tmp lets it write results under any UID. */}}
+{{- $runtime := dict
+      "image" .image
+      "image_pull_policy" "if_not_present"
+      "entrypoint" .entrypoint
+      "cpu_request" "500m" "cpu_limit" "4000m"
+      "memory_request" "4Gi" "memory_limit" "8Gi" }}
+{{- if .env }}{{ $_ := set $runtime "env" .env }}{{ end }}
+{{- $_ := set $provider "runtime" (dict "k8s" $runtime) }}
+{{- $compat := $.Files.Get (printf "files/evalhub/compat/%s.json" .id) | fromJson }}
+{{- if ne (get $compat "adapter_digest") (regexReplaceAll "^[^@]*@" .image "") }}
+{{- fail (printf "files/evalhub/compat/%s.json describes a different adapter image than evalhub.operator.%s; run make evalhub-describe evalhub-conform evalhub-contract" .id .value) }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-provider" (replace "amortized-" "amortized-evalhub-" .id) }}
+  namespace: {{ $operatorNamespace }}
+  labels:
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: {{ .id }}
+data:
+  {{ .id }}.yaml: |
+    {{- toYaml $provider | nindent 4 }}
+{{- end }}
+{{- end }}

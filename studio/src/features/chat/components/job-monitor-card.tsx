@@ -95,6 +95,9 @@ function formatElapsed(ms: number): string {
 export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }: JobMonitorCardProps) {
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
+  const [cancelRequested, setCancelRequested] = useState(false)
+  const [syncError, setSyncError] = useState("")
+  const [executionPhase, setExecutionPhase] = useState("")
   const [mlflowRunId, setMlflowRunId] = useState<string>("")
   // Eval jobs that serve the model themselves print stage markers into the
   // job logs (=== EVAL-STAGE: serving | waiting-for-endpoint | evaluating ===)
@@ -130,6 +133,9 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
     try {
       const job = await getJob(jobId)
       setStatus(job.status)
+      setCancelRequested(Boolean(job.cancel_requested))
+      setSyncError(job.execution_sync_error ?? "")
+      setExecutionPhase(job.execution_phase ?? "")
       if (job.error) setError(job.error)
       if (job.mlflow_run_id) setMlflowRunId(job.mlflow_run_id)
       if (job.started_at) {
@@ -259,8 +265,15 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
       {/* Stage */}
       <p className="text-xs text-muted-foreground mb-2">
-        {statusToStageLabel(status, jobType, stageMarker)}
+        {cancelRequested && !isTerminal
+          ? "Cancellation requested — waiting for the execution to stop"
+          : executionPhase === "uncertain" || executionPhase === "submitting"
+            ? "Verifying evaluation submission"
+            : executionPhase === "preparing"
+              ? "Preparing evaluation data and model"
+              : statusToStageLabel(status, jobType, stageMarker)}
       </p>
+      {syncError && <p className="text-xs text-muted-foreground mb-2">{syncError}</p>}
 
       {/* Progress bar */}
       <div className="h-2 w-full rounded-full bg-rh-gray-20 dark:bg-rh-gray-70 mb-2">

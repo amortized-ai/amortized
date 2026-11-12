@@ -13,6 +13,17 @@ export interface PromptView {
   text: string
 }
 
+// The pinned benchmark the eval card shows, from the server's catalog (not Morty's wording).
+export interface BenchmarkView {
+  id: string
+  name: string
+  metric: string
+  noScore: string
+  numFewShot: number | null
+  maxSamples: number | null
+  recipeFingerprint: string
+}
+
 export interface ProposedAction {
   action: string
   description: string
@@ -30,6 +41,8 @@ export interface ProposedAction {
   // Every reviewable system prompt in the recipe (input generators + output),
   // rendered verbatim so the user reviews all of them, not just the output.
   prompts?: PromptView[]
+  // Eval benchmark jobs: the pinned benchmark as the server resolved it.
+  benchmark?: BenchmarkView | null
 }
 
 export interface ToolResult {

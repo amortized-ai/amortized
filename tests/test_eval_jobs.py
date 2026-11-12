@@ -955,6 +955,10 @@ class TestEvalEndpointSuggestions:
 
         with (
             patch("amortized.api.eval.MLflowClient", FakeClient),
+            patch(
+                "amortized.api.eval.gateway_mlflow_client",
+                lambda: FakeClient("http://mlflow:5000"),
+            ),
             patch.object(config_mod.settings, "mlflow_tracking_uri", "http://mlflow:5000"),
             patch.object(config_mod.settings, "gateway_url", "http://gw:5000/v1"),
         ):

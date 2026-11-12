@@ -89,6 +89,20 @@ describe("EvaluationTable", () => {
 })
 
 describe("EvaluationDetailPanel", () => {
+  it("keeps MAE in raw units and disables dataset navigation for framework-owned data", () => {
+    const group = makeGroup({
+      dataset: {run_id: "", name: "GSM8K"},
+      metric_names: ["mae"],
+      metric_metadata: {mae: {unit: "reference units", direction: "lower"}},
+      evals: [makeEntry({scores: {mae: 3.5}})],
+    })
+    render(<EvaluationDetailPanel group={group} open={true} onOpenChange={vi.fn()} />, {wrapper})
+    expect(screen.getByText("3.5")).toBeInTheDocument()
+    expect(screen.queryByText("350%")).not.toBeInTheDocument()
+    expect(screen.getByText(/lower is better/)).toBeInTheDocument()
+    expect(screen.getByTestId("eval-dataset-link")).toBeDisabled()
+  })
+
   it("renders the model comparison table with scores (one row per model)", () => {
     const group = makeGroup({
       evals: [

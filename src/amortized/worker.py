@@ -328,6 +328,11 @@ async def _finish_mlflow_run(
 
 
 async def _run_job(job: dict[str, Any]) -> None:
+    if job.get("execution_owner") == "evalhub":
+        from amortized.integrations.evalhub.lifecycle import run_job
+
+        await run_job(job)
+        return
     job_id = job["id"]
     job_type = job["type"]
     now = datetime.now(UTC)
@@ -663,6 +668,11 @@ async def _poll_and_finalize(
 
 async def _resume_job(job: dict[str, Any]) -> None:
     """Resume polling a job a previous worker left in-flight (after a restart)."""
+    if job.get("execution_owner") == "evalhub":
+        from amortized.integrations.evalhub.lifecycle import run_job
+
+        await run_job(job)
+        return
     job_id = job["id"]
     job_type = job["type"]
     handle = deserialize_handle(job.get("backend_handle"))
@@ -720,6 +730,15 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
         repo = Repository(conn)
         inflight = await repo.list_jobs(status=JobStatus.running, k8s_namespace=ns)
         inflight += await repo.list_jobs(status=JobStatus.provisioning, k8s_namespace=ns)
+        cleanup_rows = await conn.fetch(
+            """SELECT j.* FROM jobs j JOIN evalhub_executions e ON j.id = e.job_id
+               WHERE j.k8s_namespace = $1 AND j.execution_owner = 'evalhub'
+                 AND e.state = 'cleanup' AND j.status IN ('succeeded', 'failed', 'cancelled')""",
+            ns,
+        )
+        from amortized.db.repository import _row_to_job
+
+        inflight += [_row_to_job(row) for row in cleanup_rows]
 
     now = datetime.now(UTC)
 
@@ -773,6 +792,9 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
 
     resumable: list[dict[str, Any]] = []
     for job in inflight:
+        if job.get("execution_owner") == "evalhub":
+            resumable.append(job)
+            continue
         handle = deserialize_handle(job.get("backend_handle"))
         reconstructed = False
         if handle is None:

@@ -22,8 +22,7 @@ def _parse_ts(value: str | datetime | None) -> datetime | None:
 # worker-side. COALESCE guards against a source-less upload (NULL IN (...) is NULL,
 # which would silently exclude the job and hang it in queued).
 _WORKER_ELIGIBLE_FILTER = (
-    "AND NOT (type = 'upload' "
-    "AND COALESCE(config->>'source', '') IN ('upload', 'split', 'merge'))"
+    "AND NOT (type = 'upload' AND COALESCE(config->>'source', '') IN ('upload', 'split', 'merge'))"
 )
 
 
@@ -44,6 +43,7 @@ class Repository:
         k8s_namespace: str = "",
         request_config: dict[str, Any] | None = None,
         retry_of: str = "",
+        execution_owner: str = "native",
     ) -> dict[str, Any]:
         # request_config is the pre-dispatch snapshot the worker never
         # touches (it overwrites jobs.config with resolved/injected
@@ -52,8 +52,8 @@ class Repository:
         await self.conn.execute(
             """INSERT INTO jobs
                (id, type, status, config, recipe, parent_job_id, user_id,
-                created_at, k8s_namespace, request_config, retry_of)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11)""",
+                created_at, k8s_namespace, request_config, retry_of, execution_owner)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)""",
             job_id,
             job_type.value,
             JobStatus.queued.value,
@@ -65,13 +65,22 @@ class Repository:
             k8s_namespace,
             json.dumps(snapshot),
             retry_of,
+            execution_owner,
         )
         result = await self.get_job(job_id)
         assert result is not None
         return result
 
     async def get_job(self, job_id: str) -> dict[str, Any] | None:
-        row = await self.conn.fetchrow("SELECT * FROM jobs WHERE id = $1", job_id)
+        row = await self.conn.fetchrow(
+            """SELECT j.*, COALESCE(e.cancel_requested, false) AS cancel_requested,
+                      COALESCE(e.sync_error, '') AS execution_sync_error,
+                      e.observed_at AS execution_observed_at,
+                      COALESCE(e.state, '') AS execution_phase
+               FROM jobs j LEFT JOIN evalhub_executions e ON j.id = e.job_id
+               WHERE j.id = $1""",
+            job_id,
+        )
         if row is None:
             return None
         return _row_to_job(row)
@@ -108,7 +117,12 @@ class Repository:
         job_type: JobType | None = None,
         k8s_namespace: str = "",
     ) -> list[dict[str, Any]]:
-        query = "SELECT * FROM jobs"
+        query = (
+            "SELECT jobs.*, COALESCE(e.cancel_requested, false) AS cancel_requested, "
+            "COALESCE(e.sync_error, '') AS execution_sync_error, "
+            "e.observed_at AS execution_observed_at, COALESCE(e.state, '') AS execution_phase "
+            "FROM jobs LEFT JOIN evalhub_executions e ON jobs.id = e.job_id"
+        )
         params: list[Any] = []
         conditions: list[str] = []
         idx = 1
@@ -132,6 +146,16 @@ class Repository:
 
         rows = await self.conn.fetch(query, *params)
         return [_row_to_job(row) for row in rows]
+
+    async def scrub_eval_credentials(self, job_id: str) -> None:
+        """Keep semantic snapshots immutable while erasing transferred BYOK values."""
+        paths = " #- '{endpoint,api_key}' #- '{judge,api_key}'"
+        paths += " #- '{endpoint_base,api_key}' #- '{endpoint_tuned,api_key}'"
+        await self.conn.execute(
+            f"UPDATE jobs SET config = config{paths}, request_config = request_config{paths} "
+            "WHERE id = $1 AND execution_owner = 'evalhub'",
+            job_id,
+        )
 
     _UPDATABLE_COLUMNS: ClassVar[set[str]] = {
         "status",
@@ -193,7 +217,9 @@ class Repository:
                        )
                        RETURNING *"""
             params: tuple[str, ...] = (
-                JobStatus.provisioning.value, JobStatus.queued.value, k8s_namespace,
+                JobStatus.provisioning.value,
+                JobStatus.queued.value,
+                k8s_namespace,
             )
         else:
             query = f"""UPDATE jobs SET status = $1
@@ -249,9 +275,7 @@ class Repository:
         rows = await self.conn.fetch(query, *params)
         return [_row_to_job(row) for row in rows]
 
-    async def claim_job(
-        self, job_id: str, k8s_namespace: str = ""
-    ) -> dict[str, Any] | None:
+    async def claim_job(self, job_id: str, k8s_namespace: str = "") -> dict[str, Any] | None:
         """Atomically move a specific queued job to provisioning.
 
         Returns the job if this caller won the claim, else None (a concurrent
@@ -263,21 +287,28 @@ class Repository:
                 """UPDATE jobs SET status = $1
                    WHERE id = $2 AND status = $3 AND k8s_namespace = $4
                    RETURNING *""",
-                JobStatus.provisioning.value, job_id, JobStatus.queued.value, k8s_namespace,
+                JobStatus.provisioning.value,
+                job_id,
+                JobStatus.queued.value,
+                k8s_namespace,
             )
         else:
             row = await self.conn.fetchrow(
                 """UPDATE jobs SET status = $1
                    WHERE id = $2 AND status = $3
                    RETURNING *""",
-                JobStatus.provisioning.value, job_id, JobStatus.queued.value,
+                JobStatus.provisioning.value,
+                job_id,
+                JobStatus.queued.value,
             )
         if row is None:
             return None
         return _row_to_job(row)
 
     async def delete_job(self, job_id: str) -> bool:
-        result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
+        async with self.conn.transaction():
+            await self.conn.execute("DELETE FROM evalhub_executions WHERE job_id = $1", job_id)
+            result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
         return result == "DELETE 1"
 
     # --- Prompt store (#541) -------------------------------------------------
@@ -359,7 +390,7 @@ def _row_to_job(row: Any) -> dict[str, Any]:
     d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
     if d.get("error") in ("", "None"):
         d["error"] = None
-    for ts_field in ("created_at", "started_at", "completed_at"):
+    for ts_field in ("created_at", "started_at", "completed_at", "execution_observed_at"):
         val = d.get(ts_field)
         if isinstance(val, datetime):
             d[ts_field] = val.isoformat()

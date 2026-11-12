@@ -31,6 +31,22 @@ data:
   {{- end }}
   AMORTIZED_GATEWAY_URL: {{ include "amortized.gatewayUrl" . | quote }}
   AMORTIZED_S3_BUCKET: {{ .Values.s3.bucket | quote }}
+  {{- with .Values.evalhub.url }}
+  AMORTIZED_EVALHUB_URL: {{ . | quote }}
+  AMORTIZED_EVALHUB_TOKEN_FILE: {{ $.Values.evalhub.tokenFile | quote }}
+  AMORTIZED_EVALHUB_TENANT: {{ $.Values.jobsNamespace | quote }}
+  AMORTIZED_EVALHUB_STAGING_BUCKET: {{ default $.Values.s3.bucket $.Values.evalhub.stagingBucket | quote }}
+  AMORTIZED_EVALHUB_S3_SECRET: {{ $.Values.evalhub.s3Secret | quote }}
+  AMORTIZED_EVALHUB_POLL_INTERVAL: {{ $.Values.evalhub.pollInterval | quote }}
+  AMORTIZED_EVALHUB_PREPARATION_TIMEOUT: {{ $.Values.evalhub.preparationTimeout | quote }}
+  AMORTIZED_EVALHUB_PROVIDERS: {{ $.Values.evalhub.providers | toJson | quote }}
+  AMORTIZED_EVALHUB_COMPAT_DIR: "/etc/amortized/evalhub-compat"
+  AMORTIZED_EVALHUB_TASK_PROVIDER: {{ $.Values.evalhub.taskProvider | quote }}
+  AMORTIZED_EVALHUB_EXPERIMENT: {{ $.Values.evalhub.experiment | quote }}
+  {{- if $.Values.evalhub.caConfigMap }}
+  AMORTIZED_EVALHUB_CA_BUNDLE: {{ printf "/etc/evalhub-ca/%s" $.Values.evalhub.caKey | quote }}
+  {{- end }}
+  {{- end }}
   {{- if include "amortized.teacherKeysSecret" . }}
   AMORTIZED_FORWARD_ENV: {{ .Values.teacherKeys.forward | toJson | quote }}
   {{- end }}

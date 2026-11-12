@@ -177,6 +177,17 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   if (recordsLabel && typeof action.dataRecordCount === "number") {
     summary.push([recordsLabel, action.dataRecordCount.toLocaleString()])
   }
+  // A benchmark's facts come from the server's pinned recipe, so the user approves
+  // exactly what will run (recipe = short fingerprint checked again on Confirm).
+  if (action.jobType === "eval" && action.benchmark) {
+    const b = action.benchmark
+    summary.push(["Benchmark", b.name])
+    if (b.metric) summary.push(["Primary metric", b.metric])
+    else if (b.noScore) summary.push(["Primary metric", `none: ${b.noScore}`])
+    if (b.numFewShot !== null) summary.push(["Few-shot", String(b.numFewShot)])
+    summary.push(["Questions", b.maxSamples !== null ? String(b.maxSamples) : "all"])
+    if (b.recipeFingerprint) summary.push(["Recipe", b.recipeFingerprint])
+  }
 
   return (
     <Card className="border-primary/30 bg-primary/5 overflow-hidden">

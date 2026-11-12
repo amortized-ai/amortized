@@ -264,6 +264,7 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         dataRecordCount: validated.dataRecordCount,
         outputPrompt: validated.outputPrompt,
         prompts: validated.prompts,
+        benchmark: validated.benchmark,
       }
     }
   }
