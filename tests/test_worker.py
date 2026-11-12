@@ -663,6 +663,25 @@ class TestTrainingHubConfig:
         assert "max_batch_len" not in parsed
         assert "data_output_dir" not in parsed
         assert "train_on_gpu" not in parsed
+        # unset lora_target_modules is not emitted (training-hub picks PEFT defaults / all-linear)
+        assert "lora_target_modules" not in parsed
+
+    def test_thub_config_yaml_classifier_sft_lora_target_modules(self) -> None:
+        # globally skip-keyed (the generative LoRA path doesn't take it) but classifier_sft does
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "classifier_sft",
+            "model_name_or_path": "answerdotai/ModernBERT-base",
+            "use_peft": True,
+            "lora_target_modules": ["Wqkv", "Wo"],
+            "output_dir": "/output",
+        }
+        parsed = yaml.safe_load(_training_hub_config_yaml("classifier_sft", config))
+        assert parsed["lora_target_modules"] == ["Wqkv", "Wo"]
+        # other algorithms keep skipping it
+        sft = yaml.safe_load(_training_hub_config_yaml("osft", {**config, "algorithm": "osft"}))
+        assert "lora_target_modules" not in sft
 
     async def test_algorithm_aliases_map_to_subcommand(self) -> None:
         from amortized.jobs.training import build

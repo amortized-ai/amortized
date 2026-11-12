@@ -134,6 +134,11 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.pop("data_output_dir", None)
         if config.get("use_peft") is not None:
             thub_config["use_peft"] = config["use_peft"]
+        # lora_target_modules is globally skipped too (the generative LoRA path doesn't take
+        # it), but classifier_sft does; unset -> training-hub uses PEFT's per-architecture
+        # targets, falling back to all-linear (e.g. ModernBERT, Qwen3.5).
+        if config.get("lora_target_modules"):
+            thub_config["lora_target_modules"] = list(config["lora_target_modules"])
 
     result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
     return result

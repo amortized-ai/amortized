@@ -140,6 +140,13 @@ class TrainingJobConfig(BaseModel):
     lora_r: int | None = Field(None, ge=1, description="LoRA rank")
     lora_alpha: int | None = Field(None, ge=1, description="LoRA alpha")
     lora_dropout: float | None = Field(None, description="LoRA dropout rate")
+    lora_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "classifier_sft with use_peft: module names to apply LoRA to. Unset (recommended)"
+            " uses PEFT's per-architecture targets, falling back to all-linear."
+        ),
+    )
     unfreeze_rank_ratio: float | None = Field(
         None, description="OSFT: fraction of weights trainable (default 0.2)"
     )

@@ -7117,6 +7117,21 @@
             "title": "Lora Dropout",
             "description": "LoRA dropout rate"
           },
+          "lora_target_modules": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora Target Modules",
+            "description": "classifier_sft with use_peft: module names to apply LoRA to. Unset (recommended) uses PEFT's per-architecture targets, falling back to all-linear."
+          },
           "unfreeze_rank_ratio": {
             "anyOf": [
               {
