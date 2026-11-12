@@ -877,6 +877,12 @@ async def retry_job(
     # a parent_job_id override would otherwise be stored unvalidated (linking the
     # retry to a missing or unfinished parent).
     parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
+    # Training jobs created before both data sources were rejected can carry a parent and a
+    # data_run_id; keep the data_run_id (what the job trains on, and what the 422 asks for)
+    # so the retry isn't blocked by a stored parent the caller cannot override.
+    if job_type == JobType.training.value and parent_job_id and config.get("data_run_id"):
+        parent_job_id = ""
+        config.pop("parent_job_id", None)
 
     # Per-type validation mirrors each create endpoint (SDG has none at this layer).
     if job_type == JobType.training.value:

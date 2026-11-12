@@ -263,7 +263,11 @@ class TestUpstreamDependencyPrecondition:
         body = {"model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct", "eval_data_path": "./e.jsonl"}
         resp = await client.post("/api/v1/jobs/eval/validate", json=body)
         assert resp.status_code == 422
-        assert "per-user GPU budget is 0" in str(resp.json())
+        detail = str(resp.json())
+        assert "per-user GPU budget is 0" in detail
+        # nproc_per_node can't go below 1, so a zero budget points at an endpoint instead.
+        assert "evaluate through an endpoint" in detail
+        assert "reduce nproc_per_node" not in detail
 
     @pytest.mark.asyncio
     async def test_training_rejects_parent_and_data_run_together(
@@ -283,6 +287,28 @@ class TestUpstreamDependencyPrecondition:
             detail = str(resp.json())
             assert "keep data_run_id" in detail
             assert "remove parent_job_id" in detail
+
+    @pytest.mark.asyncio
+    async def test_retry_legacy_training_with_both_sources_keeps_data_run(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A training job stored before both data sources were rejected carries a parent
+        # and a data_run_id. Retrying it must not hit a 422 the caller can't act on (the
+        # stored parent wins over overrides): the retry keeps data_run_id, drops the parent.
+        created = await _create_training(client, data_run_id="d" * 32, data_path="")
+        job_id = created.json()["id"]
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE jobs SET status = 'failed', parent_job_id = 'legacy-sdg' WHERE id = $1",
+                job_id,
+            )
+        resp = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert resp.status_code == 201, resp.text
+        new_job = resp.json()
+        assert new_job["config"]["data_run_id"] == "d" * 32
+        assert not new_job.get("parent_job_id")
 
     @pytest.mark.asyncio
     async def test_validate_eval_rejects_unsucceeded_dataset_parent(
