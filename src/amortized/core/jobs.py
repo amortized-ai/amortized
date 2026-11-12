@@ -86,15 +86,19 @@ def gpu_budget_error(job_type: JobType, config: dict[str, Any]) -> str | None:
     if demand <= _settings.gpu_budget:
         return None
     # Name the knob that actually drove the demand so the error is actionable:
-    # embedding_sft/classifier reach it via train_on_gpu (a single GPU), every other
-    # training algorithm (and embedded-serving eval) via nproc_per_node.
+    # embedding_sft/classifier reach it via train_on_gpu or use_peft (a single GPU),
+    # every other training algorithm (and embedded-serving eval) via nproc_per_node.
     budget = _settings.gpu_budget
     raise_budget = "raise the budget (GPU_PER_USER / AMORTIZED_GPU_BUDGET)"
     if (
         job_type == JobType.training
         and str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS
     ):
-        knob, remedy = "train_on_gpu", f"set train_on_gpu=false to train on CPU or {raise_budget}"
+        # use_peft forces a GPU regardless of train_on_gpu, so name whichever knobs are set.
+        knobs = [k for k in ("train_on_gpu", "use_peft") if config.get(k)] or ["train_on_gpu"]
+        knob = "/".join(knobs)
+        unset = " and ".join(f"{k}=false" for k in knobs)
+        remedy = f"set {unset} to train on CPU or {raise_budget}"
     elif budget == 0:
         # nproc_per_node cannot go below 1, so with no GPU budget there is nothing to reduce.
         knob = "nproc_per_node"
@@ -102,7 +106,7 @@ def gpu_budget_error(job_type: JobType, config: dict[str, Any]) -> str | None:
             "evaluate through an endpoint (a provider model or URL) instead of serving"
             " the model in the job"
             if job_type == JobType.eval
-            else "only CPU training (embedding_sft) runs without GPUs"
+            else "only CPU classifier training (classifier_sft or embedding_sft) runs without GPUs"
         )
         remedy = f"{alternative}, or {raise_budget}"
     else:

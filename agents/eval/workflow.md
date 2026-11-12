@@ -159,7 +159,7 @@ Determine it BEFORE the dataset and metrics steps:
   these models at validation, but you must still drive the correct dataset/metric
   flow). An arbitrary HF model or external endpoint can only be a generative eval.
 - **Generative eval** — everything else (a generative/LLM training job, an HF model
-  id, a gateway model, an external endpoint). This is the default rubric/judge flow
+  id, a provider model, an external endpoint). This is the default rubric/judge flow
   described in Steps 1–5. Leave `eval_mode` at its default.
 
 Do NOT ask the user which kind — infer it from the model. Everything below is the

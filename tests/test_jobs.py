@@ -253,6 +253,32 @@ class TestUpstreamDependencyPrecondition:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_validate_classifier_peft_over_budget_names_use_peft(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # classifier_sft with use_peft needs a GPU even with train_on_gpu unset, so the
+        # error must point at use_peft — "set train_on_gpu=false" would change nothing.
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        body = {
+            "algorithm": "classifier_sft",
+            "model_name_or_path": "Qwen/Qwen3-0.6B",
+            "data_path": "./data.parquet",
+            "use_peft": True,
+        }
+        resp = await client.post("/api/v1/jobs/training/validate", json=body)
+        assert resp.status_code == 422
+        detail = str(resp.json())
+        assert "set use_peft=false" in detail
+        assert "train_on_gpu=false" not in detail
+
+        resp = await client.post(
+            "/api/v1/jobs/training/validate", json={**body, "use_peft": False}
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
     async def test_validate_eval_rejects_gpu_over_budget(
         self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:

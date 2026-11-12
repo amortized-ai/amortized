@@ -114,7 +114,7 @@ class TestCreateJob:
         from amortized.core import jobs as jobs_mod
 
         monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
-        with pytest.raises(InvalidJobStateError, match="only CPU training") as exc:
+        with pytest.raises(InvalidJobStateError, match="only CPU classifier training") as exc:
             await create_job(
                 repo,
                 job_type=JobType.training,
