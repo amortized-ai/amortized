@@ -225,6 +225,10 @@ async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[st
     return errors
 
 
+# An immutable Hugging Face revision: a full git commit hash.
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
+
+
 async def _validate_training_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -240,12 +244,16 @@ async def _validate_training_data(
             "algorithm is a required property — provide it (sft, lora_sft, osft, dpo, grpo, "
             "lora_grpo, kto, gkd), or pass the entire config as a single config_json string"
         )
-    if config.get("trust_remote_code") and not str(config.get("revision") or "").strip():
+    if config.get("trust_remote_code") and not _COMMIT_SHA.fullmatch(
+        str(config.get("revision") or "").strip()
+    ):
         # Remote code runs inside the training pod, which holds storage and MLflow
-        # credentials — only allow it pinned to a reviewed commit.
+        # credentials — only allow it pinned to a reviewed commit. A branch or tag (even
+        # "main") can move between review and execution, so require the full commit hash.
         errors.append(
-            "trust_remote_code=true requires revision: pin the model repo to the commit"
-            " (or tag) whose custom code you reviewed"
+            "trust_remote_code=true requires revision set to the full 40-character commit"
+            " hash whose custom code you reviewed (a branch or tag can change before the"
+            " job runs)"
         )
     data_path = config.get("data_path", "")
     data_run_id = str(config.get("data_run_id", "") or "")

@@ -189,8 +189,10 @@ If the user would rather split the training dataset itself: when the model train
 on that whole dataset, the split's records were seen in training — say so plainly
 and do NOT call it held-out (validation may warn about the overlap; the warning does
 not make it held-out). Skip the `messages`/recipe-match/`list_reusable_eval_sets`
-framing below (that is generative-only), then go to Step 4 (there are no metrics to
-design — skip Step 3). Note the `text`/`category` column names for Step 4.
+framing below (that is generative-only), then go to Step 1.5 to confirm how much of the
+set to evaluate (skip its portion question only if the user already gave one). After
+that, go to Step 4 (there are no metrics to design — skip Step 3). Note the
+`text`/`category` column names for Step 4.
 
 **Generative path:** the eval dataset needs a `messages` column. The trailing
 assistant message is used as the reference answer.

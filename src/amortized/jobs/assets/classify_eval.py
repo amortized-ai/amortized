@@ -221,6 +221,10 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) ->
     model.to(dev)
     if tok.pad_token is None and tok.eos_token is not None:
         tok.pad_token = tok.eos_token  # decoder backbones ship without a pad token
+    if model.config.pad_token_id is None and tok.pad_token_id is not None:
+        # A decoder classification head finds each row's last real token via pad_token_id
+        # and refuses batches > 1 without it.
+        model.config.pad_token_id = tok.pad_token_id
     id2label = {int(k): v for k, v in model.config.id2label.items()}
     label2id = {str(k): int(v) for k, v in (model.config.label2id or {}).items()}
 
@@ -258,7 +262,12 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) ->
     macro_f1 = f1_score(true, pred, average="macro", labels=labels_sorted, zero_division=0)
     per_class = f1_score(true, pred, average=None, labels=labels_sorted, zero_division=0)
 
-    y_idx = np.array([label2id.get(t, -1) for t in raw_true])
+    # Resolve calibration targets in the same (class_labels-mapped) label space as scoring,
+    # so integer ground truth matches a checkpoint whose label2id is keyed by class names.
+    id_by_name = {_label_name(k): v for k, v in label2id.items()}
+    y_idx = np.array(
+        [id_by_name.get(t, label2id.get(r, -1)) for t, r in zip(true, raw_true, strict=True)]
+    )
     calibration = _fit_temperature(logits, y_idx, int(cfg.get("seed", 42)))
 
     confusion = {t: {p: 0 for p in labels_sorted} for t in labels_sorted}
@@ -268,6 +277,7 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) ->
     metrics = {
         "eval_mode": "classification",
         "results": {
+            "classifier_kind": "head",
             "scores": {
                 "accuracy": round(float(accuracy), 4),
                 "macro_f1": round(float(macro_f1), 4),
@@ -294,8 +304,9 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) ->
     with open(os.path.join(output_dir, "metrics.json"), "w") as f:
         json.dump(metrics, f, indent=2, allow_nan=False)
     with open(os.path.join(output_dir, "results.jsonl"), "w") as f:
-        for t, p in zip(true, pred, strict=False):
-            f.write(json.dumps({"actual_name": t, "predicted_name": p, "correct": t == p}) + "\n")
+        for text, t, p in zip(texts, true, pred, strict=True):
+            row = {"text": text, "actual_name": t, "predicted_name": p, "correct": t == p}
+            f.write(json.dumps(row) + "\n")
     if "skipped" in calibration:
         cal_msg = f"calibration skipped: {calibration['skipped']}"
     else:
@@ -451,6 +462,7 @@ def main() -> None:
     metrics = {
         "eval_mode": "classification",
         "results": {
+            "classifier_kind": "router",
             # Mirror the generative runner so on_success + UI reuse the shape.
             "scores": {"accuracy": round(accuracy, 4), "macro_f1": round(macro_f1, 4)},
             "model": {"num_samples": total},

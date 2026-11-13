@@ -304,8 +304,14 @@ class TestUpstreamDependencyPrecondition:
         resp = await client.post("/api/v1/jobs/training/validate", json=body)
         assert resp.status_code == 422
         assert "requires revision" in str(resp.json())
+        # A branch/tag (or a short hash) can move between review and execution.
+        for mutable in ("main", "v1.0", "0123abc"):
+            resp = await client.post(
+                "/api/v1/jobs/training/validate", json={**body, "revision": mutable}
+            )
+            assert resp.status_code == 422, mutable
         resp = await client.post(
-            "/api/v1/jobs/training/validate", json={**body, "revision": "0123abc"}
+            "/api/v1/jobs/training/validate", json={**body, "revision": "a" * 40}
         )
         assert resp.status_code == 200
 

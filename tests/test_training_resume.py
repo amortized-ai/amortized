@@ -257,6 +257,15 @@ class TestBuildGpuResources:
             assert result.resources.gpus == 0, f"{algo} should default to CPU"
 
     @pytest.mark.asyncio
+    async def test_hyphenated_classifier_sft_builds_like_underscore(self) -> None:
+        config = {
+            "algorithm": "classifier-sft", "model_name_or_path": "m", "data_path": "/d.parquet"
+        }
+        result = await training_builder.build({"id": "h1", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+        assert result.command[:2] == ["thub", "classifier-sft"]
+
+    @pytest.mark.asyncio
     async def test_classifier_sft_gpu_via_train_on_gpu_or_peft(self) -> None:
         base = {"algorithm": "classifier_sft", "model_name_or_path": "answerdotai/ModernBERT-base",
                 "data_path": "/d.parquet"}

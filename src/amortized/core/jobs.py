@@ -66,7 +66,7 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
 
     job_type = job.get("type")
     if job_type == JobType.training.value:
-        algorithm = str(config.get("algorithm", "")).strip()
+        algorithm = str(config.get("algorithm", "")).strip().replace("-", "_")
         if algorithm in _CPU_TRAINING_ALGORITHMS:
             # Single-device in-process training: CPU by default, 1 GPU via train_on_gpu (or, for a
             # classifier_sft decoder backbone, use_peft). nproc_per_node is ignored (no torchrun).
@@ -101,11 +101,12 @@ def gpu_budget_error(job_type: JobType, config: dict[str, Any]) -> str | None:
     raise_budget = "raise the budget (GPU_PER_USER / AMORTIZED_GPU_BUDGET)"
     if (
         job_type == JobType.training
-        and str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS
+        and (algorithm := str(config.get("algorithm", "")).strip().replace("-", "_"))
+        in _CPU_TRAINING_ALGORITHMS
     ):
         # use_peft forces a GPU (classifier_sft only) regardless of train_on_gpu, so name
         # whichever knobs actually drive the demand.
-        peft = str(config.get("algorithm", "")).strip() in _PEFT_GPU_ALGORITHMS
+        peft = algorithm in _PEFT_GPU_ALGORITHMS
         knobs = [
             k for k in ("train_on_gpu", "use_peft") if config.get(k) and (k != "use_peft" or peft)
         ] or ["train_on_gpu"]
@@ -149,7 +150,7 @@ async def create_job(
         parent_job_id = config.get("parent_job_id", "")
 
     if job_type == JobType.training:
-        algorithm = str(config.get("algorithm", "")).strip()
+        algorithm = str(config.get("algorithm", "")).strip().replace("-", "_")
         if algorithm in _STORED_ALIASES:
             config = {**config, "algorithm": _STORED_ALIASES[algorithm]}
 

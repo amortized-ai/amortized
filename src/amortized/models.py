@@ -212,12 +212,16 @@ class TrainingJobConfig(BaseModel):
         None,
         description=(
             "classifier_sft: allow custom architectures that ship an HF auto_map (opt-in;"
-            " security-sensitive — pin 'revision'). Needed for some custom decision models."
+            " security-sensitive — requires 'revision' = the full commit hash). Needed for"
+            " some custom decision models."
         ),
     )
     revision: str | None = Field(
         None,
-        description="classifier_sft: pin the model repo to a commit/branch/tag (custom archs)",
+        description=(
+            "classifier_sft: pin the model repo to a revision; with trust_remote_code it must"
+            " be the full 40-character commit hash"
+        ),
     )
     nproc_per_node: int = Field(
         1,

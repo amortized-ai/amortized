@@ -523,6 +523,11 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         num_samples = model_metrics.get("num_samples")
         if num_samples is not None:
             await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(num_samples))
+        # Classification eval: which path scored the model (head = held-out accuracy,
+        # router = separability proxy) — the Evaluation tab groups on it.
+        classifier_kind = metrics.get("classifier_kind")
+        if classifier_kind in ("head", "router"):
+            await set_mlflow_run_tag(mlflow_run_id, "eval_classifier_kind", classifier_kind)
         # Transparency: how many samples the judge actually scored and
         # which model judged — a partial judge run otherwise looks like a
         # full one in the comparison table.

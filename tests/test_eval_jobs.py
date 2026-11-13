@@ -1410,3 +1410,36 @@ class TestJobImageTag:
             {"id": "t1", "type": "training"}, {"algorithm": "osft"}, {}
         )
         assert train.image == f"{reg}/training:latest"
+
+
+class TestClassificationEvalOnSuccess:
+    @pytest.mark.asyncio
+    async def test_tags_runner_detected_classifier_kind(self, monkeypatch) -> None:
+        import json
+
+        import amortized.config as config_mod
+        from amortized.core import mlflow_client
+
+        tags: dict[str, str] = {}
+
+        async def _tag(_run, key, value):
+            tags[key] = value
+
+        class _Client:
+            def __init__(self, _uri):
+                pass
+
+            async def get_artifact_text(self, _run, _path):
+                return json.dumps({"results": {
+                    "classifier_kind": "head",
+                    "scores": {"accuracy": 0.9, "macro_f1": 0.9},
+                    "model": {"num_samples": 10},
+                }})
+
+        monkeypatch.setattr(eval_builder, "set_mlflow_run_tag", _tag)
+        monkeypatch.setattr(mlflow_client, "MLflowClient", _Client)
+        monkeypatch.setattr(config_mod.settings, "mlflow_tracking_uri", "http://mlflow")
+        job = {"id": "e1", "config": {"eval_mode": "classification", "model_name_or_path": "m"}}
+        await eval_builder.on_success(job, "run-1")
+        assert tags["eval_classifier_kind"] == "head"
+        assert tags["eval_score_accuracy"] == "0.9"

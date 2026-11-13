@@ -325,6 +325,15 @@ class TestEstimateGpuDemand:
                 {"type": "training", "config": {"algorithm": algo, "use_peft": True}}
             ) == 0
 
+    def test_hyphenated_algorithm_spelling_matches_builder(self) -> None:
+        # The API and builder treat classifier-sft as classifier_sft; admission must too.
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "classifier-sft"}}
+        ) == 0
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "classifier-sft", "use_peft": True}}
+        ) == 1
+
     def test_eval_classification_decoder_head_needs_gpu(self) -> None:
         # The API stamps eval_on_gpu for a decoder head (trained with use_peft).
         job = {"type": "eval", "config": {"eval_mode": "classification", "eval_on_gpu": True}}

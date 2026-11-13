@@ -46,7 +46,18 @@ def _job_config(job: dict[str, Any]) -> dict[str, Any]:
     return cfg if isinstance(cfg, dict) else {}
 
 
-def _metric_set_signature(cfg: dict[str, Any]) -> str:
+def _classifier_kind(cfg: dict[str, Any], tags: dict[str, str] | None = None) -> str | None:
+    """head / router for a classification eval (None otherwise). The runner's detected
+    kind (MLflow tag, set on success) wins: it also covers a direct-model eval
+    (model_name_or_path), which the API can't stamp. Then the API's validation-time stamp;
+    unstamped legacy classification evals predate heads, so they are routers."""
+    if cfg.get("eval_mode") != "classification":
+        return None
+    kind = (tags or {}).get("eval_classifier_kind") or cfg.get("classifier_kind")
+    return "head" if kind == "head" else "router"
+
+
+def _metric_set_signature(cfg: dict[str, Any], tags: dict[str, str] | None = None) -> str:
     """Stable signature of the metrics + rubric criteria of an eval.
 
     Rubric criterion descriptions are part of the signature: same names
@@ -64,7 +75,7 @@ def _metric_set_signature(cfg: dict[str, Any]) -> str:
         if isinstance(c, dict) and c.get("name")
     )
     sig: dict[str, Any] = {"m": metrics, "r": rubric}
-    if cfg.get("eval_mode") == "classification" and cfg.get("classifier_kind") == "head":
+    if _classifier_kind(cfg, tags) == "head":
         # A head's accuracy is true held-out accuracy; a router's is a separability proxy
         # (anchors drawn from the eval set). Same metric names, different meaning — keep
         # them in separate groups. Unstamped (legacy) classification evals are routers.
@@ -296,7 +307,8 @@ async def list_evaluations(
             continue
         cfg = _job_config(job)
         ds_run = dataset_run_by_job[job["id"]]
-        sig = _metric_set_signature(cfg)
+        tags = run_tags.get(str(job.get("mlflow_run_id") or ""), {})
+        sig = _metric_set_signature(cfg, tags)
         key = (ds_run, sig)
         group = groups.setdefault(
             key,
@@ -315,11 +327,7 @@ async def list_evaluations(
                 # Which classification eval produced the numbers (None for generative evals):
                 # "head" = held-out accuracy of a classifier head, "router" = an embedding
                 # router's separability proxy.
-                "classifier_kind": (
-                    ("head" if cfg.get("classifier_kind") == "head" else "router")
-                    if cfg.get("eval_mode") == "classification"
-                    else None
-                ),
+                "classifier_kind": _classifier_kind(cfg, tags),
                 "evals": [],
                 "latest_created_at": None,
             },

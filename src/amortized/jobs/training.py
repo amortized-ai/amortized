@@ -172,7 +172,7 @@ async def build(
     # Strip before alias resolution so a whitespace-padded value (e.g. " embedding_sft ")
     # resolves the same way the admission estimator does (estimate_gpu_demand strips too) —
     # otherwise the builder could request a GPU for a job the estimator admitted as CPU-only.
-    algorithm = config.get("algorithm", "sft").strip()
+    algorithm = config.get("algorithm", "sft").strip().replace("-", "_")
     algorithm = ALGO_ALIASES.get(algorithm, algorithm)
 
     model_pre_commands: list[str] = []

@@ -281,3 +281,11 @@ def test_non_sequence_head_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="sequence-classification heads only"):
         _run(mod, {"model_path": str(model_dir), "eval_data_path": "y", "label_column": "category"},
              tmp_path, monkeypatch)
+
+
+def test_router_results_mark_their_kind(tmp_path, monkeypatch):
+    rows = [{"text": f"{c}_ex{i}", "category": c} for c in ("a", "b") for i in range(12)]
+    mod = _load_classify_eval(rows, monkeypatch)
+    res = _run(mod, {"model_path": "x", "eval_data_path": "y", "label_column": "category"},
+               tmp_path, monkeypatch)
+    assert res["classifier_kind"] == "router"

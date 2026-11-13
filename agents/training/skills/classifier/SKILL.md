@@ -61,8 +61,8 @@ Follow the workflow's one-question-per-turn rules. Gather:
 3. **Base model** — head default `answerdotai/ModernBERT-base` (fast, strong, 8k context);
    embedding default `sentence-transformers/all-MiniLM-L6-v2`. Only surface alternatives if
    asked (any HF encoder/decoder with a classification head works for the head path; custom
-   architectures that ship an HF `auto_map` work via `trust_remote_code` + a pinned
-   `revision`; a decoder backbone needs `use_peft=True`, which requires a GPU).
+   architectures that ship an HF `auto_map` work via `trust_remote_code` + `revision` pinned
+   to a full commit hash; a decoder backbone needs `use_peft=True`, which requires a GPU).
 4. **Epochs** — head default ~10 for a few-thousand-example set (more for small, fewer for
    large); embedding default ~25. Don't ask about lr/batch/loss unless the user brings it up.
 5. **Device (CPU vs GPU)** — defaults to CPU (`train_on_gpu=False`) for both paths. Not a
@@ -77,7 +77,8 @@ Follow the workflow's one-question-per-turn rules. Gather:
 `sequence_classification`; `multiple_choice` for pick-one-of-K with an `options` column, or
 `token_classification` with a `tokens` column and `ner_tags` labels), `use_peft` (decoder
 backbones), and `trust_remote_code` + `revision` (custom architectures — validation
-rejects `trust_remote_code` without a pinned `revision`). With `use_peft` the learning rate
+rejects `trust_remote_code` unless `revision` is the full 40-character commit hash — a
+branch or tag can change before the job runs). With `use_peft` the learning rate
 defaults to 1e-4 (a decoder head collapses to one class at the 2e-5 encoder default), so
 leave `learning_rate` unset unless the user asks. `label_column` defaults to `label` —
 set it explicitly (`category` for the classification SDG datasets). No VRAM card is
