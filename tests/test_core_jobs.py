@@ -145,6 +145,52 @@ class TestCreateJob:
             )
         assert "nproc_per_node" not in str(exc.value)
 
+    @pytest.mark.asyncio
+    async def test_create_rejects_api_key_anywhere_in_config(self, repo: Repository) -> None:
+        # Every job type is stored through create_job, so a key nested anywhere is refused
+        # before the row (and its request_config snapshot) is written.
+        with pytest.raises(InvalidJobStateError, match="provider under Settings") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.eval,
+                config={
+                    "judge": {"base_url": "http://j:8000/v1", "model": "m", "api_key": "sk-1"},
+                    "extra": [{"apiKey": "sk-2"}],
+                },
+            )
+        assert "judge.api_key" in str(exc.value)
+        assert "extra[0].apiKey" in str(exc.value)
+        assert "sk-1" not in str(exc.value)
+        assert await repo.conn.fetchval("SELECT count(*) FROM jobs") == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://user:sk-1@vllm.example.com/v1",
+            "https://vllm.example.com/v1?api_key=sk-1",
+            "https://user:sk-1@[vllm/v1?token=sk-1",
+        ],
+    )
+    async def test_create_rejects_credentials_in_base_url(
+        self, repo: Repository, base_url: str
+    ) -> None:
+        with pytest.raises(InvalidJobStateError, match=r"judge\.base_url") as exc:
+            await create_job(
+                repo, job_type=JobType.eval, config={"judge": {"base_url": base_url, "model": "m"}}
+            )
+        assert "sk-1" not in str(exc.value)
+        assert await repo.conn.fetchval("SELECT count(*) FROM jobs") == 0
+
+    @pytest.mark.asyncio
+    async def test_create_allows_empty_api_key(self, repo: Repository) -> None:
+        row = await create_job(
+            repo,
+            job_type=JobType.eval,
+            config={"endpoint": {"base_url": "http://e:8000/v1", "model": "m", "api_key": ""}},
+        )
+        assert row["status"] == "queued"
+
 
     @pytest.mark.asyncio
     async def test_create_stores_resolved_classifier_aliases(self, repo: Repository) -> None:

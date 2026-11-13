@@ -137,7 +137,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Retry/rerun a FAILED or cancelled job (SDG, training, or eval) by cloning its original request config. With no overrides it re-runs the job UNCHANGED (for eval the new scores land in the same Evaluation tab comparison group); pass `overrides` to change specific knobs (e.g. num_train_epochs, num_records). The caller confirms before this creates the job \u2014 it is not a silent dispatch. Note: external-endpoint API keys are not retained, so keyed endpoints need resubmission.",
+        "summary": "Retry/rerun a FAILED or cancelled job (SDG, training, or eval) by cloning its original request config. With no overrides it re-runs the job UNCHANGED (for eval the new scores land in the same Evaluation tab comparison group); pass `overrides` to change specific knobs (e.g. num_train_epochs, num_records). The caller confirms before this creates the job \u2014 it is not a silent dispatch.",
         "description": "Clone a failed/cancelled job's original config into a new job of the same type.\n\nGeneralized from the former eval-only path: the shared mirror.clone drops each\ntype's runtime/lineage fields from the pre-dispatch snapshot and applies any\ncaller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind\na confirmation step, so re-running an expensive training/SDG job is never a\nsingle misclick.",
         "operationId": "retry_job",
         "parameters": [
@@ -3634,19 +3634,13 @@
             "type": "string",
             "minLength": 1,
             "title": "Base Url",
-            "description": "OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)"
+            "description": "The name of a configured provider (e.g. openai, maas), which supplies the URL and key, or the URL of an endpoint that needs no key"
           },
           "model": {
             "type": "string",
             "minLength": 1,
             "title": "Model",
             "description": "Model name sent as 'model' in chat completion requests"
-          },
-          "api_key": {
-            "type": "string",
-            "title": "Api Key",
-            "description": "Optional bearer token. Never echoed in API responses; scrubbed from the DB once the job is dispatched.",
-            "default": ""
           }
         },
         "type": "object",
@@ -3687,7 +3681,7 @@
                 "type": "null"
               }
             ],
-            "description": "External OpenAI-compatible endpoint serving the model to evaluate (e.g. a gateway model). When omitted, set training_job_id or model_name_or_path and the eval job serves the model itself."
+            "description": "External OpenAI-compatible endpoint serving the model to evaluate (a provider model). When omitted, set training_job_id or model_name_or_path and the eval job serves the model itself."
           },
           "training_job_id": {
             "type": "string",

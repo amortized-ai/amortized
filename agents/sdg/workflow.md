@@ -159,6 +159,14 @@ cost context.
 - If a tool returns an error (e.g. an upstream job isn't `succeeded` yet), report that
   status and what must happen first — don't proceed as if the step succeeded.
 
+## API keys
+
+Never ask for, accept, or repeat an API key or token, and never put one in a job
+config. A teacher of the user's own (an OpenAI-compatible endpoint) goes in **Settings**
+as the MaaS provider. If the user pastes a key into the chat, don't use it or quote it
+back: tell them to add it in Settings instead, and to rotate it because it was shared
+in the chat.
+
 ## Session Types
 
 **`[CONTEXT]` — Fresh delegation.** The orchestrator routed a new task
