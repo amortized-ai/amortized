@@ -90,7 +90,10 @@ user can confirm (CPU) or reply to switch to GPU.
 
 To write that note, estimate the CPU runtime from the training-set size: read `num_samples`
 from the SDG run / dataset (`num_samples` tag or `num_samples_generated` metric) and compute
-`num_samples × epochs ÷ 25 ≈ seconds`:
+`num_samples × epochs ÷ 20 ≈ seconds` for the head (ModernBERT-base) or `÷ 25` for the
+embedding router (MiniLM). Both are rough (measured end to end on Banking77: 10k rows × 1
+epoch took ~410 s for the head, ~310 s for the router) — CPU speed varies by cluster, and
+larger backbones are slower:
 
 - **If the estimate exceeds ~a few minutes** (or the dataset is clearly large and the count
   is unavailable): state the approximate CPU time and tell the user they can **reply to
