@@ -308,7 +308,11 @@ async def show_model_pricing(body: ShowModelPricingRequest) -> ShowModelPricingR
 
 
 class VRAMEstimateItem(BaseModel):
-    model_size: str = Field(..., description="Model size (e.g. '8B')")
+    model_size: str = Field(
+        ...,
+        description="Model label for the card: the model id with its size "
+        "(e.g. 'Qwen/Qwen3.5-4B (4.7B)')",
+    )
     method: str = Field(..., description="Training method (e.g. 'lora', 'qlora', 'osft')")
     vram_per_gpu_gb: float = Field(..., description="Expected VRAM per GPU in GB")
     vram_range: str = Field("", description="Low-high range (e.g. '17.6-22.2 GB')")

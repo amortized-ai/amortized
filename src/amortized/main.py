@@ -324,4 +324,5 @@ async def get_config() -> ConfigResponse:
         mlflow_gateway_uri=mlflow_gateway_uri,
         image_registry=_settings.image_registry,
         available_backends=list(get_all_backends().keys()),
+        gpu_budget=_settings.gpu_budget,
     )

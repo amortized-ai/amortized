@@ -236,6 +236,14 @@ class TestBuildGpuResources:
         result = await training_builder.build({"id": "sft1", "type": "training"}, config, {})
         assert result.resources.gpus == 1
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("algorithm", "expandable"), [("osft", True), ("lora", False)])
+    async def test_sft_osft_use_expandable_segments(self, algorithm: str, expandable: bool) -> None:
+        config = {"algorithm": algorithm, "model_name_or_path": "m", "data_path": "/d.jsonl"}
+        result = await training_builder.build({"id": "a1", "type": "training"}, config, {})
+        expected = "expandable_segments:True" if expandable else None
+        assert result.env.get("PYTORCH_CUDA_ALLOC_CONF") == expected
+
 
 class TestDataRunIdSkipped:
     def test_data_run_id_not_in_training_hub_config(self) -> None:

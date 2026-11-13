@@ -162,6 +162,7 @@ export function MessageBubble({
     }
     if (vramEstimate) {
       hidden.add("estimate_training_resources")
+      hidden.add("estimate_training_resources_batch")
       hidden.add("show_vram_estimate")
     }
     if (promptReviews.length > 0) hidden.add("show_prompt")
