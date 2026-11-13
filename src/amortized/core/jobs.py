@@ -117,7 +117,7 @@ def _url_carries_credentials(value: Any) -> bool:
     try:
         parts = urlsplit(value.strip())
     except ValueError:
-        return False
+        return True  # can't tell, so don't store it
     return bool(parts.username or parts.password or parts.query)
 
 

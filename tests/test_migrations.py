@@ -103,14 +103,20 @@ class TestAlembicMigrations:
             "rubric": [{"name": "r", "description": "d"}],
         }
         clean = {"algorithm": "sft", "data_run_id": "run-1"}
+        url_only = {"judge": {"BASE_URL": "https://u:sk-e@v.example.com/v1?token=sk-f"}}
+        bad_port = {"judge": {"base_url": "https://u:sk-g@v.example.com:99999/v1"}}
         conn = await asyncpg.connect(TEST_DATABASE_URL)
         await conn.execute(
             """INSERT INTO jobs (id, type, status, config, request_config, created_at) VALUES
                ('leaky', 'eval', 'failed', $1::jsonb, $2::jsonb, now()),
-               ('clean', 'training', 'succeeded', $3::jsonb, $3::jsonb, now())""",
+               ('clean', 'training', 'succeeded', $3::jsonb, $3::jsonb, now()),
+               ('url-only', 'eval', 'failed', $4::jsonb, $4::jsonb, now()),
+               ('bad-port', 'eval', 'failed', $5::jsonb, $5::jsonb, now())""",
             json.dumps({**leaked, "endpoint": {"base_url": "http://vllm:8000/v1", "model": "m"}}),
             json.dumps(leaked),
             json.dumps(clean),
+            json.dumps(url_only),
+            json.dumps(bad_port),
         )
         await conn.close()
 
@@ -128,3 +134,6 @@ class TestAlembicMigrations:
         assert request_config["endpoint_tuned"] == {"base_url": "https://v.example.com:8443/v1"}
         assert request_config["rubric"] == leaked["rubric"]
         assert rows["clean"] == (clean, clean)
+        assert rows["url-only"][1] == {"judge": {"BASE_URL": "https://v.example.com/v1"}}
+        assert rows["bad-port"][1] == {"judge": {"base_url": ""}}
+        assert "sk-" not in json.dumps(rows["url-only"]) + json.dumps(rows["bad-port"])

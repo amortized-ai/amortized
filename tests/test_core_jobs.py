@@ -165,7 +165,11 @@ class TestCreateJob:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "base_url",
-        ["https://user:sk-1@vllm.example.com/v1", "https://vllm.example.com/v1?api_key=sk-1"],
+        [
+            "https://user:sk-1@vllm.example.com/v1",
+            "https://vllm.example.com/v1?api_key=sk-1",
+            "https://user:sk-1@[vllm/v1?token=sk-1",
+        ],
     )
     async def test_create_rejects_credentials_in_base_url(
         self, repo: Repository, base_url: str

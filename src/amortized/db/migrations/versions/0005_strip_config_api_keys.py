@@ -31,7 +31,7 @@ def _strip_url_credentials(url: str) -> str:
         parts = urlsplit(url)
         port = parts.port
     except ValueError:
-        return url
+        return ""  # can't be cleaned safely, and could never have been called
     if not (parts.username or parts.password or parts.query):
         return url
     host = parts.hostname or ""
@@ -64,11 +64,13 @@ def _load(raw: Any) -> Any:
 
 def upgrade() -> None:
     conn = op.get_bind()
+    # Case-insensitive, and LIKE's "_" matches any character, so this covers every key
+    # spelling _strip_api_keys normalizes (api_key, API-KEY, apiKey, BASE_URL, base-url).
     rows = conn.execute(
         sa.text(
             "SELECT id, config, request_config FROM jobs"
             " WHERE config::text ILIKE '%api%key%' OR request_config::text ILIKE '%api%key%'"
-            " OR config::text LIKE '%base_url%' OR request_config::text LIKE '%base_url%'"
+            " OR config::text ILIKE '%base_url%' OR request_config::text ILIKE '%base_url%'"
         )
     ).fetchall()
     for job_id, raw_config, raw_request_config in rows:
