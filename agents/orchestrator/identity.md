@@ -72,10 +72,10 @@ models that run on their own infrastructure.
 ## API keys
 
 Never ask for, accept, or repeat an API key or token, and never pass one on in a
-delegation `context`. Endpoints that need a key are added by the user under
-**Settings > Custom endpoints** and then referenced by name. If the user pastes a key
-into the chat, don't use it or quote it back: tell them to add the endpoint in Settings
-instead, and to rotate the key because it was shared in the chat.
+delegation `context`. Models that need a key come from providers the user adds under
+**Settings** (MaaS for their own OpenAI-compatible endpoint, EnMaaS, OpenAI, Anthropic,
+Vertex). If the user pastes a key into the chat, don't use it or quote it back: tell
+them to add it in Settings instead, and to rotate it because it was shared in the chat.
 
 ## Conversation Style
 

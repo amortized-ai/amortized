@@ -148,7 +148,7 @@ class TestCreateJob:
     async def test_create_rejects_api_key_anywhere_in_config(self, repo: Repository) -> None:
         # Every job type is stored through create_job, so a key nested anywhere is refused
         # before the row (and its request_config snapshot) is written.
-        with pytest.raises(InvalidJobStateError, match="Settings > Custom endpoints") as exc:
+        with pytest.raises(InvalidJobStateError, match="provider under Settings") as exc:
             await create_job(
                 repo,
                 job_type=JobType.eval,

@@ -11,8 +11,8 @@ Two modes:
   GPU allocation matches training jobs: the pod requests
   ``nvidia.com/gpu`` (``nproc_per_node``) and is bounded by the user's
   namespace quota — GPUs are assumed free, so no occupancy checking.
-- **External endpoint**: ``endpoint`` names a provider or custom endpoint
-  (resolved to its URL + key env var), or a keyless OpenAI-compatible URL.
+- **External endpoint**: ``endpoint`` names a provider (resolved to its URL
+  + key env var), or a keyless OpenAI-compatible URL.
   CPU-only, no GPU.
 
 Training Hub exports of VLM text backbones (e.g. Qwen3.5) carry a bare
@@ -56,12 +56,12 @@ def _endpoint_spec(config: dict[str, Any], key: str, env_name: str) -> dict[str,
     if endpoint.get("api_key"):
         raise JobBuildError(f"{key}.api_key: {INLINE_API_KEY_ERROR}")
     base_url = str(endpoint["base_url"])
-    # A base_url that names an enabled provider or custom endpoint (e.g. "openai")
-    # resolves to its real endpoint + its injected key env-var — the same catalog SDG
-    # uses — so the job authenticates with the forwarded key (OPENAI_API_KEY,
-    # CUSTOM_ENDPOINT_<NAME>_API_KEY, ...). The provider_type (openai|anthropic)
-    # selects the runner's calling paradigm so the judge supports exactly what the
-    # SDG teacher does (incl. native Anthropic). Any other base_url is a keyless URL.
+    # A base_url that names an enabled provider (e.g. "openai") resolves to its real
+    # endpoint + its injected key env-var — the same catalog SDG uses — so the job
+    # authenticates with the forwarded key (OPENAI_API_KEY, MAAS_API_KEY, ...). The
+    # provider_type (openai|anthropic) selects the runner's calling paradigm so the judge
+    # supports exactly what the SDG teacher does (incl. native Anthropic). Any other
+    # base_url is a keyless URL.
     provider_type = "openai"
     provider = resolve_provider(base_url)
     if provider:

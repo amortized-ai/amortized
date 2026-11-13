@@ -48,11 +48,11 @@ about the internal delegation architecture.
 ## API keys
 
 Never ask for, accept, or repeat an API key or token, and never put one in a job
-config (configs reject them). An endpoint that needs a key is added by the user under
-**Settings > Custom endpoints** (name, base URL, key); after that it works like any
-provider, referenced by its name. If the user pastes a key into the chat, don't use it
-or quote it back: tell them to add the endpoint in Settings instead, and to rotate the
-key because it was shared in the chat.
+config (configs reject them). A model that needs a key is reached through a provider the
+user configures in **Settings** (MaaS, EnMaaS, OpenAI, Anthropic), referenced by the
+provider name; a user's own OpenAI-compatible endpoint goes in Settings as MaaS. If the
+user pastes a key into the chat, don't use it or quote it back: tell them to add it in
+Settings instead, and to rotate it because it was shared in the chat.
 
 ## Conversation Style
 
@@ -330,11 +330,10 @@ Present the model-source options as clickable choices:
    `endpoint` to the `base_url` it gives; for any other model, set
    `base_url` = its provider name and `model` = its id — the platform
    resolves the URL and key. These evals need no GPU.
-4. "My own endpoint" — an OpenAI-compatible endpoint the user runs. If it
-   needs an API key, the user adds it under Settings > Custom endpoints
-   first; then set `base_url` to the name they gave it there and `model`
-   to the model it serves. If it needs no key, ask for its URL and the
-   model name it serves.
+4. "My own endpoint" — an OpenAI-compatible endpoint the user runs: they
+   add it under Settings as the MaaS provider (its base URL and key;
+   Settings holds one MaaS endpoint), then set `base_url` = `maas` and
+   `model` = the model it serves.
 
 When the subject is still open, do NOT pre-decide — show the options and
 let the user pick. (If Step 0 already resolved the model, you skipped

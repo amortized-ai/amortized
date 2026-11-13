@@ -476,10 +476,10 @@ def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
             names = ", ".join(p["name"] for p in enabled_provider_defs()) or "none configured"
             errors.append(
                 f"{key}.base_url {base_url!r} is neither an http(s) URL nor a configured"
-                f" provider or custom endpoint — set it to one of: {names}, or to the URL of"
-                " an endpoint that needs no key (get_eval_endpoint_suggestions lists the URLs"
-                " of pre-registered endpoints in known_endpoints). An endpoint that needs an"
-                " API key must first be added under Settings > Custom endpoints."
+                f" provider — set it to one of: {names}, or to the URL of an endpoint that"
+                " needs no key (get_eval_endpoint_suggestions lists the URLs of pre-registered"
+                " endpoints in known_endpoints). A model that needs an API key must come from"
+                " a provider added under Settings."
             )
     return errors
 

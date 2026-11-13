@@ -1,13 +1,12 @@
 import { Link } from "react-router"
 import { ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useCustomEndpoints } from "@/features/settings/api/use-custom-endpoints"
-import { CUSTOM_ENDPOINTS_SECTION_ID } from "@/features/settings/components/custom-endpoints-card"
+import { useModelProvider } from "@/features/settings/api/use-model-provider"
 
 // Shown when the chat box holds what looks like an API key: anything sent in chat reaches the
-// chat model and stays in the chat history, so keys belong in Settings > Custom endpoints.
+// chat model and stays in the chat history, so keys belong in Settings (Model Providers).
 export function ApiKeyWarning({ onRemove, onSendAnyway }: { onRemove: () => void; onSendAnyway: () => void }) {
-  const { data } = useCustomEndpoints()
+  const { data } = useModelProvider()
 
   return (
     <div
@@ -21,17 +20,14 @@ export function ApiKeyWarning({ onRemove, onSendAnyway }: { onRemove: () => void
           and stays in your chat history.{" "}
           {data?.available ? (
             <>
-              Add the endpoint under{" "}
-              <Link
-                to={{ pathname: "/settings", hash: `#${CUSTOM_ENDPOINTS_SECTION_ID}` }}
-                className="font-medium underline underline-offset-2"
-              >
-                Settings &gt; Custom endpoints
+              Add the model&apos;s provider under{" "}
+              <Link to="/settings" className="font-medium underline underline-offset-2">
+                Settings
               </Link>{" "}
-              and give Morty its name instead.
+              instead (MaaS for your own OpenAI-compatible endpoint).
             </>
           ) : (
-            "Ask your administrator to configure the endpoint, and give Morty its name instead."
+            "Ask your administrator to configure the model's provider instead."
           )}
         </p>
       </div>

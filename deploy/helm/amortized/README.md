@@ -124,13 +124,6 @@ For one OpenAI key to power both Morty and the teacher, point `model.openai` and
 `teacherKeys` at the same secret. **Requires** a server image with direct-provider
 support (amortized #427+); on an older image the teacher path is inert.
 
-Custom endpoints (an OpenAI-compatible URL that needs an API key, e.g. a model you
-serve) go in the same secret as a pair, `CUSTOM_ENDPOINT_<NAME>_BASE_URL` and
-`CUSTOM_ENDPOINT_<NAME>_API_KEY`. Eval endpoints and judges, and SDG teachers, then
-reach it by the name `<name>` (lowercase, `_` becomes `-`). The URL must be HTTPS, or
-plain HTTP to an in-cluster `*.svc` host. Job configs do not accept inline API keys.
-In the RHOAI deployment, users add custom endpoints under Settings > Custom endpoints.
-
 ## Data stores: bundled, external, per-store
 
 `dataStores.bundled` is the default for all three stores; override any store on its own

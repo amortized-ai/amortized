@@ -166,10 +166,10 @@ cost context.
 ## API keys
 
 Never ask for, accept, or repeat an API key or token, and never put one in a job
-config. A teacher endpoint of the user's own must be added under **Settings > Custom
-endpoints** (name, base URL, key); after that it is a provider with that name. If the
-user pastes a key into the chat, don't use it or quote it back: tell them to add the
-endpoint in Settings instead, and to rotate the key because it was shared in the chat.
+config. A teacher of the user's own (an OpenAI-compatible endpoint) goes in **Settings**
+as the MaaS provider. If the user pastes a key into the chat, don't use it or quote it
+back: tell them to add it in Settings instead, and to rotate it because it was shared
+in the chat.
 
 ## Session Types
 

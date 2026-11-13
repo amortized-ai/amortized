@@ -3,9 +3,8 @@
 This MLflow distribution has no AI Gateway, so instead of routing through it we use
 providers directly via dropped-in API keys. Data-designer ships a builtin provider
 catalog whose ``api_key`` is an env-var *name* resolved at runtime; we surface the
-providers whose key is set on the server, plus a native Anthropic provider, BYOK
-MaaS/EnMaaS endpoints and the user's custom endpoints, which the builtin catalog lacks.
-That provider set drives two things:
+providers whose key is set on the server, plus a native Anthropic provider and a BYOK
+MaaS endpoint the builtin catalog lacks. That provider set drives two things:
 
 - ``list_models`` — the SDG-teacher + eval-judge choices — via :func:`available_models`
   (pulled live from each provider's ``/v1/models``), falling back to the static
@@ -23,9 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
 import time
-from urllib.parse import urlsplit
 
 import httpx
 
@@ -141,74 +138,9 @@ def _enmaas_anthropic_provider_def() -> dict[str, str] | None:
     }
 
 
-# Names a custom endpoint cannot take: the providers above and data-designer's builtins.
-_RESERVED_PROVIDER_NAMES = frozenset(
-    {
-        "nvidia",
-        "openai",
-        "openrouter",
-        "anthropic",
-        "maas",
-        "enmaas",
-        "enmaas-anthropic",
-        "enmaas-openai",
-        "vertex",
-        "gateway",
-    }
-)
-_CUSTOM_ENDPOINT_BASE_URL = re.compile(r"^CUSTOM_ENDPOINT_([A-Z0-9_]+)_BASE_URL$")
-
-
-def custom_endpoint_url_allowed(url: str) -> bool:
-    """HTTPS, or plain HTTP to an in-cluster service (``*.svc``), with no credentials,
-    query or fragment in the URL. The API key is sent to this URL."""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return False
-    host = (parts.hostname or "").lower()
-    if not host or parts.username or parts.password or parts.query or parts.fragment:
-        return False
-    if parts.scheme == "https":
-        return True
-    return parts.scheme == "http" and host.endswith((".svc", ".svc.cluster.local"))
-
-
-def _custom_endpoint_defs() -> list[dict[str, str]]:
-    """OpenAI-compatible endpoints added under Settings > Custom endpoints (or set by an
-    operator). Each ``CUSTOM_ENDPOINT_<NAME>_BASE_URL`` + ``CUSTOM_ENDPOINT_<NAME>_API_KEY``
-    pair becomes a provider named ``<name>`` (lowercase, ``_`` -> ``-``)."""
-    defs: list[dict[str, str]] = []
-    for env_name in sorted(os.environ):
-        match = _CUSTOM_ENDPOINT_BASE_URL.match(env_name)
-        if not match:
-            continue
-        slug = match.group(1)
-        name = slug.lower().replace("_", "-")
-        key_env = f"CUSTOM_ENDPOINT_{slug}_API_KEY"
-        base_url = os.environ[env_name].strip().rstrip("/")
-        if not base_url or not os.environ.get(key_env):
-            continue
-        if name in _RESERVED_PROVIDER_NAMES:
-            logger.warning("ignoring custom endpoint %r: a built-in provider has that name", name)
-            continue
-        if not custom_endpoint_url_allowed(base_url):
-            logger.warning(
-                "ignoring custom endpoint %r: the base URL must be https (http only for"
-                " in-cluster *.svc hosts) with no credentials or query",
-                name,
-            )
-            continue
-        defs.append(
-            {"name": name, "endpoint": base_url, "provider_type": "openai", "api_key": key_env}
-        )
-    return defs
-
-
 def enabled_provider_defs() -> list[dict[str, str]]:
     """Providers whose API key is configured on the server: the builtin data-designer
-    catalog plus a native Anthropic provider, BYOK MaaS/EnMaaS endpoints and custom
-    endpoints (when configured).
+    catalog plus a native Anthropic provider and a BYOK MaaS endpoint (when configured).
 
     Returns provider dicts (name/endpoint/provider_type/api_key) ready to serialize
     into a data-designer ``model_providers.yaml``. ``api_key`` stays the env-var name
@@ -225,16 +157,14 @@ def enabled_provider_defs() -> list[dict[str, str]]:
         logger.warning("data-designer provider catalog unavailable", exc_info=True)
 
     # Inject providers DD's builtin catalog lacks (it ships only openai-type providers): native
-    # Anthropic, a BYOK MaaS endpoint, the EnMaaS gateway (its openai + anthropic dialects as
-    # two sources) and custom endpoints, each when its key is set. Skip any name a DD builtin
-    # already supplied.
+    # Anthropic, a BYOK MaaS endpoint, and the EnMaaS gateway (its openai + anthropic dialects as
+    # two sources), each when its key is set. Skip any name a DD builtin already supplied.
     names = {d.get("name") for d in defs}
     for extra in (
         _anthropic_provider_def(),
         _maas_provider_def(),
         _enmaas_provider_def(),
         _enmaas_anthropic_provider_def(),
-        *_custom_endpoint_defs(),
     ):
         if extra and extra["name"] not in names:
             defs.append(extra)

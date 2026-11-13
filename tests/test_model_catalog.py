@@ -151,55 +151,6 @@ class TestProviderInjection:
         assert "maas" in names
 
 
-class TestCustomEndpoints:
-    """Custom endpoints arrive as CUSTOM_ENDPOINT_<NAME>_BASE_URL / _API_KEY env pairs
-    (written by the studio-gateway from Settings, or set by an operator)."""
-
-    def _set(self, monkeypatch: pytest.MonkeyPatch, slug: str, url: str, key: str = "k") -> None:
-        monkeypatch.setenv(f"CUSTOM_ENDPOINT_{slug}_BASE_URL", url)
-        monkeypatch.setenv(f"CUSTOM_ENDPOINT_{slug}_API_KEY", key)
-
-    def test_pair_becomes_a_named_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._set(monkeypatch, "MY_VLLM", "https://vllm.example.com/v1/")
-        assert model_catalog.resolve_provider("my-vllm") == {
-            "name": "my-vllm",
-            "endpoint": "https://vllm.example.com/v1",
-            "provider_type": "openai",
-            "api_key": "CUSTOM_ENDPOINT_MY_VLLM_API_KEY",
-        }
-        env: dict[str, str] = {}
-        model_catalog.inject_enabled_provider_keys(env)
-        assert env["CUSTOM_ENDPOINT_MY_VLLM_API_KEY"] == "k"
-
-    def test_http_only_for_in_cluster_services(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._set(monkeypatch, "INTERNAL", "http://vllm.models.svc.cluster.local:8080/v1")
-        self._set(monkeypatch, "SHORT", "http://vllm.models.svc:8080/v1")
-        self._set(monkeypatch, "PLAIN", "http://vllm.example.com/v1")
-        names = {d["name"] for d in model_catalog._custom_endpoint_defs()}
-        assert {"internal", "short"} <= names
-        assert "plain" not in names
-
-    def test_rejects_credentials_or_query_in_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._set(monkeypatch, "USERINFO", "https://user:pass@vllm.example.com/v1")
-        self._set(monkeypatch, "QUERY", "https://vllm.example.com/v1?token=x")
-        names = {d["name"] for d in model_catalog._custom_endpoint_defs()}
-        assert not names & {"userinfo", "query"}
-
-    def test_malformed_url_is_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._set(monkeypatch, "BROKEN", "https://[bad")
-        self._set(monkeypatch, "GOOD", "https://vllm.example.com/v1")
-        names = {d["name"] for d in model_catalog.enabled_provider_defs()}
-        assert "good" in names
-        assert "broken" not in names
-
-    def test_needs_a_key_and_cannot_shadow_builtins(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("CUSTOM_ENDPOINT_NOKEY_BASE_URL", "https://vllm.example.com/v1")
-        monkeypatch.delenv("CUSTOM_ENDPOINT_NOKEY_API_KEY", raising=False)
-        self._set(monkeypatch, "OPENAI", "https://evil.example.com/v1")
-        names = {d["name"] for d in model_catalog._custom_endpoint_defs()}
-        assert not names & {"nokey", "openai"}
-
-
 async def test_accessible_model_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     defs = [
         {"name": "openai", "endpoint": "https://api.openai.com/v1",

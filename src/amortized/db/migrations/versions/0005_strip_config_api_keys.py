@@ -7,7 +7,7 @@ Create Date: 2026-11-12
 Eval jobs used to accept an inline endpoint/judge api_key. The worker scrubbed it
 from jobs.config at dispatch, but jobs.request_config (the retry snapshot) and jobs
 that were never dispatched kept it in plaintext. Job configs no longer accept keys
-(endpoints that need one are added under Settings > Custom endpoints); this removes
+(a model that needs one comes from a provider added under Settings); this removes
 every api_key already stored in either column, and the user:password@ and query
 parts of any stored base_url.
 """

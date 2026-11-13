@@ -152,7 +152,7 @@ class TestCreateEvalJob:
         )
         assert response.status_code == 422
         body = response.text
-        assert "Settings > Custom endpoints" in body
+        assert "provider under Settings" in body
         assert "sk-judge-secret" not in body
 
         import amortized.db.connection as _db_conn
@@ -493,7 +493,7 @@ class TestEvalBuilder:
                 "api_key": "sk-secret",
             },
         }
-        with pytest.raises(JobBuildError, match="Settings > Custom endpoints"):
+        with pytest.raises(JobBuildError, match="provider under Settings"):
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
     @pytest.mark.asyncio
@@ -1057,10 +1057,10 @@ class TestEvalEndpointSuggestions:
 
 
 class TestJudgeProviderResolution:
-    """The judge/endpoint api-key wiring: a base_url naming an enabled provider or
-    custom endpoint resolves to its real endpoint + its injected key env-var, so the
-    job authenticates with the forwarded key (the same keys SDG forwards). Any other
-    base_url is a keyless URL."""
+    """The judge/endpoint api-key wiring: a base_url naming an enabled provider
+    resolves to its real endpoint + its injected key env-var, so the job authenticates
+    with the forwarded key (the same keys SDG forwards). Any other base_url is a
+    keyless URL."""
 
     def test_provider_name_resolves_to_endpoint_and_injected_key(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -1095,22 +1095,22 @@ class TestJudgeProviderResolution:
         assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
 
     @pytest.mark.asyncio
-    async def test_custom_endpoint_name_delivers_its_key_to_the_job(self, monkeypatch) -> None:
-        monkeypatch.setenv("CUSTOM_ENDPOINT_MY_VLLM_BASE_URL", "https://vllm.example.com/v1/")
-        monkeypatch.setenv("CUSTOM_ENDPOINT_MY_VLLM_API_KEY", "sk-custom-secret")
-        config = {**EVAL_BODY, "endpoint": {"base_url": "my-vllm", "model": "qwen"}}
+    async def test_provider_name_delivers_its_key_only_through_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("MAAS_BASE_URL", "https://maas.example.com/v1/")
+        monkeypatch.setenv("MAAS_API_KEY", "sk-maas-secret")
+        config = {**EVAL_BODY, "endpoint": {"base_url": "maas", "model": "qwen"}}
 
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
         import json
 
         runner = json.loads(result.config_files["config.json"])
-        assert runner["endpoints"]["model"]["base_url"] == "https://vllm.example.com/v1"
-        assert runner["endpoints"]["model"]["api_key_env"] == "CUSTOM_ENDPOINT_MY_VLLM_API_KEY"
+        assert runner["endpoints"]["model"]["base_url"] == "https://maas.example.com/v1"
+        assert runner["endpoints"]["model"]["api_key_env"] == "MAAS_API_KEY"
         # the key travels only in the job's env (a per-job Secret), never in its config
-        assert result.env["CUSTOM_ENDPOINT_MY_VLLM_API_KEY"] == "sk-custom-secret"
-        assert "sk-custom-secret" not in result.config_files["config.json"]
-        assert "sk-custom-secret" not in json.dumps(result.resolved_config)
+        assert result.env["MAAS_API_KEY"] == "sk-maas-secret"
+        assert "sk-maas-secret" not in result.config_files["config.json"]
+        assert "sk-maas-secret" not in json.dumps(result.resolved_config)
 
 
 class TestAdaptBodyForParamError:
