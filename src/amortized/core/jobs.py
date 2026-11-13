@@ -7,6 +7,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from amortized.backends import BackendHandle
 from amortized.config import settings as _settings
@@ -110,14 +111,27 @@ def gpu_budget_error(job_type: JobType, config: dict[str, Any]) -> str | None:
     )
 
 
+def _url_carries_credentials(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parts = urlsplit(value.strip())
+    except ValueError:
+        return False
+    return bool(parts.username or parts.password or parts.query)
+
+
 def _api_key_paths(value: Any, path: str = "") -> list[str]:
     if isinstance(value, dict):
         found: list[str] = []
         for key, item in value.items():
             child = f"{path}.{key}" if path else str(key)
-            if str(key).lower().replace("-", "_") in ("api_key", "apikey"):
+            name = str(key).lower().replace("-", "_")
+            if name in ("api_key", "apikey"):
                 if item not in (None, ""):
                     found.append(child)
+            elif name == "base_url" and _url_carries_credentials(item):
+                found.append(child)
             else:
                 found.extend(_api_key_paths(item, child))
         return found

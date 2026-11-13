@@ -162,7 +162,10 @@ _CUSTOM_ENDPOINT_BASE_URL = re.compile(r"^CUSTOM_ENDPOINT_([A-Z0-9_]+)_BASE_URL$
 def custom_endpoint_url_allowed(url: str) -> bool:
     """HTTPS, or plain HTTP to an in-cluster service (``*.svc``), with no credentials,
     query or fragment in the URL. The API key is sent to this URL."""
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
     host = (parts.hostname or "").lower()
     if not host or parts.username or parts.password or parts.query or parts.fragment:
         return False

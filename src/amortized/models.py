@@ -536,9 +536,10 @@ class SDGJobRequest(_ConfigJsonMixin):
 
 
 INLINE_API_KEY_ERROR = (
-    "API keys are not accepted in job configs. Add the endpoint under Settings > Custom"
-    " endpoints (name, base URL, API key), or ask your administrator to configure it, then"
-    " set base_url to the endpoint's name."
+    "API keys are not accepted in job configs, including inside a URL (user:password@ or"
+    " query parameters). Add the endpoint under Settings > Custom endpoints (name, base URL,"
+    " API key), or ask your administrator to configure it, then set base_url to the"
+    " endpoint's name."
 )
 
 

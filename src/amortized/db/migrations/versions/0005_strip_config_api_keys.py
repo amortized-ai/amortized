@@ -8,12 +8,14 @@ Eval jobs used to accept an inline endpoint/judge api_key. The worker scrubbed i
 from jobs.config at dispatch, but jobs.request_config (the retry snapshot) and jobs
 that were never dispatched kept it in plaintext. Job configs no longer accept keys
 (endpoints that need one are added under Settings > Custom endpoints); this removes
-every api_key already stored in either column.
+every api_key already stored in either column, and the user:password@ and query
+parts of any stored base_url.
 """
 
 import json
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import sqlalchemy as sa
 from alembic import op
@@ -24,13 +26,33 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _strip_url_credentials(url: str) -> str:
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return url
+    if not (parts.username or parts.password or parts.query):
+        return url
+    host = parts.hostname or ""
+    netloc = f"[{host}]" if ":" in host else host
+    if port is not None:
+        netloc += f":{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
 def _strip_api_keys(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            key: _strip_api_keys(item)
-            for key, item in value.items()
-            if str(key).lower().replace("-", "_") not in ("api_key", "apikey")
-        }
+        out = {}
+        for key, item in value.items():
+            name = str(key).lower().replace("-", "_")
+            if name in ("api_key", "apikey"):
+                continue
+            if name == "base_url" and isinstance(item, str):
+                out[key] = _strip_url_credentials(item)
+            else:
+                out[key] = _strip_api_keys(item)
+        return out
     if isinstance(value, list):
         return [_strip_api_keys(item) for item in value]
     return value
@@ -46,6 +68,7 @@ def upgrade() -> None:
         sa.text(
             "SELECT id, config, request_config FROM jobs"
             " WHERE config::text ILIKE '%api%key%' OR request_config::text ILIKE '%api%key%'"
+            " OR config::text LIKE '%base_url%' OR request_config::text LIKE '%base_url%'"
         )
     ).fetchall()
     for job_id, raw_config, raw_request_config in rows:

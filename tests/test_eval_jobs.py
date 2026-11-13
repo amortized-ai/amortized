@@ -165,6 +165,15 @@ class TestCreateEvalJob:
         assert leaked == 0
 
     @pytest.mark.asyncio
+    async def test_literal_url_needs_a_host(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={**EVAL_BODY, "judge": {"base_url": "https://", "model": "gpt-judge"}},
+        )
+        assert response.status_code == 422
+        assert "judge.base_url is not a valid URL" in response.json()["message"]
+
+    @pytest.mark.asyncio
     async def test_api_key_in_untyped_endpoint_rejected(self, client: httpx.AsyncClient) -> None:
         # Legacy endpoint_* fields are untyped extras, so the schema cannot catch the key;
         # the config-wide check does.

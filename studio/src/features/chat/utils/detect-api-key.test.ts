@@ -10,6 +10,7 @@ describe("findApiKeys", () => {
     "api key = 7f3a9c2e1b8d4f6a0e5c",
     "Authorization: Bearer abc123def456ghi789",
     "the password is Sup3rSecretValue123",
+    '{"base_url": "http://vllm:8000/v1", "api_key": "7f3a9c2e1b8d4f6a0e5c"}',
   ])("flags %s", (text) => {
     expect(findApiKeys(text)).not.toHaveLength(0)
   })
@@ -31,6 +32,10 @@ describe("redactApiKeys", () => {
     expect(redactApiKeys("my vllm at https://v.example.com/v1, key sk-proj-AbCdEf0123456789xyz, model qwen")).toBe(
       "my vllm at https://v.example.com/v1, key [key removed], model qwen",
     )
+  })
+
+  it("keeps the quotes around a JSON value", () => {
+    expect(redactApiKeys('{"api_key": "7f3a9c2e1b8d4f6a0e5c"}')).toBe('{"api_key": "[key removed]"}')
   })
 
   it("merges overlapping matches", () => {

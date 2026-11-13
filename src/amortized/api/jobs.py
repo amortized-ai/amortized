@@ -7,6 +7,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -460,7 +461,16 @@ def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
         if not isinstance(endpoint, dict):
             continue
         base_url = str(endpoint.get("base_url") or "").strip()
-        if not base_url or base_url.lower().startswith(("http://", "https://")):
+        if not base_url:
+            continue
+        if base_url.lower().startswith(("http://", "https://")):
+            try:
+                host = urlsplit(base_url).hostname
+            except ValueError:
+                host = None
+            if not host:
+                # The value isn't echoed: it may carry credentials (rejected separately).
+                errors.append(f"{key}.base_url is not a valid URL (it has no host)")
             continue
         if resolve_provider(base_url) is None:
             names = ", ".join(p["name"] for p in enabled_provider_defs()) or "none configured"

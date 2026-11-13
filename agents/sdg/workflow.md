@@ -166,9 +166,9 @@ cost context.
 ## API keys
 
 Never ask for, accept, or repeat an API key or token, and never put one in a job
-config. A teacher endpoint of the user's own is added under **Settings > Custom
-endpoints** (name, base URL, key) and then appears in `list_models` under that name. If
-the user pastes a key into the chat, don't use it or quote it back: tell them to add the
+config. A teacher endpoint of the user's own must be added under **Settings > Custom
+endpoints** (name, base URL, key); after that it is a provider with that name. If the
+user pastes a key into the chat, don't use it or quote it back: tell them to add the
 endpoint in Settings instead, and to rotate the key because it was shared in the chat.
 
 ## Session Types

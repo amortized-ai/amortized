@@ -99,6 +99,7 @@ class TestAlembicMigrations:
         leaked = {
             "endpoint": {"base_url": "http://vllm:8000/v1", "model": "m", "api_key": "sk-a"},
             "judge": {"base_url": "openai", "model": "gpt-5", "api_key": "sk-b"},
+            "endpoint_tuned": {"base_url": "https://u:sk-c@v.example.com:8443/v1?token=sk-d"},
             "rubric": [{"name": "r", "description": "d"}],
         }
         clean = {"algorithm": "sft", "data_run_id": "run-1"}
@@ -124,5 +125,6 @@ class TestAlembicMigrations:
         config, request_config = rows["leaky"]
         assert "sk-" not in json.dumps(config) + json.dumps(request_config)
         assert request_config["judge"] == {"base_url": "openai", "model": "gpt-5"}
+        assert request_config["endpoint_tuned"] == {"base_url": "https://v.example.com:8443/v1"}
         assert request_config["rubric"] == leaked["rubric"]
         assert rows["clean"] == (clean, clean)

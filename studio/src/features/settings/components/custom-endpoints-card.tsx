@@ -2,7 +2,8 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Eye, EyeOff, Loader2, Plug, Trash2 } from "lucide-react"
+import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
+import { Eye, EyeOff, Loader2, Plug, RotateCw, Trash2 } from "lucide-react"
 import {
   useAddCustomEndpoint,
   useCustomEndpoints,
@@ -146,6 +147,7 @@ function EndpointForm({ initialName, onDone }: { initialName?: string; onDone?: 
 function EndpointRow({ name, baseURL }: { name: string; baseURL: string }) {
   const remove = useRemoveCustomEndpoint()
   const [editing, setEditing] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
 
   return (
     <div className="rounded-lg border px-4 py-3">
@@ -164,7 +166,7 @@ function EndpointRow({ name, baseURL }: { name: string; baseURL: string }) {
               size="sm"
               className="h-7 w-7 p-0 text-muted-foreground"
               aria-label={`Remove ${name}`}
-              onClick={() => remove.mutate(name)}
+              onClick={() => setConfirmingRemove(true)}
               disabled={remove.isPending}
             >
               {remove.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -178,12 +180,34 @@ function EndpointRow({ name, baseURL }: { name: string; baseURL: string }) {
         </div>
       )}
       {remove.isError && <p className="mt-2 text-xs text-[#c9190b]">{(remove.error as Error).message}</p>}
+      <DeleteEntityDialog
+        open={confirmingRemove}
+        entityType="custom endpoint"
+        entityName={name}
+        description={`This removes "${name}" and its stored API key. Jobs that use it fail until you add it again, and your backend restarts briefly.`}
+        isPending={remove.isPending}
+        onCancel={() => setConfirmingRemove(false)}
+        onConfirm={() => remove.mutate(name, { onSettled: () => setConfirmingRemove(false) })}
+      />
     </div>
   )
 }
 
+function CardHeading() {
+  return (
+    <CardHeader>
+      <div className="flex items-center gap-2">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#ffe0e0] text-[#cc0000] dark:bg-[#420303]/40 dark:text-[#e54343]">
+          <Plug className="h-3.5 w-3.5" />
+        </div>
+        <CardTitle className="text-sm">Custom Endpoints</CardTitle>
+      </div>
+    </CardHeader>
+  )
+}
+
 export function CustomEndpointsCard() {
-  const { data: status, isLoading } = useCustomEndpoints()
+  const { data: status, isLoading, isError, error, refetch, isFetching } = useCustomEndpoints()
   const available = !isLoading && !!status?.available
 
   // The chat's API-key warning links here (settings#section-endpoints).
@@ -193,19 +217,28 @@ export function CustomEndpointsCard() {
     }
   }, [available])
 
+  // A failed request is not the same as "not available here": show it, with a retry.
+  if (isError) {
+    return (
+      <Card id={CUSTOM_ENDPOINTS_SECTION_ID} className="scroll-mt-6">
+        <CardHeading />
+        <CardContent className="flex items-center justify-between gap-3">
+          <p className="text-xs text-[#c9190b]">Could not load custom endpoints: {(error as Error).message}</p>
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => void refetch()} disabled={isFetching}>
+            {isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   // Only the hybrid gateway deployment stores custom endpoints.
   if (!available || !status) return null
 
   return (
     <Card id={CUSTOM_ENDPOINTS_SECTION_ID} className="scroll-mt-6">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#ffe0e0] text-[#cc0000] dark:bg-[#420303]/40 dark:text-[#e54343]">
-            <Plug className="h-3.5 w-3.5" />
-          </div>
-          <CardTitle className="text-sm">Custom Endpoints</CardTitle>
-        </div>
-      </CardHeader>
+      <CardHeading />
       <CardContent>
         <p className="mb-4 text-xs text-muted-foreground">
           OpenAI-compatible endpoints that need an API key, such as a model you serve yourself. Eval and

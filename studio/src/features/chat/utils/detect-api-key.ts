@@ -14,9 +14,10 @@ const KEY_PATTERNS: RegExp[] = [
   /\bxox[abprs]-[A-Za-z0-9-]{10,}/g, // Slack tokens
 ]
 
-// A long token right after a word like "key", "token" or "Bearer" ("api key: abc…", "token=…").
+// A long token right after a word like "key", "token" or "Bearer" ("api key: abc…", "token=…",
+// "api_key": "…").
 const LABELLED_TOKEN =
-  /\b(?:api[\s_-]?key|key|token|secret|password|bearer)\b\s*(?:is\s+|[:=]\s*)?["'`]?([A-Za-z0-9._~+/=-]{16,})/gi
+  /\b(?:api[\s_-]?key|key|token|secret|password|bearer)\b["'`]?\s*(?:is\s+|[:=]\s*)?["'`]?([A-Za-z0-9._~+/=-]{16,})/gi
 
 export interface KeySpan {
   start: number

@@ -185,6 +185,13 @@ class TestCustomEndpoints:
         names = {d["name"] for d in model_catalog._custom_endpoint_defs()}
         assert not names & {"userinfo", "query"}
 
+    def test_malformed_url_is_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._set(monkeypatch, "BROKEN", "https://[bad")
+        self._set(monkeypatch, "GOOD", "https://vllm.example.com/v1")
+        names = {d["name"] for d in model_catalog.enabled_provider_defs()}
+        assert "good" in names
+        assert "broken" not in names
+
     def test_needs_a_key_and_cannot_shadow_builtins(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CUSTOM_ENDPOINT_NOKEY_BASE_URL", "https://vllm.example.com/v1")
         monkeypatch.delenv("CUSTOM_ENDPOINT_NOKEY_API_KEY", raising=False)
