@@ -228,6 +228,45 @@ class TestClassificationEvalBuilder:
             )
 
 
+class TestClassificationEvalFromTrainingJob:
+    @staticmethod
+    def _patch_parent(monkeypatch, parent_config: dict) -> None:
+        async def _fake(_jid):
+            return "run-1", parent_config
+
+        monkeypatch.setattr(eval_builder, "_classification_training_parent", _fake)
+
+    @pytest.mark.asyncio
+    async def test_forwards_training_settings_and_gpu(self, monkeypatch) -> None:
+        import json
+
+        self._patch_parent(
+            monkeypatch,
+            {"algorithm": "classifier_sft", "max_length": 128, "trust_remote_code": True,
+             "revision": "abc", "use_peft": True},
+        )
+        config = {"eval_mode": "classification", "training_job_id": "t1",
+                  "eval_data_run_id": "r1", "eval_on_gpu": True}
+        result = await eval_builder.build({"id": "e1", "type": "eval"}, config, {})
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["max_length"] == 128
+        assert runner["trust_remote_code"] is True
+        assert result.resources.gpus == 1
+
+    @pytest.mark.asyncio
+    async def test_cpu_by_default_and_rejects_non_sequence_task(self, monkeypatch) -> None:
+        from amortized.jobs.base import JobBuildError
+
+        self._patch_parent(monkeypatch, {"algorithm": "classifier_sft"})
+        config = {"eval_mode": "classification", "training_job_id": "t1", "eval_data_run_id": "r1"}
+        result = await eval_builder.build({"id": "e1", "type": "eval"}, dict(config), {})
+        assert result.resources.gpus == 0
+
+        self._patch_parent(monkeypatch, {"algorithm": "classifier_sft", "task": "multiple_choice"})
+        with pytest.raises(JobBuildError, match="multiple_choice"):
+            await eval_builder.build({"id": "e1", "type": "eval"}, dict(config), {})
+
+
 class TestClassificationEvalModeGuardrail:
     @staticmethod
     def _patch_training_job(monkeypatch, algorithm: str) -> None:
@@ -291,6 +330,46 @@ class TestClassificationEvalModeGuardrail:
         config = {"training_job_id": "t1", "eval_mode": "classification"}
         errors = await jobs_api._apply_classification_eval_mode(config, db=None)
         assert errors and "embedding model" in errors[0]
+
+    @staticmethod
+    def _patch_parent_config(monkeypatch, parent_config: dict) -> None:
+        from amortized.api import jobs as jobs_api
+
+        class _FakeRepo:
+            def __init__(self, _db):
+                pass
+
+            async def get_job(self, _jid):
+                return {"type": "training", "config": parent_config}
+
+        monkeypatch.setattr(jobs_api, "Repository", _FakeRepo)
+
+    @pytest.mark.asyncio
+    async def test_stamps_classifier_kind_and_decoder_gpu(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        cases = [
+            ({"algorithm": "classifier_sft"}, "head", False),
+            ({"algorithm": " classifier_sft ", "use_peft": True}, "head", True),  # padded value
+            ({"algorithm": "embedding_sft", "use_peft": True}, "router", False),
+        ]
+        for parent, kind, gpu in cases:
+            self._patch_parent_config(monkeypatch, parent)
+            config = {"training_job_id": "t1"}
+            assert await jobs_api._apply_classification_eval_mode(config, db=None) == []
+            assert config["eval_mode"] == "classification", parent
+            assert config["classifier_kind"] == kind, parent
+            assert bool(config.get("eval_on_gpu")) is gpu, parent
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_sequence_classifier_tasks(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        for task in ("multiple_choice", "token_classification"):
+            self._patch_parent_config(monkeypatch, {"algorithm": "classifier_sft", "task": task})
+            config = {"training_job_id": "t1"}
+            errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+            assert errors and task in errors[0] and "sequence-classification" in errors[0]
 
     @pytest.mark.asyncio
     async def test_noop_without_training_job(self, monkeypatch) -> None:

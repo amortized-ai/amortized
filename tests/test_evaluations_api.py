@@ -49,6 +49,19 @@ class TestMetricSetSignature:
         )
         assert a != b
 
+    def test_head_and_router_classification_evals_do_not_share_a_group(self) -> None:
+        # Same metric names, different meaning: head = held-out accuracy, router = proxy.
+        head = evals_api._metric_set_signature(
+            {"eval_mode": "classification", "classifier_kind": "head"}
+        )
+        router = evals_api._metric_set_signature(
+            {"eval_mode": "classification", "classifier_kind": "router"}
+        )
+        legacy = evals_api._metric_set_signature({"eval_mode": "classification"})
+        assert head != router
+        assert router == legacy  # unstamped (pre-head) classification evals are routers
+        assert evals_api._signature_names(head) == ["accuracy", "macro_f1"]
+
     def test_order_insensitive(self) -> None:
         a = evals_api._metric_set_signature({"metrics": ["a", "b"]})
         b = evals_api._metric_set_signature({"metrics": ["b", "a"]})

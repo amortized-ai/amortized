@@ -240,6 +240,13 @@ async def _validate_training_data(
             "algorithm is a required property — provide it (sft, lora_sft, osft, dpo, grpo, "
             "lora_grpo, kto, gkd), or pass the entire config as a single config_json string"
         )
+    if config.get("trust_remote_code") and not str(config.get("revision") or "").strip():
+        # Remote code runs inside the training pod, which holds storage and MLflow
+        # credentials — only allow it pinned to a reviewed commit.
+        errors.append(
+            "trust_remote_code=true requires revision: pin the model repo to the commit"
+            " (or tag) whose custom code you reviewed"
+        )
     data_path = config.get("data_path", "")
     data_run_id = str(config.get("data_run_id", "") or "")
 
@@ -338,14 +345,30 @@ async def _training_shape_violations(
     algorithm = ALGO_ALIASES.get(algorithm, algorithm)
     columns = sorted(first.keys())
     if algorithm in _CLASSIFICATION_ALGORITHMS:
-        text_col = str(config.get("text_column") or "text")
-        label_col = str(config.get("label_column") or "category")
-        missing = [c for c in (text_col, label_col) if c not in first]
+        # Check the columns training will actually read, with training-hub's defaults when
+        # unset (label_column is never forwarded if omitted): text+label for sequence
+        # classification and the router, +options for multiple choice, tokens+ner_tags
+        # for token classification.
+        task = str(config.get("task") or "sequence_classification")
+        if algorithm == "classifier_sft" and task == "token_classification":
+            needed = [
+                str(config.get("tokens_column") or "tokens"),
+                str(config.get("label_column") or "ner_tags"),
+            ]
+        else:
+            needed = [
+                str(config.get("text_column") or "text"),
+                str(config.get("label_column") or "label"),
+            ]
+            if algorithm == "classifier_sft" and task == "multiple_choice":
+                needed.append(str(config.get("options_column") or "options"))
+        missing = [c for c in needed if c not in first]
         if missing:
             return [
-                f"training data: algorithm '{algorithm}' needs flat columns {missing}, but"
-                f" the dataset has {columns}. Use a classification dataset"
-                " (text + category) for this algorithm."
+                f"training data: algorithm '{algorithm}' needs columns {missing}, but"
+                f" the dataset has {columns}. Set text_column/label_column (and"
+                " options_column/tokens_column for those tasks) to the dataset's columns —"
+                " a classification SDG dataset uses label_column='category'."
             ]
     elif algorithm in _SFT_MESSAGES_ALGORITHMS and "messages" not in first:
         return [
@@ -592,7 +615,8 @@ async def _apply_classification_eval_mode(
             parent_config = json.loads(parent_config)
         except (ValueError, TypeError):
             parent_config = {}
-    algorithm = str(parent_config.get("algorithm", "")).replace("-", "_")
+    algorithm = str(parent_config.get("algorithm", "")).strip().replace("-", "_")
+    algorithm = ALGO_ALIASES.get(algorithm, algorithm)
     is_classification_model = algorithm in _CLASSIFICATION_ALGORITHMS
     eval_mode = config.get("eval_mode")
 
@@ -605,6 +629,19 @@ async def _apply_classification_eval_mode(
                 " embedding_sft); its eval_mode must be 'classification' (a"
                 " generative/judge eval cannot score it)"
             ]
+        task = str(parent_config.get("task") or "sequence_classification")
+        if algorithm == "classifier_sft" and task != "sequence_classification":
+            return [
+                f"training job {training_job_id[:8]} trained a {task} head; classification"
+                " eval scores sequence-classification heads only (one text -> one label),"
+                " so it cannot evaluate this model yet"
+            ]
+        # Stamped server-side so the comparison view keeps a head's held-out accuracy
+        # apart from a router's separability proxy, and so admission (estimate_gpu_demand)
+        # and the builder agree that a decoder head (trained with use_peft) evals on a GPU.
+        config["classifier_kind"] = "head" if algorithm == "classifier_sft" else "router"
+        if algorithm == "classifier_sft" and parent_config.get("use_peft"):
+            config["eval_on_gpu"] = True
     elif eval_mode == "classification":
         return [
             "eval_mode='classification' requires a classifier or embedding model —"
@@ -906,6 +943,7 @@ async def retry_job(
             raise HTTPException(status_code=422, detail=errors)
     elif job_type == JobType.eval.value:
         errors = await _validate_eval_data(config, parent_job_id, db)
+        errors.extend(await _apply_classification_eval_mode(config, db))
         errors.extend(_validate_eval_endpoints(config))
         if errors:
             raise HTTPException(status_code=422, detail=errors)

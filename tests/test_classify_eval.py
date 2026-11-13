@@ -230,3 +230,54 @@ def test_anchors_capped_at_half_class(tmp_path, monkeypatch):
         assert res["num_anchors_per_class"][cat] == 10  # capped at len//2
     assert res["num_queries"] == 30  # 10 queries/class
     assert res["low_query_classes"] == []
+
+
+def _stub_transformers(monkeypatch, architectures):
+    tf = types.ModuleType("transformers")
+
+    class _AutoConfig:
+        @staticmethod
+        def from_pretrained(_path, trust_remote_code=False):
+            if architectures is None:
+                raise OSError("not a transformers model")
+            return types.SimpleNamespace(architectures=architectures)
+
+    tf.AutoConfig = _AutoConfig
+    monkeypatch.setitem(sys.modules, "transformers", tf)
+
+
+def test_head_kind_resolves_hf_ids(monkeypatch):
+    # A base-model baseline may be a Hugging Face id (no local dir): resolve its config so a
+    # sequence-classification model is scored by its head, not as an embedding router.
+    mod = _load_classify_eval([{"text": "a_0", "category": "a"}], monkeypatch)
+    _stub_transformers(monkeypatch, ["ModernBertForSequenceClassification"])
+    assert mod._head_kind("org/clf") == "sequence"
+    _stub_transformers(monkeypatch, ["BertForTokenClassification"])
+    assert mod._head_kind("org/ner") == "other"
+    _stub_transformers(monkeypatch, ["BertModel"])
+    assert mod._head_kind("sentence-transformers/all-MiniLM-L6-v2") is None
+    _stub_transformers(monkeypatch, None)
+    assert mod._head_kind("not/a-model") is None
+
+
+def test_head_kind_local_dirs(tmp_path, monkeypatch):
+    mod = _load_classify_eval([{"text": "a_0", "category": "a"}], monkeypatch)
+    (tmp_path / "config.json").write_text(json.dumps({"architectures": ["BertForMultipleChoice"]}))
+    assert mod._head_kind(str(tmp_path)) == "other"
+    (tmp_path / "config.json").write_text(json.dumps({"architectures": ["BertModel"]}))
+    assert mod._head_kind(str(tmp_path)) is None  # sentence-transformers output
+    (tmp_path / "config.json").unlink()
+    (tmp_path / "label_mapping.json").write_text("{}")
+    assert mod._head_kind(str(tmp_path)) == "sequence"
+
+
+def test_non_sequence_head_is_rejected(tmp_path, monkeypatch):
+    rows = [{"text": f"a_{i}", "category": "a"} for i in range(4)]
+    mod = _load_classify_eval(rows, monkeypatch)
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    arch = {"architectures": ["BertForTokenClassification"]}
+    (model_dir / "config.json").write_text(json.dumps(arch))
+    with pytest.raises(ValueError, match="sequence-classification heads only"):
+        _run(mod, {"model_path": str(model_dir), "eval_data_path": "y", "label_column": "category"},
+             tmp_path, monkeypatch)

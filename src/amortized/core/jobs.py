@@ -26,6 +26,11 @@ logger = logging.getLogger("amortized.core.jobs")
 _CPU_TRAINING_ALGORITHMS = frozenset(
     {"embedding_sft", "classifier_sft", "classifier", "embedding"}
 )
+# Only classifier_sft consumes use_peft (decoder backbone LoRA -> 1 GPU); embedding_sft ignores it.
+_PEFT_GPU_ALGORITHMS = frozenset({"classifier_sft", "classifier"})
+# The classifier/embedding aliases are stored resolved, so a stored config keeps its meaning if an
+# alias is ever repointed ("classifier" used to mean embedding_sft — migration 0005).
+_STORED_ALIASES = {"classifier": "classifier_sft", "embedding": "embedding_sft"}
 
 
 def estimate_gpu_demand(job: dict[str, Any]) -> int:
@@ -36,11 +41,12 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     the per-builder ``Resources(gpus=...)`` so the worker can decide what fits WITHOUT
     building. Keep in sync with ``amortized.jobs.*``:
       - training, embedding_sft / classifier_sft (+ classifier/embedding aliases)
-                 -> (train_on_gpu or use_peft) ? 1 : 0 (single-device, in-process; CPU by
-                    default, 1-GPU opt-in; nproc_per_node ignored)
+                 -> train_on_gpu (or use_peft, classifier_sft only) ? 1 : 0 (single-device,
+                    in-process; CPU by default, 1-GPU opt-in; nproc_per_node ignored)
       - training, other algorithms         -> nproc_per_node (default 1)
       - sdg / upload     -> 0
-      - eval, classification mode        -> 0 (CPU-only; nproc_per_node ignored)
+      - eval, classification mode        -> eval_on_gpu ? 1 : 0 (CPU unless the API stamped
+                                            eval_on_gpu for a decoder head; nproc ignored)
       - eval, embedded serving (training_job_id / model_name_or_path, no endpoint)
                                           -> nproc_per_node (default 1)
       - eval, external endpoint          -> 0
@@ -60,14 +66,17 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
 
     job_type = job.get("type")
     if job_type == JobType.training.value:
-        if str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS:
+        algorithm = str(config.get("algorithm", "")).strip()
+        if algorithm in _CPU_TRAINING_ALGORITHMS:
             # Single-device in-process training: CPU by default, 1 GPU via train_on_gpu (or, for a
             # classifier_sft decoder backbone, use_peft). nproc_per_node is ignored (no torchrun).
-            return 1 if (config.get("train_on_gpu") or config.get("use_peft")) else 0
+            peft_gpu = algorithm in _PEFT_GPU_ALGORITHMS and config.get("use_peft")
+            return 1 if (config.get("train_on_gpu") or peft_gpu) else 0
         return _nproc(1)
     if job_type == JobType.eval.value:
         if config.get("eval_mode") == "classification":
-            return 0  # classification eval is CPU-only by design; nproc_per_node is ignored
+            # CPU by default; a decoder head evals on 1 GPU. nproc_per_node is ignored.
+            return 1 if config.get("eval_on_gpu") else 0
         has_model_source = bool(
             str(config.get("training_job_id", "")).strip()
             or str(config.get("model_name_or_path", "")).strip()
@@ -94,11 +103,20 @@ def gpu_budget_error(job_type: JobType, config: dict[str, Any]) -> str | None:
         job_type == JobType.training
         and str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS
     ):
-        # use_peft forces a GPU regardless of train_on_gpu, so name whichever knobs are set.
-        knobs = [k for k in ("train_on_gpu", "use_peft") if config.get(k)] or ["train_on_gpu"]
+        # use_peft forces a GPU (classifier_sft only) regardless of train_on_gpu, so name
+        # whichever knobs actually drive the demand.
+        peft = str(config.get("algorithm", "")).strip() in _PEFT_GPU_ALGORITHMS
+        knobs = [
+            k for k in ("train_on_gpu", "use_peft") if config.get(k) and (k != "use_peft" or peft)
+        ] or ["train_on_gpu"]
         knob = "/".join(knobs)
         unset = " and ".join(f"{k}=false" for k in knobs)
         remedy = f"set {unset} to train on CPU or {raise_budget}"
+    elif job_type == JobType.eval and config.get("eval_mode") == "classification":
+        # Set server-side for a decoder classifier head (trained with use_peft), which is too
+        # large to score on the CPU eval pod.
+        knob = "eval_on_gpu"
+        remedy = f"a decoder classifier head evaluates on a GPU — {raise_budget}"
     elif budget == 0:
         # nproc_per_node cannot go below 1, so with no GPU budget there is nothing to reduce.
         knob = "nproc_per_node"
@@ -129,6 +147,11 @@ async def create_job(
 ) -> dict[str, Any]:
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
+
+    if job_type == JobType.training:
+        algorithm = str(config.get("algorithm", "")).strip()
+        if algorithm in _STORED_ALIASES:
+            config = {**config, "algorithm": _STORED_ALIASES[algorithm]}
 
     # Placeholder tokens are agent-resolution hints, never valid values. The form
     # strips them, but the agent/API path could still submit one — reject it here

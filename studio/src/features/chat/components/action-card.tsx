@@ -80,9 +80,15 @@ function extractTrainingSummary(config: Record<string, unknown>): [string, strin
   // _CPU_TRAINING_ALGORITHMS), which compares the stripped — not lowercased — value
   // against these canonical algorithm names, so a non-canonical casing renders and
   // schedules consistently (both treat it as generative).
+  // A classifier_sft decoder backbone fine-tuned with use_peft (LoRA) also needs the GPU.
   const algo = String(config.algorithm ?? "").trim()
-  if (["classifier_sft", "classifier", "embedding_sft", "embedding"].includes(algo))
-    rows.push(["Device", config.train_on_gpu ? "GPU (1)" : "CPU (default)"])
+  if (["classifier_sft", "classifier", "embedding_sft", "embedding"].includes(algo)) {
+    const peftGpu = ["classifier_sft", "classifier"].includes(algo) && Boolean(config.use_peft)
+    rows.push([
+      "Device",
+      config.train_on_gpu ? "GPU (1)" : peftGpu ? "GPU (1, required for LoRA)" : "CPU (default)",
+    ])
+  }
 
   return rows
 }

@@ -183,6 +183,27 @@ describe("ActionCard", () => {
     expect(screen.getByText("GPU (1)")).toBeInTheDocument()
   })
 
+  it("shows Device: GPU for a decoder head classifier with use_peft, CPU for a router", () => {
+    const mk = (algorithm: string) => ({
+      action: "Submit training job",
+      description: "Train",
+      params: {},
+      jobType: "training" as const,
+      config: { algorithm, model_name_or_path: "Qwen/Qwen3-0.6B", use_peft: true },
+    })
+    const { unmount } = render(
+      <ActionCard action={mk("classifier_sft")} onConfirm={vi.fn()} onReject={vi.fn()} />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText("GPU (1, required for LoRA)")).toBeInTheDocument()
+    unmount()
+    // embedding_sft ignores use_peft, so it still trains on CPU.
+    render(<ActionCard action={mk("embedding_sft")} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
+    expect(screen.getByText("CPU (default)")).toBeInTheDocument()
+  })
+
   it("does not add a Device row for a generative (non-embedding) training job", () => {
     const sftAction = {
       action: "Submit training job",

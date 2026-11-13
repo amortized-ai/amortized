@@ -91,21 +91,42 @@ def _macro_f1(confusion: dict, labels: list) -> tuple[float, dict]:
     return macro, per_class
 
 
-def _is_head_classifier(model_path: str) -> bool:
-    """A classifier_sft head model ships a label_mapping.json and/or a *ForSequenceClassification
-    architecture in config.json; an embedding model ships sentence-transformers modules instead."""
-    if os.path.exists(os.path.join(model_path, "label_mapping.json")):
-        return True
+def _head_kind(model_path: str, trust_remote_code: bool = False) -> str | None:
+    """Which classification head a model carries: "sequence", "other" (multiple-choice /
+    token head), or None for an embedding model (sentence-transformers modules, no head).
+
+    A classifier_sft output ships label_mapping.json plus a config.json naming the head
+    architecture. A base-model baseline may be a Hugging Face id, so resolve its config
+    remotely when there is no local directory."""
+    archs: list[str] = []
     cfg_path = os.path.join(model_path, "config.json")
-    if os.path.exists(cfg_path):
+    if os.path.isdir(model_path):
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path) as f:
+                    archs = list(json.load(f).get("architectures") or [])
+            except (ValueError, OSError):
+                archs = []
+        if not archs and os.path.exists(os.path.join(model_path, "label_mapping.json")):
+            return "sequence"  # classifier_sft output with an unnamed architecture
+    else:
         try:
-            with open(cfg_path) as f:
-                arch = " ".join(json.load(f).get("architectures", []) or [])
-            heads = ("ForSequenceClassification", "ForMultipleChoice", "ForTokenClassification")
-            return any(h in arch for h in heads)
-        except (ValueError, OSError):
-            return False
-    return False
+            from transformers import AutoConfig
+
+            archs = list(
+                AutoConfig.from_pretrained(
+                    model_path, trust_remote_code=trust_remote_code
+                ).architectures
+                or []
+            )
+        except Exception:
+            return None
+    arch = " ".join(archs)
+    if "ForSequenceClassification" in arch:
+        return "sequence"
+    if "ForMultipleChoice" in arch or "ForTokenClassification" in arch:
+        return "other"
+    return None
 
 
 def _ece(probs, correct, bins: int = 15) -> float:
@@ -119,11 +140,73 @@ def _ece(probs, correct, bins: int = 15) -> float:
     return float(e)
 
 
-def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str) -> None:
+# Temperature-scaling calibration: fit T on a seeded random slice of the eval set and
+# measure ECE before/after only on the rest, so the reported gain is out-of-sample.
+# Skipped (and reported as skipped, never as T=1.0) when the held-out slice is too small.
+_CAL_FIT_MAX = 1500
+_CAL_MIN_HELDOUT = 200
+
+
+def _fit_temperature(logits, y, seed: int) -> dict:
+    """Fit a softmax temperature on part of (logits, y) and score ECE on the remainder.
+
+    Returns {"ece_before", "ece_after", "temperature", "fit_rows", "heldout_rows"} or
+    {"skipped": reason}. Rows whose label the model doesn't know (y < 0) can't be fit."""
+    import numpy as np
+    import torch
+
+    known = np.flatnonzero(y >= 0)
+    rng = np.random.default_rng(seed)
+    rng.shuffle(known)
+    n_fit = min(_CAL_FIT_MAX, len(known) // 2)
+    fit, held = known[:n_fit], known[n_fit:]
+    if len(held) < _CAL_MIN_HELDOUT or n_fit == 0:
+        return {
+            "skipped": (
+                f"{len(known)} rows with labels the model knows; calibration needs at least"
+                f" {2 * _CAL_MIN_HELDOUT} (half to fit T, half to measure ECE)"
+            )
+        }
+    # Fit log T so T stays positive; LBFGS with a line search converges reliably.
+    log_t = torch.zeros(1, requires_grad=True)
+    fit_logits = torch.tensor(logits[fit], dtype=torch.float64)
+    fit_labels = torch.tensor(y[fit])
+    opt = torch.optim.LBFGS([log_t], lr=1.0, max_iter=100, line_search_fn="strong_wolfe")
+
+    def _closure():
+        opt.zero_grad()
+        loss = torch.nn.functional.cross_entropy(fit_logits / log_t.exp(), fit_labels)
+        loss.backward()
+        return loss
+
+    opt.step(_closure)
+    temp = float(log_t.detach().exp())
+    if not np.isfinite(temp) or temp <= 0:
+        return {"skipped": f"temperature fit did not converge (T={temp})"}
+
+    def _softmax(x):
+        e = np.exp(x - x.max(1, keepdims=True))
+        return e / e.sum(1, keepdims=True)
+
+    held_logits = logits[held]
+    correct = (held_logits.argmax(1) == y[held]).astype(float)
+    return {
+        "ece_before": round(_ece(_softmax(held_logits), correct), 4),
+        "ece_after": round(_ece(_softmax(held_logits / temp), correct), 4),
+        "temperature": round(temp, 3),
+        "fit_rows": int(n_fit),
+        "heldout_rows": len(held),
+    }
+
+
+def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) -> None:
     """Evaluate a classifier_sft head model: argmax predictions on the held-out set, with
     accuracy / macro-F1 / per-class F1 / confusion + temperature-scaled calibration (ECE).
 
-    Unlike the embedding centroid proxy, this is a *true* held-out classifier accuracy."""
+    Unlike the embedding centroid proxy, this is a *true* held-out classifier accuracy.
+    ``name`` maps a label to its display name (class_labels), applied to both the ground
+    truth and the predictions so they share one label space. The router-only knobs
+    (anchors_per_class, top_k, tau) don't apply here."""
     import numpy as np
     import torch
     from sklearn.metrics import accuracy_score, f1_score
@@ -131,14 +214,25 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str) -> None:
 
     mp = cfg["model_path"]
     max_len = int(cfg.get("max_length") or 512)
-    tok = AutoTokenizer.from_pretrained(mp)
-    model = AutoModelForSequenceClassification.from_pretrained(mp).eval()
+    trust = bool(cfg.get("trust_remote_code"))
+    tok = AutoTokenizer.from_pretrained(mp, trust_remote_code=trust)
+    model = AutoModelForSequenceClassification.from_pretrained(mp, trust_remote_code=trust).eval()
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(dev)
+    if tok.pad_token is None and tok.eos_token is not None:
+        tok.pad_token = tok.eos_token  # decoder backbones ship without a pad token
     id2label = {int(k): v for k, v in model.config.id2label.items()}
+    label2id = {str(k): int(v) for k, v in (model.config.label2id or {}).items()}
+
+    def _label_name(raw) -> str:
+        # Integer-like checkpoint labels ("3") map through class_labels like int ground truth.
+        if isinstance(raw, str) and raw.lstrip("-").isdigit():
+            raw = int(raw)
+        return name(raw)
 
     texts = [r["text"] for r in rows]
-    true = [str(r["label"]) for r in rows]
+    raw_true = [str(r["label"]) for r in rows]
+    true = [_label_name(r["label"]) for r in rows]
     logits_list = []
     for i in range(0, len(texts), 128):
         enc = tok(
@@ -151,39 +245,21 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str) -> None:
         with torch.no_grad():
             logits_list.append(model(**enc).logits.float().cpu().numpy())
     logits = np.concatenate(logits_list)
+    if not np.isfinite(logits).all():
+        raise ValueError(
+            "the classifier produced non-finite logits (NaN/inf) — the checkpoint is broken"
+            " (e.g. diverged training); retrain before evaluating"
+        )
     pred_idx = logits.argmax(1)
-    pred = [str(id2label.get(int(i), i)) for i in pred_idx]
+    pred = [_label_name(id2label.get(int(i), i)) for i in pred_idx]
 
     accuracy = accuracy_score(true, pred)
     labels_sorted = sorted(set(true) | set(pred))
     macro_f1 = f1_score(true, pred, average="macro", labels=labels_sorted, zero_division=0)
     per_class = f1_score(true, pred, average=None, labels=labels_sorted, zero_division=0)
 
-    # Temperature-scaled calibration on a split of the eval set (ECE before/after).
-    def _softmax(x):
-        e = np.exp(x - x.max(1, keepdims=True))
-        return e / e.sum(1, keepdims=True)
-
-    y_idx = np.array([model.config.label2id.get(t, -1) for t in true])
-    correct = (pred_idx == y_idx).astype(float)
-    ece_before = _ece(_softmax(logits), correct)
-    cut = min(1500, len(logits) // 2) or len(logits)
-    temp = 1.0
-    if cut and (y_idx[:cut] >= 0).all():
-        temp_param = torch.ones(1, requires_grad=True)
-        cal_logits = torch.tensor(logits[:cut])
-        cal_labels = torch.tensor(y_idx[:cut])
-        opt = torch.optim.LBFGS([temp_param], lr=0.1, max_iter=60)
-
-        def _closure():
-            opt.zero_grad()
-            loss = torch.nn.functional.cross_entropy(cal_logits / temp_param, cal_labels)
-            loss.backward()
-            return loss
-
-        opt.step(_closure)
-        temp = float(temp_param.detach())
-    ece_after = _ece(_softmax(logits / temp), correct)
+    y_idx = np.array([label2id.get(t, -1) for t in raw_true])
+    calibration = _fit_temperature(logits, y_idx, int(cfg.get("seed", 42)))
 
     confusion = {t: {p: 0 for p in labels_sorted} for t in labels_sorted}
     for t, p in zip(true, pred, strict=False):
@@ -206,27 +282,30 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str) -> None:
             "confusion": confusion,
             "num_classes": len(labels_sorted),
             "num_samples": len(rows),
-            "calibration": {
-                "ece_before": round(ece_before, 4),
-                "ece_after": round(ece_after, 4),
-                "temperature": round(temp, 3),
-            },
+            "calibration": calibration,
             "metric_meaning": (
                 "True held-out classifier accuracy: argmax of a trained classification head on "
-                "the held-out set (not a separability proxy). Calibration = temperature-scaled ECE."
+                "the held-out set (not a separability proxy). Calibration = temperature-scaled "
+                "ECE, with T fit on one random part of the eval set and ECE measured on the rest."
             ),
         },
     }
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, "metrics.json"), "w") as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(metrics, f, indent=2, allow_nan=False)
     with open(os.path.join(output_dir, "results.jsonl"), "w") as f:
         for t, p in zip(true, pred, strict=False):
             f.write(json.dumps({"actual_name": t, "predicted_name": p, "correct": t == p}) + "\n")
+    if "skipped" in calibration:
+        cal_msg = f"calibration skipped: {calibration['skipped']}"
+    else:
+        cal_msg = (
+            f"ECE {calibration['ece_before']:.3f} -> {calibration['ece_after']:.3f}"
+            f" (T={calibration['temperature']:.2f}, on {calibration['heldout_rows']} held-out rows)"
+        )
     print(
         f"classification eval (head): accuracy={accuracy:.2%} macro_f1={macro_f1:.4f} "
-        f"over {len(rows)} examples in {len(labels_sorted)} classes; "
-        f"ECE {ece_before:.3f} -> {ece_after:.3f} (T={temp:.2f})"
+        f"over {len(rows)} examples in {len(labels_sorted)} classes; {cal_msg}"
     )
 
 
@@ -258,8 +337,14 @@ def main() -> None:
 
     # A classifier_sft head model is evaluated by direct argmax (true held-out accuracy +
     # calibration); an embedding model falls through to the nearest-centroid separability proxy.
-    if _is_head_classifier(cfg["model_path"]):
-        _head_classifier_eval(cfg, rows, output_dir)
+    kind = _head_kind(cfg["model_path"], bool(cfg.get("trust_remote_code")))
+    if kind == "other":
+        raise ValueError(
+            "this model has a multiple-choice or token-classification head; classification"
+            " eval scores sequence-classification heads only (one text -> one label)"
+        )
+    if kind == "sequence":
+        _head_classifier_eval(cfg, rows, output_dir, name)
         return
 
     by_label: dict[int, list[str]] = {}

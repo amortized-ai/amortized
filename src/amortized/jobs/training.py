@@ -134,6 +134,10 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.pop("data_output_dir", None)
         if config.get("use_peft") is not None:
             thub_config["use_peft"] = config["use_peft"]
+        if config.get("use_peft") and config.get("learning_rate") is None:
+            # A decoder head trained with LoRA collapses to one class at the 2e-5 encoder
+            # default (training-hub classifier_sft docs: use ~1e-4..1e-3). Caller value wins.
+            thub_config["learning_rate"] = 1e-4
         # lora_target_modules is globally skipped too (the generative LoRA path doesn't take
         # it), but classifier_sft does; unset -> training-hub uses PEFT's per-architecture
         # targets, falling back to all-linear (e.g. ModernBERT, Qwen3.5).

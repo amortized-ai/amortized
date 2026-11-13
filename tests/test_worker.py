@@ -683,6 +683,23 @@ class TestTrainingHubConfig:
         sft = yaml.safe_load(_training_hub_config_yaml("osft", {**config, "algorithm": "osft"}))
         assert "lora_target_modules" not in sft
 
+    def test_thub_config_yaml_classifier_sft_peft_learning_rate(self) -> None:
+        # A LoRA decoder head collapses to one class at the 2e-5 encoder default, so use_peft
+        # defaults the rate to 1e-4; an explicit rate (and the non-peft path) are untouched.
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"algorithm": "classifier_sft", "model_name_or_path": "Qwen/Qwen3-0.6B",
+                "output_dir": "/output"}
+        peft = yaml.safe_load(
+            _training_hub_config_yaml("classifier_sft", {**base, "use_peft": True})
+        )
+        assert peft["learning_rate"] == 1e-4
+        explicit = yaml.safe_load(_training_hub_config_yaml(
+            "classifier_sft", {**base, "use_peft": True, "learning_rate": 5e-4}))
+        assert explicit["learning_rate"] == 5e-4
+        encoder = yaml.safe_load(_training_hub_config_yaml("classifier_sft", base))
+        assert "learning_rate" not in encoder
+
     async def test_algorithm_aliases_map_to_subcommand(self) -> None:
         from amortized.jobs.training import build
 

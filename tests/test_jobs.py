@@ -297,6 +297,19 @@ class TestUpstreamDependencyPrecondition:
         assert "reduce nproc_per_node" not in detail
 
     @pytest.mark.asyncio
+    async def test_trust_remote_code_requires_revision(self, client: httpx.AsyncClient) -> None:
+        # Remote code runs in a pod holding storage/MLflow credentials: require a pinned commit.
+        body = {"algorithm": "classifier_sft", "model_name_or_path": "org/custom-arch",
+                "data_path": "./d.parquet", "trust_remote_code": True}
+        resp = await client.post("/api/v1/jobs/training/validate", json=body)
+        assert resp.status_code == 422
+        assert "requires revision" in str(resp.json())
+        resp = await client.post(
+            "/api/v1/jobs/training/validate", json={**body, "revision": "0123abc"}
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
     async def test_training_rejects_parent_and_data_run_together(
         self, client: httpx.AsyncClient
     ) -> None:
@@ -586,3 +599,52 @@ class TestEvalEndpointBaseUrl:
         }
         resp = await client.post("/api/v1/jobs/eval/validate", json=body)
         assert resp.status_code == 200, resp.json()
+
+
+class TestClassifierTrainingDataColumns:
+    """The flat-column check reads the columns training will use, per task, with
+    training-hub's defaults when unset (label_column is not forwarded if omitted)."""
+
+    @staticmethod
+    async def _violations(monkeypatch: pytest.MonkeyPatch, row: dict, config: dict) -> list[str]:
+        from amortized.api import datasets as datasets_api
+        from amortized.api import jobs as jobs_api
+
+        async def _find(_client, _run):
+            return ["data.jsonl"]
+
+        class _Client:
+            async def get_artifact(self, _run, _path):
+                return b""
+
+        monkeypatch.setattr(datasets_api, "_mlflow_client", lambda: _Client())
+        monkeypatch.setattr(datasets_api, "_find_dataset_artifacts", _find)
+        monkeypatch.setattr(datasets_api, "_parse_records", lambda _p, _b: [row])
+        return await jobs_api._training_shape_violations(
+            {"data_run_id": "r" * 32, **config}, "", None
+        )
+
+    @pytest.mark.asyncio
+    async def test_label_column_defaults_to_label(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        sdg_row = {"text": "t", "category": "a"}
+        errors = await self._violations(monkeypatch, sdg_row, {"algorithm": "classifier"})
+        assert errors and "label" in errors[0] and "category" in errors[0]
+        assert not await self._violations(
+            monkeypatch, sdg_row, {"algorithm": "classifier", "label_column": "category"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_token_classification_reads_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg = {"algorithm": "classifier_sft", "task": "token_classification"}
+        assert not await self._violations(monkeypatch, {"tokens": ["a"], "ner_tags": [0]}, cfg)
+        errors = await self._violations(monkeypatch, {"text": "a", "ner_tags": [0]}, cfg)
+        assert errors and "tokens" in errors[0]
+
+    @pytest.mark.asyncio
+    async def test_multiple_choice_needs_options(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg = {"algorithm": "classifier_sft", "task": "multiple_choice"}
+        errors = await self._violations(monkeypatch, {"text": "q", "label": 0}, cfg)
+        assert errors and "options" in errors[0]
+        assert not await self._violations(
+            monkeypatch, {"text": "q", "label": 0, "options": ["a", "b"]}, cfg
+        )

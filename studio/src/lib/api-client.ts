@@ -301,6 +301,8 @@ export interface EvaluationGroup {
   id: string
   dataset: { run_id: string; name: string }
   metric_names: string[]
+  /** Classification evals only: "head" = held-out accuracy, "router" = separability proxy. */
+  classifier_kind?: "head" | "router" | null
   evals: EvaluationEntry[]
   latest_created_at: string | null
 }

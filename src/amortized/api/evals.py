@@ -63,7 +63,13 @@ def _metric_set_signature(cfg: dict[str, Any]) -> str:
         for c in (cfg.get("rubric") or [])
         if isinstance(c, dict) and c.get("name")
     )
-    return json.dumps({"m": metrics, "r": rubric}, sort_keys=True)
+    sig: dict[str, Any] = {"m": metrics, "r": rubric}
+    if cfg.get("eval_mode") == "classification" and cfg.get("classifier_kind") == "head":
+        # A head's accuracy is true held-out accuracy; a router's is a separability proxy
+        # (anchors drawn from the eval set). Same metric names, different meaning — keep
+        # them in separate groups. Unstamped (legacy) classification evals are routers.
+        sig["k"] = "head"
+    return json.dumps(sig, sort_keys=True)
 
 
 def _semantic_config(cfg: dict[str, Any], run_tags: dict[str, str]) -> dict[str, Any]:
@@ -306,6 +312,14 @@ async def list_evaluations(
                     "name": dataset_name_by_run.get(ds_run, ds_run),
                 },
                 "metric_names": _signature_names(sig),
+                # Which classification eval produced the numbers (None for generative evals):
+                # "head" = held-out accuracy of a classifier head, "router" = an embedding
+                # router's separability proxy.
+                "classifier_kind": (
+                    ("head" if cfg.get("classifier_kind") == "head" else "router")
+                    if cfg.get("eval_mode") == "classification"
+                    else None
+                ),
                 "evals": [],
                 "latest_created_at": None,
             },
