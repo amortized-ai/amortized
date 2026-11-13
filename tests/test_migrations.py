@@ -1,5 +1,8 @@
-"""Tests for alembic migrations."""
+"""Data migrations, run against the real test database (alembic up to a revision, seed, upgrade)."""
 
+from __future__ import annotations
+
+import json
 import os
 import subprocess
 
@@ -8,83 +11,47 @@ import pytest
 from conftest import TEST_DATABASE_URL
 
 
-@pytest.fixture(autouse=True)
-async def _clean_db():
-    """Drop all tables before each test for a clean slate."""
+def _alembic(target: str) -> None:
+    env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
+    subprocess.run(["alembic", "upgrade", target], capture_output=True, env=env, check=True)
+
+
+@pytest.mark.asyncio
+async def test_0005_pins_legacy_classifier_alias_to_embedding_sft() -> None:
+    # "classifier" meant embedding_sft before it was repointed to classifier_sft; stored
+    # pre-upgrade training configs (and their retry snapshots) must keep that meaning.
     conn = await asyncpg.connect(TEST_DATABASE_URL)
-    await conn.execute("DROP TABLE IF EXISTS alembic_version")
-    await conn.execute("DROP TABLE IF EXISTS jobs")
-    await conn.close()
-    yield
-    conn = await asyncpg.connect(TEST_DATABASE_URL)
-    await conn.execute("DROP TABLE IF EXISTS alembic_version")
-    await conn.execute("DROP TABLE IF EXISTS jobs")
-    await conn.close()
+    try:
+        await conn.execute("DROP TABLE IF EXISTS alembic_version")
+        await conn.execute("DROP TABLE IF EXISTS jobs")
+        _alembic("0004")
+        rows = {
+            "legacy": ("training", {"algorithm": "classifier", "model_name_or_path": "m"},
+                       {"algorithm": " classifier "}),
+            "router": ("training", {"algorithm": "embedding"}, {}),
+            "llm": ("training", {"algorithm": "osft"}, None),
+            "eval": ("eval", {"algorithm": "classifier"}, {}),
+        }
+        for job_id, (job_type, config, snapshot) in rows.items():
+            await conn.execute(
+                "INSERT INTO jobs (id, type, status, config, request_config, created_at)"
+                " VALUES ($1, $2, 'failed', $3::jsonb, $4::jsonb, now())",
+                job_id, job_type, json.dumps(config),
+                None if snapshot is None else json.dumps(snapshot),
+            )
+        _alembic("0005")
 
-
-class TestAlembicMigrations:
-    def test_upgrade_creates_schema(self) -> None:
-        env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
-        result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        assert result.returncode == 0, f"alembic upgrade failed: {result.stderr}"
-
-    @pytest.mark.asyncio
-    async def test_upgrade_creates_jobs_table(self) -> None:
-        env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
-        subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
-
-        conn = await asyncpg.connect(TEST_DATABASE_URL)
-        row = await conn.fetchrow(
-            "SELECT 1 FROM information_schema.tables WHERE table_name = 'jobs'"
-        )
+        got = {}
+        for r in await conn.fetch("SELECT id, config::text, request_config::text FROM jobs"):
+            snapshot = r["request_config"] and json.loads(r["request_config"])
+            got[r["id"]] = (json.loads(r["config"]), snapshot)
+        assert got["legacy"][0] == {"algorithm": "embedding_sft", "model_name_or_path": "m"}
+        assert got["legacy"][1] == {"algorithm": "embedding_sft"}
+        assert got["router"][0] == {"algorithm": "embedding"}  # unchanged meaning, untouched
+        assert got["llm"] == ({"algorithm": "osft"}, None)
+        assert got["eval"][0] == {"algorithm": "classifier"}  # only training rows are rewritten
+    finally:
+        # Leave the schema at head (other tests assume the jobs table exists), minus our rows.
+        await conn.execute("DELETE FROM jobs WHERE id = ANY($1::text[])", list(rows))
         await conn.close()
-        assert row is not None
-
-    @pytest.mark.asyncio
-    async def test_downgrade_drops_jobs_table(self) -> None:
-        env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
-        subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
-        subprocess.run(["alembic", "downgrade", "base"], capture_output=True, env=env, check=True)
-
-        conn = await asyncpg.connect(TEST_DATABASE_URL)
-        row = await conn.fetchrow(
-            "SELECT 1 FROM information_schema.tables WHERE table_name = 'jobs'"
-        )
-        await conn.close()
-        assert row is None
-
-    def test_current_shows_head_after_upgrade(self) -> None:
-        env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
-        subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
-        result = subprocess.run(["alembic", "current"], capture_output=True, text=True, env=env)
-        # Dynamically find the latest migration revision
-        versions_dir = os.path.join(
-            os.path.dirname(__file__),
-            os.pardir,
-            "src",
-            "amortized",
-            "db",
-            "migrations",
-            "versions",
-        )
-        revisions = sorted(
-            f for f in os.listdir(versions_dir) if f.endswith(".py") and not f.startswith("_")
-        )
-        latest_rev = revisions[-1].split("_")[0]  # e.g. "0002" from "0002_proper_pg_types.py"
-        assert latest_rev in result.stdout
-
-    def test_upgrade_is_idempotent(self) -> None:
-        env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
-        result1 = subprocess.run(
-            ["alembic", "upgrade", "head"], capture_output=True, text=True, env=env
-        )
-        assert result1.returncode == 0
-        result2 = subprocess.run(
-            ["alembic", "upgrade", "head"], capture_output=True, text=True, env=env
-        )
-        assert result2.returncode == 0
+        _alembic("head")

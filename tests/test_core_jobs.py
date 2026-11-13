@@ -1,5 +1,6 @@
 """Tests for core/jobs.py — no HTTP server required."""
 
+import json
 import os
 import subprocess
 
@@ -114,7 +115,7 @@ class TestCreateJob:
         from amortized.core import jobs as jobs_mod
 
         monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
-        with pytest.raises(InvalidJobStateError, match="only CPU training") as exc:
+        with pytest.raises(InvalidJobStateError, match="only CPU classifier training") as exc:
             await create_job(
                 repo,
                 job_type=JobType.training,
@@ -143,6 +144,35 @@ class TestCreateJob:
                 },
             )
         assert "nproc_per_node" not in str(exc.value)
+
+
+    @pytest.mark.asyncio
+    async def test_create_stores_resolved_classifier_aliases(self, repo: Repository) -> None:
+        # Stored configs keep their meaning if an alias is repointed later ("classifier"
+        # used to mean embedding_sft): the alias is stored as the concrete algorithm.
+        for alias, resolved in (("classifier", "classifier_sft"), ("embedding", "embedding_sft")):
+            row = await create_job(
+                repo,
+                job_type=JobType.training,
+                config={"algorithm": f" {alias} ", "model_name_or_path": "m", "data_path": "d"},
+            )
+            config = row["config"] if isinstance(row["config"], dict) else json.loads(row["config"])
+            assert config["algorithm"] == resolved
+
+    @pytest.mark.asyncio
+    async def test_classification_eval_over_budget_names_eval_on_gpu(
+        self, repo: Repository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        with pytest.raises(InvalidJobStateError, match="eval_on_gpu") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.eval,
+                config={"eval_mode": "classification", "training_job_id": "t", "eval_on_gpu": True},
+            )
+        assert "endpoint" not in str(exc.value)
 
 
 class TestGetJob:
@@ -275,6 +305,39 @@ class TestEstimateGpuDemand:
                 "config": {"algorithm": "embedding_sft", "train_on_gpu": True, "nproc_per_node": 4},
             }
         ) == 1
+
+    def test_classifier_sft_gpu_demand(self) -> None:
+        # classifier_sft: CPU default (0); 1 GPU via train_on_gpu OR use_peft (decoder LoRA).
+        for algo in ("classifier_sft", "classifier"):
+            base = {"type": "training", "config": {"algorithm": algo}}
+            assert estimate_gpu_demand(base) == 0
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "train_on_gpu": True}}
+            ) == 1
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "use_peft": True}}
+            ) == 1
+
+    def test_use_peft_needs_gpu_only_for_classifier_sft(self) -> None:
+        # embedding_sft ignores use_peft (the builder requests 0 GPUs), so admission must too.
+        for algo in ("embedding_sft", "embedding"):
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "use_peft": True}}
+            ) == 0
+
+    def test_hyphenated_algorithm_spelling_matches_builder(self) -> None:
+        # The API and builder treat classifier-sft as classifier_sft; admission must too.
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "classifier-sft"}}
+        ) == 0
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "classifier-sft", "use_peft": True}}
+        ) == 1
+
+    def test_eval_classification_decoder_head_needs_gpu(self) -> None:
+        # The API stamps eval_on_gpu for a decoder head (trained with use_peft).
+        job = {"type": "eval", "config": {"eval_mode": "classification", "eval_on_gpu": True}}
+        assert estimate_gpu_demand(job) == 1
 
     def test_sdg_and_upload_need_no_gpu(self) -> None:
         assert estimate_gpu_demand({"type": "sdg", "config": {}}) == 0

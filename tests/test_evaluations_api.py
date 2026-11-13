@@ -49,6 +49,29 @@ class TestMetricSetSignature:
         )
         assert a != b
 
+    def test_head_and_router_classification_evals_do_not_share_a_group(self) -> None:
+        # Same metric names, different meaning: head = held-out accuracy, router = proxy.
+        head = evals_api._metric_set_signature(
+            {"eval_mode": "classification", "classifier_kind": "head"}
+        )
+        router = evals_api._metric_set_signature(
+            {"eval_mode": "classification", "classifier_kind": "router"}
+        )
+        legacy = evals_api._metric_set_signature({"eval_mode": "classification"})
+        assert head != router
+        assert router == legacy  # unstamped (pre-head) classification evals are routers
+        assert evals_api._signature_names(head) == ["accuracy", "macro_f1"]
+
+    def test_runner_detected_head_wins_for_direct_model_evals(self) -> None:
+        # A direct-model eval (model_name_or_path) isn't stamped at validation; the runner's
+        # detected kind (MLflow tag) keeps a head out of the router group.
+        cfg = {"eval_mode": "classification", "model_name_or_path": "org/clf"}
+        assert evals_api._classifier_kind(cfg) == "router"
+        assert evals_api._classifier_kind(cfg, {"eval_classifier_kind": "head"}) == "head"
+        assert evals_api._metric_set_signature(
+            cfg, {"eval_classifier_kind": "head"}
+        ) == evals_api._metric_set_signature({**cfg, "classifier_kind": "head"})
+
     def test_order_insensitive(self) -> None:
         a = evals_api._metric_set_signature({"metrics": ["a", "b"]})
         b = evals_api._metric_set_signature({"metrics": ["b", "a"]})

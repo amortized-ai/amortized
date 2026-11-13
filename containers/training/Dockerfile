@@ -77,7 +77,7 @@ RUN pip install --no-cache-dir --break-system-packages "flash-linear-attention[c
 # was validated on): it satisfies vLLM
 # 0.32.0 (>=5.16.1,<5.20.0) AND unsloth 2026.10.7 (<=5.17.0), and crucially requires
 # huggingface-hub<2.0 — newer transformers (5.19.x) allow hub<3.0, pulling hub 2.x, which breaks
-# sentence-transformers (needs hub<2.0.0), the embedding-classifier path. Also covers Qwen3.5.
+# sentence-transformers (needs hub<2.0.0), the embedding-router path. Also covers Qwen3.5.
 RUN pip install --no-cache-dir --upgrade --break-system-packages "transformers==5.17.0"
 
 # vLLM (for GRPO online RL) — 0.32.0 hard-pins torch==2.13.0, matched by our constraints file

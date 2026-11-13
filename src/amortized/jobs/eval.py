@@ -203,8 +203,8 @@ async def _build_embedded_serving(
     return pre_commands, script, extras
 
 
-async def _classification_training_run_id(training_job_id: str) -> str:
-    """Resolve the MLflow run id of a completed training job."""
+async def _classification_training_parent(training_job_id: str) -> tuple[str, dict[str, Any]]:
+    """Resolve the MLflow run id and stored config of a completed training job."""
     from amortized.db.connection import get_pool
     from amortized.db.repository import Repository
     from amortized.models import JobStatus
@@ -224,7 +224,13 @@ async def _classification_training_run_id(training_job_id: str) -> str:
     run_id = str(parent.get("mlflow_run_id", "") or "")
     if not run_id:
         raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
-    return run_id
+    parent_config = parent.get("config") or {}
+    if isinstance(parent_config, str):
+        try:
+            parent_config = json.loads(parent_config)
+        except ValueError:
+            parent_config = {}
+    return run_id, parent_config if isinstance(parent_config, dict) else {}
 
 
 async def _build_classification_eval(
@@ -245,8 +251,16 @@ async def _build_classification_eval(
     # 1. Model to evaluate: a tuned model (training_job_id) or a base ST model.
     training_job_id = str(config.get("training_job_id", "")).strip()
     model_name_or_path = str(config.get("model_name_or_path", "")).strip()
+    parent_config: dict[str, Any] = {}
     if training_job_id:
-        run_id = await _classification_training_run_id(training_job_id)
+        run_id, parent_config = await _classification_training_parent(training_job_id)
+        task = str(parent_config.get("task") or "sequence_classification")
+        if task != "sequence_classification":
+            # The API rejects this up front; guard here too (retries, direct worker paths).
+            raise JobBuildError(
+                f"training job {training_job_id[:8]} trained a {task} head; classification"
+                " eval scores sequence-classification heads only"
+            )
         local_dir = "/amortized/work/eval_model"
         pre_commands.append(
             f"mlflow artifacts download -r {shlex.quote(run_id)}"
@@ -288,6 +302,10 @@ async def _build_classification_eval(
         "top_k": int(config.get("top_k", 3)),
         "tau": float(config.get("tau", 0.0)),
         "seed": int(config.get("seed", 42)),
+        # Head path: score at the length the model trained at, and load a custom
+        # architecture the way training did (its code ships with the saved model).
+        "max_length": config.get("max_length") or parent_config.get("max_length"),
+        "trust_remote_code": bool(parent_config.get("trust_remote_code")),
         "output_dir": "/amortized/work/results",
     }
     config_files["config.json"] = json.dumps(runner_config)
@@ -310,9 +328,14 @@ async def _build_classification_eval(
         config_files=config_files,
         pre_commands=pre_commands,
         post_commands=[post_cmd],
-        # Classification eval encodes a small set on CPU by design (no GPU/quota);
-        # nproc_per_node is documented as ignored here, so don't let it request GPUs.
-        resources=Resources(gpus=0, cpus=4, memory_gb=8),
+        # Classification eval encodes a small set on CPU by default; a decoder head (the API
+        # stamps eval_on_gpu, matching estimate_gpu_demand) is too big for the CPU pod and
+        # gets 1 GPU. nproc_per_node is documented as ignored here.
+        resources=(
+            Resources(gpus=1, cpus=4, memory_gb=32)
+            if config.get("eval_on_gpu")
+            else Resources(gpus=0, cpus=4, memory_gb=8)
+        ),
         # Classification eval runs in the training image (sentence-transformers) — pin it with
         # training_image_tag (upstream lifecycle), not job_image_tag.
         image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
@@ -500,6 +523,11 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         num_samples = model_metrics.get("num_samples")
         if num_samples is not None:
             await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(num_samples))
+        # Classification eval: which path scored the model (head = held-out accuracy,
+        # router = separability proxy) — the Evaluation tab groups on it.
+        classifier_kind = metrics.get("classifier_kind")
+        if classifier_kind in ("head", "router"):
+            await set_mlflow_run_tag(mlflow_run_id, "eval_classifier_kind", classifier_kind)
         # Transparency: how many samples the judge actually scored and
         # which model judged — a partial judge run otherwise looks like a
         # full one in the comparison table.
