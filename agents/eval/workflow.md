@@ -157,10 +157,16 @@ Determine it BEFORE the dataset and metrics steps:
   Steps 1, 3, 4, and 5. To detect it, call `get_job` on the training job and read
   `config.algorithm` (the platform also auto-sets `eval_mode="classification"` for
   these models at validation, but you must still drive the correct dataset/metric
-  flow). An arbitrary HF model or external endpoint can only be a generative eval.
+  flow). The **base model of a classifier comparison** is a classification eval too:
+  to compare a tuned classifier against its untuned base (e.g.
+  `sentence-transformers/all-MiniLM-L6-v2` or `answerdotai/ModernBERT-base`), set
+  `eval_mode="classification"` and `model_name_or_path` = the base model's HF id (no
+  `training_job_id`), on the same held-out set. Provider models and external
+  endpoints are always generative evals.
 - **Generative eval** — everything else (a generative/LLM training job, an HF model
-  id, a provider model, an external endpoint). This is the default rubric/judge flow
-  described in Steps 1–5. Leave `eval_mode` at its default.
+  id that isn't a classifier comparison's base, a provider model, an external
+  endpoint). This is the default rubric/judge flow described in Steps 1–5. Leave
+  `eval_mode` at its default.
 
 Do NOT ask the user which kind — infer it from the model. Everything below is the
 generative flow unless a **classification path** note says otherwise.
@@ -168,12 +174,21 @@ generative flow unless a **classification path** note says otherwise.
 ### Step 1 — Confirm the eval dataset <!--signal:eval-dataset owed:present_options-->
 
 **Classification path:** the eval dataset is a **held-out labeled `text,category`
-set** (NOT `messages`) with the SAME categories the model was trained on — e.g. a
-separate classification SDG run, or a split of the labeled training dataset. Reuse a
-held-out classification set if one exists; otherwise split the labeled dataset
-(`split_dataset`) or request a fresh held-out classification set (see **Getting a
-held-out eval set** — the cloned recipe is the classification SDG recipe, so it
-yields `text,category`). Skip the `messages`/recipe-match/`list_reusable_eval_sets`
+set** (NOT `messages`) with the SAME categories the model was trained on. Find it in
+this order:
+1. If the model trained on a split, use the untrained sibling split — resolve it
+   exactly as in **Otherwise, use the training dataset as the trail to a held-out
+   set** below (`get_job` → `get_dataset` → the split job's sibling run).
+2. Otherwise reuse a separate classification set generated apart from the training
+   data, if one exists.
+3. Otherwise request a fresh held-out classification set (**Ask the held-out record
+   count**, then **Hand back for the held-out set** — the cloned recipe is the
+   classification SDG recipe, so it yields `text,category`).
+
+If the user would rather split the training dataset itself: when the model trained
+on that whole dataset, the split's records were seen in training — say so plainly
+and do NOT call it held-out (validation may warn about the overlap; the warning does
+not make it held-out). Skip the `messages`/recipe-match/`list_reusable_eval_sets`
 framing below (that is generative-only), then go to Step 4 (there are no metrics to
 design — skip Step 3). Note the `text`/`category` column names for Step 4.
 
@@ -449,10 +464,14 @@ eval time or judge cost.
 ### Step 4 — Validate and submit <!--signal:validate owed:validate_eval_job-->
 
 **Classification path:** assemble the config with `eval_mode="classification"`,
-`training_job_id` = the classifier/embedding training job, the held-out dataset as
+`training_job_id` = the classifier/embedding training job (or `model_name_or_path` =
+the base model, for a classifier comparison's baseline), the held-out dataset as
 `parent_job_id`/`eval_data_run_id`, and `text_column`/`label_column` matching the
 dataset (e.g. `text`/`category`). Optionally set `class_labels` (human-readable class
-names indexed by integer label) for readable per-class output. Do NOT set `judge`,
+names indexed by integer label) for readable per-class output. Only
+sequence-classification heads can be evaluated: validation rejects a head trained with
+`task` multiple_choice or token_classification — tell the user that eval isn't
+available for those yet. Do NOT set `judge`,
 `rubric`, `temperature`, or `max_samples` — they don't apply. Then call
 `validate_eval_job`; after it succeeds, the one-line summary is simply the mode and
 dataset (e.g. `classification eval · all records · model: <name>`) — there is no
@@ -525,11 +544,15 @@ fetch the aggregate metrics.
 
 **Classification path:** the results are classification metrics, not rubric scores —
 report **accuracy** and **macro-F1** headline numbers, then per-class F1 (and the
-confusion matrix if the user wants detail). For a head classifier also report the
-**calibrated ECE** (before → after temperature scaling) — lower is better-calibrated
-probabilities. Example: "93.9% accuracy, 0.939 macro-F1 over 77 classes; ECE
-0.036 → 0.017." Then offer next steps (evaluate another model to compare, train again,
-or accept). Skip the rubric table below.
+confusion matrix if the user wants detail). For a head classifier these are true
+held-out numbers; also report the **calibrated ECE** (before → after temperature
+scaling, measured on the part of the eval set not used to fit the temperature) —
+lower is better-calibrated probabilities. Example: "93.9% accuracy, 0.939 macro-F1
+over 77 classes; ECE 0.036 → 0.017." If `calibration` says `skipped`, say calibration
+wasn't measured and why (e.g. too few rows) — never report a temperature for it. For
+an embedding router, say the accuracy is a separability proxy (some eval rows serve as
+anchors), not deployed-classifier accuracy. Skip the rubric table below, then
+continue to Step 6 — do NOT offer next steps yourself (the orchestrator does).
 
 **Generative path:** report a compact table of the model's rubric scores:
 

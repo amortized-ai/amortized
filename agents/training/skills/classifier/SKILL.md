@@ -75,8 +75,13 @@ Follow the workflow's one-question-per-turn rules. Gather:
 `model_name_or_path`, `text_column`, `label_column`, `num_train_epochs`,
 `parent_job_id`/`data_run_id`. Head-only optional knobs: `task` (default
 `sequence_classification`; `multiple_choice` for pick-one-of-K with an `options` column, or
-`token_classification` with a `tokens` column), `use_peft` (decoder backbones), and
-`trust_remote_code`/`revision` (custom architectures). No VRAM card is needed.
+`token_classification` with a `tokens` column and `ner_tags` labels), `use_peft` (decoder
+backbones), and `trust_remote_code` + `revision` (custom architectures — validation
+rejects `trust_remote_code` without a pinned `revision`). With `use_peft` the learning rate
+defaults to 1e-4 (a decoder head collapses to one class at the 2e-5 encoder default), so
+leave `learning_rate` unset unless the user asks. `label_column` defaults to `label` —
+set it explicitly (`category` for the classification SDG datasets). No VRAM card is
+needed.
 
 **The device note goes in the message that carries the confirm card — as plain text, not a
 second card.** The confirmable config card is the one interactive element of that turn; do
@@ -101,15 +106,21 @@ the GPU opt-in is available.
 ## Hold-out for evaluation
 
 Classifier quality is measured by the **classification eval**, which needs a **held-out**
-labeled set. Either generate a separate small eval SDG run (same categories), or use
-`split_dataset` to hold out a portion. Keep the held-out dataset's run ID — the eval uses it.
+labeled set the model never trained on. Either generate a separate small eval SDG run
+(same categories), or `split_dataset` the data **before training** and train on the
+complement. Keep the held-out dataset's run ID — the eval uses it.
 
-## After training — evaluate
+## After training — recommend evaluation in the handoff
 
-Once training succeeds, offer to **evaluate** the model. This is a **classification
-eval** (not a rubric/judge eval) — the eval flow auto-detects the model type and scores
-predicted labels directly: for a head classifier, **held-out accuracy / macro-F1 /
+Once training succeeds, finish with the workflow's single `signal_subagent_completion`
+call — do NOT offer evaluation (or any next step) yourself; the orchestrator presents the
+options. Put the recommendation in the completion summary: the model should be scored
+with a **classification eval** (not a rubric/judge eval), and name the held-out dataset's
+run ID if one was set aside. For context: the eval flow auto-detects the model type and
+scores predicted labels directly — for a head classifier, **held-out accuracy / macro-F1 /
 per-class F1 / confusion + calibrated ECE** (argmax); for an embedding router, a
 nearest-centroid separability proxy. It needs a **held-out labeled `text,category`
-set** with the same categories (a separate classification SDG run, or a split of the
-training data) — NOT a `messages` dataset, and there is no rubric or judge to design.
+set** with the same categories — NOT a `messages` dataset, and there is no rubric or judge
+to design. Only sequence-classification heads can be evaluated today; for a
+`multiple_choice` or `token_classification` head, say in the summary that eval isn't
+available for it yet.
