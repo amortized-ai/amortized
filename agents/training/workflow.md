@@ -48,7 +48,8 @@ about internal delegation.
   internal rendering rule — never mention tiles, ordering, or this rule to the user.
 - **Be conversational, not robotic.** Brief natural transitions.
 - **Use sensible defaults.** Don't ask about learning_rate, warmup_steps,
-  or batch_size unless the user brings them up.
+  or batch_size unless the user brings them up — or the config doesn't
+  fit (see When the Config Doesn't Fit).
 - **Show results in markdown tables** when listing jobs or configs.
 
 ## Sub-Skills
@@ -60,29 +61,26 @@ the config — do not call `validate_training_job` until you have.
 | Skill | Best For |
 |-------|----------|
 | `training-knowledge-ingestion-osft` | Knowledge ingestion, FAQ bots, doc-grounded QA |
-| `training-embedding-classifier` | Text classifiers, intent routers, topic/sentiment tagging |
+| `training-classifier` | Text classifiers / decision models, intent routers, topic/sentiment |
 
 **How to choose:** Knowledge ingestion / doc-grounded QA → OSFT (default,
 recommended). Classify text into a fixed set of categories (intent routing,
-ticket/topic/sentiment) → embedding-classifier (`embedding_sft`) — the
-recommended default for classification. **Exception:** if the user explicitly
-wants a **generative/LLM** classifier (an LLM that emits the label as text, e.g.
-with a free-form explanation, trained on `messages` data), that is a normal LLM
-fine-tune — use the OSFT sub-skill (its guide's **Scope** note covers
-`messages`-based fine-tunes; skip the document-specific steps), not
-embedding-classifier.
+ticket/topic/sentiment, decision models) → `training-classifier` — it defaults to a
+classification **head** (`classifier_sft`; best accuracy + calibration) and offers an
+embedding router (`embedding_sft`) when the user wants embeddings/semantic routing.
 
 Load the matching skill with the `skill` tool —
 `skill({ name: "training-knowledge-ingestion-osft" })` for OSFT, or
-`skill({ name: "training-embedding-classifier" })` for the embedding classifier —
-each has detailed requirement-gathering steps, tool parameters, and
-hyperparameter guidance. The OSFT skill bundles the supported-model list and a
-config template.
+`skill({ name: "training-classifier" })` for classifiers — each has detailed
+requirement-gathering steps, tool parameters, and hyperparameter guidance. The OSFT
+skill bundles the supported-model list and a config template.
 
-**Embedding classifier differs from the LLM sub-skills:** the algorithm is fixed
-to `embedding_sft` (no lora/qlora/osft/sft method choice) and the base is a small
-sentence-transformers model — so **skip the Student Model Selection and Training
-Method Selection VRAM steps below**; they apply only to the LLM sub-skills.
+**The classifier skill differs from the LLM sub-skills:** it trains a classification
+head or an embedding model (no lora/qlora/osft/sft generative method choice), and the
+VRAM estimator models generative training only — so **skip the Compute budget
+question, the Student Model Selection and Training Method Selection VRAM steps
+below, and Phase 3's resource estimation / VRAM card**; they apply only to the LLM
+sub-skills. The classifier skill covers its own device choice.
 
 ## Student Model Selection
 
@@ -90,9 +88,14 @@ Read `supported_models.json` (bundled with the `training-knowledge-ingestion-osf
 list of recommended models. You MUST show VRAM estimates before presenting model
 options.
 
-1. Estimate training resources for EACH model size from the file
-2. Show a VRAM comparison card with ALL collected estimates
-3. THEN present the models as options and wait for the user to choose —
+1. Select the models from the file you will offer as options (suited to
+   the task and the compute budget) — don't estimate the whole file
+2. Estimate only the selected models with ONE
+   `estimate_training_resources_batch` call — pass each model's `id` as
+   `model_name_or_path` (not its size label), so the estimate uses that
+   model's real architecture
+3. Show a VRAM comparison card with ALL collected estimates
+4. THEN present the selected models as options and wait for the user to choose —
    never auto-select a model, even if you have a recommended default
 
 If the user wants a model not in the list, the loaded skill's
@@ -102,16 +105,51 @@ Requirement Gathering section describes the validation flow — follow it.
 
 You MUST show VRAM estimates before presenting method options.
 
-1. Estimate training resources with the selected model size for EACH
-   method (lora, qlora, osft, sft)
+1. Estimate all methods (lora, qlora, osft, sft) for the selected
+   model's `model_name_or_path` with ONE `estimate_training_resources_batch` call
 2. Show a VRAM comparison card with ALL collected estimates
 3. THEN present method options
 
 ## Training Confirmation
 
-Before submitting, estimate training resources with the final model
-size and method, then show the VRAM card so the user sees what they
+Before submitting, estimate training resources with the final model,
+method, and the same `effective_batch_size`,
+`max_length` (as `max_seq_len`), `max_tokens_per_gpu` and (lora/qlora)
+`gradient_accumulation_steps` and `enable_model_splitting` (if set) as the config,
+then show the VRAM card so the user sees what they
 are committing to.
+
+## When the Config Doesn't Fit
+
+LLM methods (lora/qlora/osft/sft) only.
+
+It doesn't fit when no GPU count within the compute budget brings per-GPU
+VRAM under ~110% of one GPU's memory. Between ~90% and ~110% it is
+borderline: the estimate is close to the measured peak, so the job may
+run or may run out of memory. Present it as "borderline" next to the
+options below and let the user choose — don't silently steer away.
+Use the branch for the chosen method, re-estimate the options with one
+`estimate_training_resources_batch` call, and present them as choices for
+the user (alongside the "any method" options):
+
+- **If lora/qlora:**
+  - raise `gradient_accumulation_steps` — each step runs
+    `effective_batch_size // gradient_accumulation_steps` samples; same
+    training result, just slower
+  - lower `effective_batch_size` — scale `learning_rate` down with it
+- **If sft/osft:**
+  - lower `max_tokens_per_gpu` — same training result, just slower.
+    **sft only:** never below `max_length` — sft rejects
+    `max_tokens_per_gpu < max_seq_len` at startup. If sft still doesn't
+    fit at `max_tokens_per_gpu = max_length`, offer a shorter `max_length`
+    or osft (which has no such floor) instead
+  - lower `effective_batch_size` — only when
+    `effective_batch_size × max_length / nproc_per_node` <
+    `max_tokens_per_gpu`; otherwise it saves nothing, so don't offer it
+- **Any method:**
+  - lower `max_length` — only if the longest example still fits
+  - switch to a lighter method (osft/sft → lora → qlora)
+  - pick a smaller model
 
 ## Job Chaining
 
@@ -184,16 +222,15 @@ batching error.
 ### Phase 1 — Route to Sub-Skill <!--signal:route owed:skill,present_options-->
 
 Determine which training sub-skill to use based on the handoff context:
-knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for
-classifying text into a fixed set of categories. For classification tasks,
-embedding-classifier is the default — **unless** the user explicitly wants a
-**generative/LLM** classifier (an LLM that emits the label as text on `messages`
-data), which is a normal LLM fine-tune and routes to OSFT instead. Load the
-matching skill (`skill({ name: "training-knowledge-ingestion-osft" })` or
-`skill({ name: "training-embedding-classifier" })`). You MUST load it before
-Phase 2 — it contains the detailed guidance (the OSFT skill also bundles the
-supported-model list). For the embedding classifier, skip the VRAM/model-size/
-method steps.
+knowledge-ingestion/OSFT for doc-grounded QA, or `training-classifier` for
+classifying text into a fixed set of categories (decision models, intent routers,
+sentiment/topic). The classifier skill defaults to a classification **head**
+(`classifier_sft`) and offers an embedding router (`embedding_sft`) as an option —
+that choice is made inside the skill, not here. Load the matching skill
+(`skill({ name: "training-knowledge-ingestion-osft" })` or
+`skill({ name: "training-classifier" })`). You MUST load it before Phase 2 — it
+contains the detailed guidance (the OSFT skill also bundles the supported-model
+list). For the classifier skill, skip the VRAM/model-size/method steps.
 
 ### Phase 2 — Gather Requirements <!--signal:gather-->
 
@@ -205,6 +242,15 @@ care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
 
 Key decisions to gather:
+- **Compute budget** (ask first, LLM sub-skills only) — silently call
+  `get_config` and read `gpu_budget`, before any VRAM estimate.
+  If `gpu_budget` is 0, only CPU training is possible: don't ask about
+  GPUs or run estimates; explain that LLM methods (lora/qlora/osft/sft)
+  need a GPU, and offer CPU classifier training if it fits the task or
+  ask the user to get a GPU budget — don't suggest config changes.
+  Otherwise ask which GPU type and how many GPUs the job may use. If the
+  user doesn't know or skips, assume H100 (80 GB) and up to `gpu_budget`
+  GPUs, and say so. Never go above `gpu_budget` — the server rejects it.
 - **Model** — present options with VRAM estimates
 - **Training data** — should come from a completed SDG job via
   `parent_job_id`. If not provided in context, ask for the SDG job ID.
@@ -264,8 +310,8 @@ Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
-Estimate training resources with the final configuration and show the
-VRAM card. Call `validate_training_job` with the assembled config. Pass
+For an LLM sub-skill, estimate training resources with the final configuration
+and show the VRAM card (the classifier skill skips this). Call `validate_training_job` with the assembled config. Pass
 it as a SINGLE `config_json` argument whose value is the entire config
 serialized as a JSON string (every field inside that one string) — a
 large multi-argument call can be corrupted in transit, one `config_json`

@@ -61,14 +61,12 @@ Pick the one that best matches the user's task and load it — decide before
 loading, do not open a skill to "check". You MUST load the matching skill before
 gathering requirements or building the config — do not call `validate_sdg_job`
 until you have. In particular, for any **classifier / router / intent / sentiment
-/ categorization** task, load `sdg-embedding-classifier` **directly**; do NOT load
-`sdg-classification` first (that is the rare generative-LLM variant).
+/ categorization** task, load `sdg-classification` **directly**.
 
 | Skill | Best For |
 |-------|----------|
 | `sdg-knowledge-ingestion` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
-| `sdg-embedding-classifier` | Text classifiers / intent routers / sentiment as a compact **embedding** model (flat `text,category` data → `embedding_sft`) — the recommended default for classification |
-| `sdg-classification` | A **generative** (LLM/SFT) classifier that emits the label as text (`messages` data). Use only when the user specifically wants an LLM to do the classifying |
+| `sdg-classification` | Text classifiers / decision models / intent routers / sentiment — flat `text,category` data that trains either a classifier head (`classifier_sft`, default) or an embedding router (`embedding_sft`) |
 | `sdg-task-distillation` | Distill any frontier-model task into a smaller model — rubric scoring, structured evaluation, multi-step reasoning |
 
 ### How to Choose
@@ -78,11 +76,9 @@ until you have. In particular, for any **classifier / router / intent / sentimen
   exactly two ways to do it — the paperclip icon in the chat composer (choose
   Document), or the Documents tab — offer both and nothing else (never a URL
   or pasted file contents).
-- **User wants to sort/label/categorize/route text** → `sdg-embedding-classifier`
-  (the default: a small, fast embedding classifier trained with `embedding_sft`,
-  producing flat `text,category` data). Only use `sdg-classification` instead when
-  the user explicitly wants a **generative/LLM** classifier that outputs the
-  label as text (`messages` data for SFT).
+- **User wants to sort/label/categorize/route text** → `sdg-classification`
+  (produces flat `text,category` data; the training step then picks the classifier
+  head or the embedding router — the SDG data is the same either way).
 - **User wants to distill a frontier-model task into a smaller model** →
   `sdg-task-distillation`
 
@@ -214,12 +210,12 @@ they choose a fresh set, route by task and load a sub-skill exactly like the "Ot
 step below (a fresh set still needs a loaded guide for Phase 2; don't skip skill-loading
 just because a training job ID was present).
 
-Otherwise, route by task. Determine whether this is an embedding-classifier (default for
-classify/route/label tasks), a generative classification, knowledge-ingestion,
+Otherwise, route by task. Determine whether this is a classification (any
+classify/route/label/sentiment task → `sdg-classification`), knowledge-ingestion,
 or task-distillation task. Use the context provided by the orchestrator to
-make this decision. If the context does not make it clear, ask the user —
-in particular, for a classifier confirm whether they want a compact embedding
-classifier (recommended) or a generative/LLM one.
+make this decision. If the context does not make it clear, ask the user. The
+classifier head vs. embedding router choice is made at training time, not here —
+classification SDG data is the same for both.
 
 Once determined, load the matching skill with the `skill` tool (e.g.
 `skill({ name: "sdg-task-distillation" })`). You MUST load it before

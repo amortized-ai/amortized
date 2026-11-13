@@ -899,7 +899,7 @@
         "tags": [
           "costs"
         ],
-        "summary": "Estimate GPU VRAM requirements for training. Supports model sizes: 0.5B, 1B, 3B, 8B, 13B, 32B, 70B, 120B. Methods: sft, lora, qlora, osft. Call for each candidate size/method to build a comparison card.",
+        "summary": "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the HuggingFace model id and method. Returns the single-GPU need and the per-GPU need for 1/2/4/8 GPUs, to suggest nproc_per_node. To compare several models or methods, use estimate_training_resources_batch (one call for the whole card).",
         "operationId": "estimate_training_resources",
         "requestBody": {
           "content": {
@@ -918,6 +918,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrainingEstimateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/costs/training/estimate/batch": {
+      "post": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Estimate several training jobs in one call (e.g. every candidate model, or every method for the chosen model) \u2014 same fields per entry as estimate_training_resources. A failed entry reports an error without failing the others.",
+        "operationId": "estimate_training_resources_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingEstimateBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingEstimateBatchResponse"
                 }
               }
             }
@@ -2911,6 +2952,12 @@
             },
             "type": "array",
             "title": "Available Backends"
+          },
+          "gpu_budget": {
+            "type": "integer",
+            "title": "Gpu Budget",
+            "description": "Max GPUs one training job may use; 0 = CPU only",
+            "default": 0
           }
         },
         "type": "object",
@@ -3713,7 +3760,7 @@
               "classification"
             ],
             "title": "Eval Mode",
-            "description": "Evaluation mode. 'generative' (default) serves the model and scores free-form outputs with an LLM judge against a rubric. 'classification' evaluates an embedding classifier/router: the held-out labeled dataset is split into per-class anchors and query examples, and the tuned embedding model routes each query to its nearest class (accuracy / macro-F1 / confusion). No judge or rubric is used.",
+            "description": "Evaluation mode. 'generative' (default) serves the model and scores free-form outputs with an LLM judge against a rubric. 'classification' scores a classifier head (classifier_sft) or embedding router (embedding_sft) on a held-out labeled text,category dataset \u2014 no judge or rubric. A head classifier is scored by argmax (accuracy / macro-F1 / per-class F1 / confusion + calibrated ECE); an embedding router is split into per-class anchors and queries and routes each query to its nearest class (accuracy / macro-F1 / confusion). The eval auto-detects which.",
             "default": "generative"
           },
           "class_labels": {
@@ -6654,116 +6701,202 @@
         "title": "TraceType",
         "description": "Specifies the type of reasoning trace to capture for LLM columns.\n\nTraces capture the conversation history during LLM generation, which is\nuseful for debugging, analysis, and understanding model behavior.\n\nAttributes:\n    NONE: No trace is captured. This is the default.\n    LAST_MESSAGE: Only the final assistant message is captured.\n    ALL_MESSAGES: The full conversation history (system/user/assistant/tool)\n        is captured."
       },
-      "TrainingEstimateRequest": {
+      "TrainingEstimateBatchItem": {
         "properties": {
-          "model_size": {
-            "type": "string",
-            "title": "Model Size",
-            "description": "Model size: '0.5B', '1B', '3B', '8B', '13B', '32B', '70B', or '120B'"
-          },
-          "method": {
-            "type": "string",
-            "title": "Method",
-            "description": "Training method: sft, lora, qlora, osft",
-            "default": "lora"
-          },
-          "num_gpus": {
-            "type": "integer",
-            "title": "Num Gpus",
-            "description": "Number of GPUs",
-            "default": 1
-          },
-          "batch_size": {
+          "estimate": {
             "anyOf": [
               {
-                "type": "integer"
+                "$ref": "#/components/schemas/TrainingEstimateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Batch Size",
-            "description": "Batch size (provide with max_seq_len)"
+            "title": "Error",
+            "description": "Why this entry could not be estimated"
+          }
+        },
+        "type": "object",
+        "title": "TrainingEstimateBatchItem"
+      },
+      "TrainingEstimateBatchRequest": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingEstimateRequest"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Requests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requests"
+        ],
+        "title": "TrainingEstimateBatchRequest"
+      },
+      "TrainingEstimateBatchResponse": {
+        "properties": {
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingEstimateBatchItem"
+            },
+            "type": "array",
+            "title": "Estimates",
+            "description": "In request order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "estimates"
+        ],
+        "title": "TrainingEstimateBatchResponse"
+      },
+      "TrainingEstimateRequest": {
+        "properties": {
+          "model_name_or_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model Name Or Path",
+            "description": "HuggingFace model id (e.g. 'Qwen/Qwen3.5-4B'); its config is read for the architecture"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "Training method: sft, osft, lora, qlora",
+            "default": "lora"
+          },
+          "effective_batch_size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Effective Batch Size",
+            "description": "Same value as the job config (default 8): samples per optimizer step across all GPUs",
+            "default": 8
           },
           "max_seq_len": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Max Seq Len",
-            "description": "Max sequence length"
+            "description": "Max sequence length (the config's max_length; default 2048)"
           },
           "max_tokens_per_gpu": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Max Tokens Per Gpu",
-            "description": "Max tokens per GPU (alternative to batch_size + max_seq_len)"
+            "description": "sft/osft token budget per GPU per step (job default 4096)"
+          },
+          "gradient_accumulation_steps": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Gradient Accumulation Steps",
+            "description": "lora/qlora only: same value as the job config (default 1); each step runs effective_batch_size // gradient_accumulation_steps samples",
+            "default": 1
           },
           "lora_r": {
             "type": "integer",
+            "minimum": 1.0,
             "title": "Lora R",
-            "description": "LoRA rank (only for lora/qlora)",
+            "description": "LoRA rank (lora/qlora only)",
             "default": 32
+          },
+          "enable_model_splitting": {
+            "type": "boolean",
+            "title": "Enable Model Splitting",
+            "description": "lora/qlora only: same value as the job config (default true). If false, the job runs on one GPU, so every GPU count needs the single-GPU VRAM",
+            "default": true
           },
           "unfreeze_rank_ratio": {
             "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Unfreeze Rank Ratio",
-            "description": "Unfreeze ratio (only for osft)",
-            "default": 0.25
+            "description": "OSFT unfreeze ratio (osft only)",
+            "default": 0.2
           }
         },
         "type": "object",
         "required": [
-          "model_size"
+          "model_name_or_path"
         ],
         "title": "TrainingEstimateRequest"
       },
       "TrainingEstimateResponse": {
         "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
           "model_size": {
             "type": "string",
-            "title": "Model Size"
+            "title": "Model Size",
+            "description": "Parameter count, e.g. '4.7B'"
+          },
+          "arch_source": {
+            "type": "string",
+            "title": "Arch Source",
+            "description": "Where the estimate came from, e.g. 'training-hub 0.12.0'"
           },
           "method": {
             "type": "string",
             "title": "Method"
           },
-          "num_gpus": {
+          "vram_gb": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Vram Gb",
+            "description": "VRAM to train on a single GPU: low / expected / high"
+          },
+          "per_gpu_vram_gb_by_gpu_count": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Per Gpu Vram Gb By Gpu Count",
+            "description": "Expected VRAM each GPU needs when the job uses 1, 2, 4 or 8 GPUs (nproc_per_node). Pick the smallest count whose value fits the GPU's memory."
+          },
+          "gpu_budget": {
             "type": "integer",
-            "title": "Num Gpus"
-          },
-          "vram_per_gpu_gb": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "Vram Per Gpu Gb"
-          },
-          "total_vram_gb": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "Total Vram Gb"
+            "title": "Gpu Budget",
+            "description": "Max GPUs (nproc_per_node) one job may use; a larger count is rejected at submission"
           }
         },
         "type": "object",
         "required": [
+          "model",
           "model_size",
+          "arch_source",
           "method",
-          "num_gpus",
-          "vram_per_gpu_gb",
-          "total_vram_gb"
+          "vram_gb",
+          "per_gpu_vram_gb_by_gpu_count",
+          "gpu_budget"
         ],
         "title": "TrainingEstimateResponse"
       },
@@ -6978,6 +7111,21 @@
             "title": "Lora Dropout",
             "description": "LoRA dropout rate"
           },
+          "lora_target_modules": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora Target Modules",
+            "description": "classifier_sft with use_peft: module names to apply LoRA to. Unset (recommended) uses PEFT's per-architecture targets, falling back to all-linear."
+          },
           "unfreeze_rank_ratio": {
             "anyOf": [
               {
@@ -7000,7 +7148,7 @@
               }
             ],
             "title": "Text Column",
-            "description": "embedding_sft: text column name in the dataset (default 'text')"
+            "description": "classifier_sft/embedding_sft: text column name in the dataset (default 'text')"
           },
           "label_column": {
             "anyOf": [
@@ -7012,7 +7160,7 @@
               }
             ],
             "title": "Label Column",
-            "description": "embedding_sft: label/category column name (default 'label'). Set to 'category' for the embedding-classifier SDG datasets."
+            "description": "classifier_sft/embedding_sft: label/category column name (default 'label'). Set to 'category' for the classification SDG datasets."
           },
           "loss_type": {
             "anyOf": [
@@ -7075,6 +7223,71 @@
             "title": "Seed",
             "description": "embedding_sft: random seed"
           },
+          "task": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "sequence_classification",
+                  "multiple_choice",
+                  "token_classification"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task",
+            "description": "classifier_sft decision primitive: sequence_classification (default; fixed-label classification / yes-no), multiple_choice (pick-one-of-K per example; encoder backbones only), or token_classification (span/entity extraction)."
+          },
+          "options_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options Column",
+            "description": "classifier_sft multiple_choice: options-list column (default 'options')"
+          },
+          "tokens_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Column",
+            "description": "classifier_sft token_classification: pre-split tokens column (default tokens)"
+          },
+          "trust_remote_code": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trust Remote Code",
+            "description": "classifier_sft: allow custom architectures that ship an HF auto_map (opt-in; security-sensitive \u2014 requires 'revision' = the full commit hash). Needed for some custom decision models."
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision",
+            "description": "classifier_sft: pin the model repo to a revision; with trust_remote_code it must be the full 40-character commit hash"
+          },
           "nproc_per_node": {
             "type": "integer",
             "minimum": 1.0,
@@ -7085,7 +7298,7 @@
           "train_on_gpu": {
             "type": "boolean",
             "title": "Train On Gpu",
-            "description": "embedding_sft ONLY: train the embedding classifier on a GPU (1) instead of the CPU default (0). embedding_sft trains in-process on a single device, so this is a boolean, not a GPU count. CPU is fine for small/quick runs; a GPU is ~100x faster (benchmark: all-MiniLM ~24 samples/s CPU vs ~2800/s on an H100), which matters for many epochs or large datasets. Ignored for all other algorithms (they use nproc_per_node).",
+            "description": "embedding_sft / classifier_sft (single-device, in-process): train on a GPU (1) instead of the CPU default (0). A boolean, not a GPU count. CPU is fine for small/quick runs; a GPU is much faster for many epochs / large datasets. (For a classifier_sft decoder backbone, use_peft forces 1 GPU regardless.) Ignored for the torchrun algorithms (sft/osft/lora), which use nproc_per_node.",
             "default": false
           },
           "topic": {
@@ -7233,7 +7446,7 @@
           "model_size": {
             "type": "string",
             "title": "Model Size",
-            "description": "Model size (e.g. '8B')"
+            "description": "Model label for the card: the model id with its size (e.g. 'Qwen/Qwen3.5-4B (4.7B)')"
           },
           "method": {
             "type": "string",

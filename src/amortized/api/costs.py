@@ -11,6 +11,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from amortized.config import settings
+from amortized.core.training_estimate import TrainingEstimateError, run_training_estimates
+
 logger = logging.getLogger("amortized.api.costs")
 
 router = APIRouter(prefix="/api/v1/costs", tags=["costs"])
@@ -79,242 +82,86 @@ async def get_model_pricing(
 
 
 # ---------------------------------------------------------------------------
-# Training resource estimation (static model size buckets)
+# Training resource estimation
+#
+# The estimate comes from training-hub's memory estimator, run as a short job in the
+# training image (see core/training_estimate.py and jobs/assets/estimate_vram.py).
 # ---------------------------------------------------------------------------
 
-FP32 = 4
-FP16 = 2
-FP8 = 1
-FP4 = 0.5
-ADAMW_STATES = 2
+# training.py defaults when the job config leaves these unset (micro_batch_size 2 x 4).
+_DEFAULT_EFFECTIVE_BATCH_SIZE = 8
+_DEFAULT_MAX_TOKENS_PER_GPU = 4096
+_DEFAULT_MAX_SEQ_LEN = 2048
 
-MODEL_SIZE_BUCKETS: list[dict[str, Any]] = [
-    {
-        "label": "0.5B",
-        "num_params": 500_000_000,
-        "num_hidden_layers": 24,
-        "hidden_size": 896,
-        "vocab_size": 151936,
-        "intermediate_size": 4864,
-        "num_attention_heads": 14,
-        "num_key_value_heads": 2,
-    },
-    {
-        "label": "1B",
-        "num_params": 1_000_000_000,
-        "num_hidden_layers": 28,
-        "hidden_size": 1024,
-        "vocab_size": 151936,
-        "intermediate_size": 3072,
-        "num_attention_heads": 16,
-        "num_key_value_heads": 8,
-    },
-    {
-        "label": "3B",
-        "num_params": 3_000_000_000,
-        "num_hidden_layers": 36,
-        "hidden_size": 2048,
-        "vocab_size": 151936,
-        "intermediate_size": 8192,
-        "num_attention_heads": 16,
-        "num_key_value_heads": 8,
-    },
-    {
-        "label": "8B",
-        "num_params": 8_000_000_000,
-        "num_hidden_layers": 32,
-        "hidden_size": 4096,
-        "vocab_size": 128256,
-        "intermediate_size": 14336,
-        "num_attention_heads": 32,
-        "num_key_value_heads": 8,
-    },
-    {
-        "label": "13B",
-        "num_params": 13_000_000_000,
-        "num_hidden_layers": 40,
-        "hidden_size": 5120,
-        "vocab_size": 32000,
-        "intermediate_size": 13824,
-        "num_attention_heads": 40,
-        "num_key_value_heads": 40,
-    },
-    {
-        "label": "32B",
-        "num_params": 32_000_000_000,
-        "num_hidden_layers": 64,
-        "hidden_size": 5120,
-        "vocab_size": 152064,
-        "intermediate_size": 27648,
-        "num_attention_heads": 40,
-        "num_key_value_heads": 8,
-    },
-    {
-        "label": "70B",
-        "num_params": 70_000_000_000,
-        "num_hidden_layers": 80,
-        "hidden_size": 8192,
-        "vocab_size": 128256,
-        "intermediate_size": 28672,
-        "num_attention_heads": 64,
-        "num_key_value_heads": 8,
-    },
-    {
-        "label": "120B",
-        "num_params": 120_000_000_000,
-        "num_hidden_layers": 96,
-        "hidden_size": 8192,
-        "vocab_size": 128256,
-        "intermediate_size": 32768,
-        "num_attention_heads": 64,
-        "num_key_value_heads": 8,
-    },
-]
+_GPU_COUNTS = (1, 2, 4, 8)
 
-
-def _resolve_model_size(model_size: str) -> dict[str, Any]:
-    """Resolve a model size label or param count to architecture metadata."""
-    size_lower = model_size.lower().strip()
-
-    for bucket in MODEL_SIZE_BUCKETS:
-        if bucket["label"].lower() == size_lower:
-            return bucket
-
-    try:
-        raw = size_lower.rstrip("b")
-        num = float(raw) * 1_000_000_000
-    except ValueError:
-        num = 0.0
-
-    if num <= 0:
-        return MODEL_SIZE_BUCKETS[0]
-
-    closest = min(MODEL_SIZE_BUCKETS, key=lambda b: abs(b["num_params"] - num))
-    return closest
-
-
-def _calc_weight_size_total(info: dict[str, Any]) -> int:
-    """Calculate total LoRA-targetable weight dimensions from model config."""
-    hidden = info["hidden_size"]
-    intermediate = info.get("intermediate_size", hidden * 4)
-    num_heads = info.get("num_attention_heads", 1)
-    num_kv_heads = info.get("num_key_value_heads", num_heads)
-    head_dim = hidden // num_heads if num_heads else hidden
-    kv_dim = num_kv_heads * head_dim
-
-    per_layer = (
-        (hidden + hidden)
-        + (hidden + kv_dim)
-        + (hidden + kv_dim)
-        + (hidden + hidden)
-        + (hidden + intermediate)
-        + (hidden + intermediate)
-        + (intermediate + hidden)
-    )
-    return int(per_layer * info["num_hidden_layers"])
-
-
-def _estimate_vram_sft(
-    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int
-) -> tuple[int, int, int]:
-    n = info["num_params"]
-    layers = info["num_hidden_layers"]
-    hidden = info["hidden_size"]
-    vocab = info["vocab_size"]
-
-    model_mem = n * FP32 / num_gpus
-    grad_mem = n * FP32 / num_gpus
-    opt_mem = n * FP32 * ADAMW_STATES / num_gpus
-    act_mem = tokens_per_gpu * FP32 * layers * hidden
-    out_mem = tokens_per_gpu * FP32 * vocab * (8 / 3)
-
-    subtotal = model_mem + grad_mem + opt_mem + act_mem + out_mem
-    return int(subtotal), int(subtotal * 1.1), int(subtotal * 1.3)
-
-
-def _estimate_vram_lora(
-    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int, lora_r: int
-) -> tuple[int, int, int]:
-    n = info["num_params"]
-    layers = info["num_hidden_layers"]
-    hidden = info["hidden_size"]
-    vocab = info["vocab_size"]
-    wst = _calc_weight_size_total(info)
-    ab_params = wst * lora_r
-
-    model_mem = (n * FP16 + ab_params * FP32) / num_gpus
-    grad_mem = FP16 * ab_params / num_gpus
-    opt_mem = FP16 * ab_params * ADAMW_STATES / num_gpus
-    act_mem = tokens_per_gpu * FP16 * layers * hidden
-    out_mem = tokens_per_gpu * FP16 * vocab * 2
-
-    subtotal = model_mem + max(grad_mem, out_mem) + opt_mem + act_mem
-    return int(subtotal * 0.95), int(subtotal * 1.1), int(subtotal * 1.2)
-
-
-def _estimate_vram_qlora(
-    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int, lora_r: int
-) -> tuple[int, int, int]:
-    n = info["num_params"]
-    layers = info["num_hidden_layers"]
-    hidden = info["hidden_size"]
-    vocab = info["vocab_size"]
-    wst = _calc_weight_size_total(info)
-    ab_params = wst * lora_r
-
-    model_mem = (n * FP4 + ab_params * FP32) / num_gpus
-    grad_mem = FP16 * ab_params / num_gpus
-    opt_mem = FP16 * ab_params * ADAMW_STATES / num_gpus
-    act_mem = tokens_per_gpu * FP16 * layers * hidden
-    out_mem = tokens_per_gpu * FP16 * vocab * 2
-
-    subtotal = model_mem + max(grad_mem, out_mem) + opt_mem + act_mem
-    offload = n * FP8
-    effective = max(subtotal, offload / num_gpus)
-    return int(effective * 0.95), int(effective * 1.1), int(effective * 1.3)
-
-
-def _estimate_vram_osft(
-    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int, unfreeze_ratio: float
-) -> tuple[int, int, int]:
-    n = info["num_params"]
-    layers = info["num_hidden_layers"]
-    hidden = info["hidden_size"]
-    vocab = info["vocab_size"]
-    osft_params = n * FP32
-
-    model_mem = osft_params / num_gpus
-    grad_mem = n * FP32 * unfreeze_ratio / num_gpus
-    opt_mem = n * FP32 * ADAMW_STATES / num_gpus
-    act_mem = tokens_per_gpu * FP32 * layers * hidden * unfreeze_ratio
-    out_mem = tokens_per_gpu * FP32 * vocab * (7 / 3)
-
-    subtotal = model_mem + grad_mem + opt_mem + act_mem + out_mem
-    return int(subtotal), int(subtotal * 1.1), int(subtotal * 1.3)
+_METHODS = {
+    "sft": "sft",
+    "osft": "osft",
+    "lora": "lora",
+    "lora_sft": "lora",
+    "qlora": "qlora",
+    "qlora_sft": "qlora",
+}
 
 
 class TrainingEstimateRequest(BaseModel):
-    model_size: str = Field(
+    model_name_or_path: str = Field(
         ...,
-        description="Model size: '0.5B', '1B', '3B', '8B', '13B', '32B', '70B', or '120B'",
+        min_length=1,
+        description="HuggingFace model id (e.g. 'Qwen/Qwen3.5-4B'); its config is read for "
+        "the architecture",
     )
-    method: str = Field("lora", description="Training method: sft, lora, qlora, osft")
-    num_gpus: int = Field(1, description="Number of GPUs")
-    batch_size: int | None = Field(None, description="Batch size (provide with max_seq_len)")
-    max_seq_len: int | None = Field(None, description="Max sequence length")
+    method: str = Field("lora", description="Training method: sft, osft, lora, qlora")
+    effective_batch_size: int = Field(
+        _DEFAULT_EFFECTIVE_BATCH_SIZE,
+        ge=1,
+        description="Same value as the job config (default 8): samples per optimizer step "
+        "across all GPUs",
+    )
+    max_seq_len: int | None = Field(
+        None, ge=1, description="Max sequence length (the config's max_length; default 2048)"
+    )
     max_tokens_per_gpu: int | None = Field(
-        None, description="Max tokens per GPU (alternative to batch_size + max_seq_len)"
+        None, ge=1, description="sft/osft token budget per GPU per step (job default 4096)"
     )
-    lora_r: int = Field(32, description="LoRA rank (only for lora/qlora)")
-    unfreeze_rank_ratio: float = Field(0.25, description="Unfreeze ratio (only for osft)")
+    gradient_accumulation_steps: int = Field(
+        1,
+        ge=1,
+        description="lora/qlora only: same value as the job config (default 1); each step "
+        "runs effective_batch_size // gradient_accumulation_steps samples",
+    )
+    lora_r: int = Field(32, ge=1, description="LoRA rank (lora/qlora only)")
+    enable_model_splitting: bool = Field(
+        True,
+        description="lora/qlora only: same value as the job config (default true). If false, "
+        "the job runs on one GPU, so every GPU count needs the single-GPU VRAM",
+    )
+    unfreeze_rank_ratio: float = Field(
+        0.2, ge=0.0, le=1.0, description="OSFT unfreeze ratio (osft only)"
+    )
 
 
 class TrainingEstimateResponse(BaseModel):
-    model_size: str
+    model: str
+    model_size: str = Field(..., description="Parameter count, e.g. '4.7B'")
+    arch_source: str = Field(
+        ..., description="Where the estimate came from, e.g. 'training-hub 0.12.0'"
+    )
     method: str
-    num_gpus: int
-    vram_per_gpu_gb: dict[str, float]
-    total_vram_gb: dict[str, float]
+    vram_gb: dict[str, float] = Field(
+        ..., description="VRAM to train on a single GPU: low / expected / high"
+    )
+    per_gpu_vram_gb_by_gpu_count: dict[str, float] = Field(
+        ...,
+        description="Expected VRAM each GPU needs when the job uses 1, 2, 4 or 8 GPUs "
+        "(nproc_per_node). Pick the smallest count whose value fits the GPU's memory.",
+    )
+    gpu_budget: int = Field(
+        ...,
+        description="Max GPUs (nproc_per_node) one job may use; a larger count is rejected "
+        "at submission",
+    )
 
 
 @router.post(
@@ -322,50 +169,105 @@ class TrainingEstimateResponse(BaseModel):
     response_model=TrainingEstimateResponse,
     operation_id="estimate_training_resources",
     summary=(
-        "Estimate GPU VRAM requirements for training. Supports model sizes: "
-        "0.5B, 1B, 3B, 8B, 13B, 32B, 70B, 120B. Methods: sft, lora, qlora, osft. "
-        "Call for each candidate size/method to build a comparison card."
+        "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the "
+        "HuggingFace model id and method. Returns the single-GPU need and the per-GPU need "
+        "for 1/2/4/8 GPUs, to suggest nproc_per_node. To compare several models or methods, "
+        "use estimate_training_resources_batch (one call for the whole card)."
     ),
 )
 async def estimate_training_resources(
     body: TrainingEstimateRequest,
 ) -> TrainingEstimateResponse:
-    info = _resolve_model_size(body.model_size)
-
-    if body.max_tokens_per_gpu:
-        tokens_per_gpu = body.max_tokens_per_gpu
-    elif body.batch_size and body.max_seq_len:
-        tokens_per_gpu = body.batch_size * body.max_seq_len // body.num_gpus
-    else:
-        tokens_per_gpu = 4096
-
-    method = body.method.lower()
-    if method == "sft":
-        low, mid, high = _estimate_vram_sft(info, tokens_per_gpu, body.num_gpus)
-    elif method in ("lora", "lora_sft"):
-        low, mid, high = _estimate_vram_lora(info, tokens_per_gpu, body.num_gpus, body.lora_r)
-    elif method in ("qlora", "qlora_sft"):
-        low, mid, high = _estimate_vram_qlora(info, tokens_per_gpu, body.num_gpus, body.lora_r)
-    elif method == "osft":
-        low, mid, high = _estimate_vram_osft(
-            info, tokens_per_gpu, body.num_gpus, body.unfreeze_rank_ratio
-        )
-    else:
+    if body.method.lower() not in _METHODS:
         raise HTTPException(status_code=400, detail=f"Unknown training method: {body.method}")
+    batch = await estimate_training_resources_batch(TrainingEstimateBatchRequest(requests=[body]))
+    (item,) = batch.estimates
+    if item.estimate is None:
+        raise HTTPException(status_code=502, detail=item.error)
+    return item.estimate
 
+
+class TrainingEstimateBatchRequest(BaseModel):
+    requests: list[TrainingEstimateRequest] = Field(..., min_length=1, max_length=32)
+
+
+class TrainingEstimateBatchItem(BaseModel):
+    estimate: TrainingEstimateResponse | None = None
+    error: str | None = Field(None, description="Why this entry could not be estimated")
+
+
+class TrainingEstimateBatchResponse(BaseModel):
+    estimates: list[TrainingEstimateBatchItem] = Field(..., description="In request order")
+
+
+@router.post(
+    "/training/estimate/batch",
+    response_model=TrainingEstimateBatchResponse,
+    operation_id="estimate_training_resources_batch",
+    summary=(
+        "Estimate several training jobs in one call (e.g. every candidate model, or every "
+        "method for the chosen model) — same fields per entry as estimate_training_resources. "
+        "A failed entry reports an error without failing the others."
+    ),
+)
+async def estimate_training_resources_batch(
+    body: TrainingEstimateBatchRequest,
+) -> TrainingEstimateBatchResponse:
+    items = [TrainingEstimateBatchItem() for _ in body.requests]
+    to_run: dict[int, dict[str, Any]] = {}
+    for i, r in enumerate(body.requests):
+        if r.method.lower() not in _METHODS:
+            items[i].error = f"Unknown training method: {r.method}"
+        else:
+            to_run[i] = _build_request(r)
+    if to_run:
+        try:
+            results = await run_training_estimates(list(to_run.values()))
+        except TrainingEstimateError as exc:
+            results = [{"error": str(exc)}] * len(to_run)
+        for i, result in zip(to_run, results, strict=True):
+            if "error" in result:
+                name = body.requests[i].model_name_or_path
+                items[i].error = f"Could not estimate {name!r} with training-hub: {result['error']}"
+            else:
+                items[i].estimate = _to_response(body.requests[i], result)
+    return TrainingEstimateBatchResponse(estimates=items)
+
+
+def _build_request(body: TrainingEstimateRequest) -> dict[str, Any]:
+    method = _METHODS[body.method.lower()]
+
+    # lora/qlora run one process that takes effective_batch_size // gradient_accumulation_steps
+    # samples per step (training-hub lora.py); sft/osft are bounded by max_tokens_per_gpu.
+    batch_size = body.effective_batch_size
+    if method in ("lora", "qlora"):
+        batch_size = max(1, batch_size // body.gradient_accumulation_steps)
+    return {
+        "model": body.model_name_or_path.strip(),
+        "method": method,
+        "batch_size": batch_size,
+        "max_seq_len": body.max_seq_len or _DEFAULT_MAX_SEQ_LEN,
+        "max_tokens_per_gpu": body.max_tokens_per_gpu or _DEFAULT_MAX_TOKENS_PER_GPU,
+        "lora_r": body.lora_r,
+        "unfreeze_rank_ratio": body.unfreeze_rank_ratio,
+        "enable_model_splitting": body.enable_model_splitting,
+        "gpu_counts": list(_GPU_COUNTS),
+    }
+
+
+def _to_response(body: TrainingEstimateRequest, result: dict[str, Any]) -> TrainingEstimateResponse:
     to_gb = 1024**3
-    low_gb = round(low / to_gb, 1)
-    mid_gb = round(mid / to_gb, 1)
-    high_gb = round(high / to_gb, 1)
-
+    low, mid, high = result["single_gpu"]
     return TrainingEstimateResponse(
-        model_size=info["label"],
+        model=body.model_name_or_path,
+        model_size=f"{result['num_params'] / 1e9:.1f}B",
+        arch_source=f"training-hub {result['training_hub_version']}",
         method=body.method,
-        num_gpus=body.num_gpus,
-        vram_per_gpu_gb={"low": low_gb, "expected": mid_gb, "high": high_gb},
-        total_vram_gb={
-            "low": round(low_gb * body.num_gpus, 1),
-            "expected": round(mid_gb * body.num_gpus, 1),
-            "high": round(high_gb * body.num_gpus, 1),
+        vram_gb={
+            "low": round(low / to_gb, 1),
+            "expected": round(mid / to_gb, 1),
+            "high": round(high / to_gb, 1),
         },
+        per_gpu_vram_gb_by_gpu_count={n: round(v / to_gb, 1) for n, v in result["per_gpu"].items()},
+        gpu_budget=settings.gpu_budget,
     )

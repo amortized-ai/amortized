@@ -206,7 +206,7 @@ def test_review_step_owes_both_show_prompt_and_present_options() -> None:
 def test_skill_slug_scoped_by_active_skill() -> None:
     # `teacher-model` recurs across sdg skills; the obligation is resolved WITHIN the loaded skill,
     # so the same signalled slug is adjudicated against whichever skill is active (no global clash).
-    for skill in ("sdg-task-distillation", "sdg-knowledge-ingestion", "sdg-classification"):
+    for skill in ("sdg-task-distillation", "sdg-knowledge-ingestion"):
         assert adjudicate("sdg", "teacher-model", [], skill=skill).kind == "stall"
         assert (
             adjudicate("sdg", "teacher-model", ["present_options"], skill=skill).kind == "ok"
@@ -217,7 +217,7 @@ def test_coarse_gather_umbrella_is_lenient() -> None:
     # A non-stepped skill (or no cursor) signals the coarse `gather` umbrella: not a workflow phase
     # and not a skill step → lenient, so bare prose is allowed.
     assert adjudicate("sdg", "gather", []).kind == "ok"
-    assert adjudicate("sdg", "gather", [], skill="sdg-embedding-classifier").kind == "ok"
+    assert adjudicate("sdg", "gather", [], skill="sdg-classification").kind == "ok"
 
 
 # --------------------------------------------------------------------------- #
@@ -305,11 +305,4 @@ def test_skill_step_obligation_is_declared_or_defaults() -> None:
     )
     assert phases._skill_owed("sdg-knowledge-ingestion", "teacher-model") == Owed(
         any_of=frozenset({"present_options"})
-    )
-    # classification likewise splits into generation + classifier review steps.
-    assert phases._skill_owed("sdg-classification", "generation-prompt") == Owed(
-        all_of=frozenset({"show_prompt", "present_options"})
-    )
-    assert phases._skill_owed("sdg-classification", "classifier-prompt") == Owed(
-        all_of=frozenset({"show_prompt", "present_options"})
     )

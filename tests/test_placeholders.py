@@ -48,7 +48,7 @@ def test_knowledge_ingestion_declares_document_ids_required() -> None:
 
 
 def test_training_templates_require_model_and_dataset() -> None:
-    assert _required_by_name("Embedding Classifier") == ["model_name_or_path", "parent_job_id"]
+    assert _required_by_name("Classifier (head)") == ["model_name_or_path", "parent_job_id"]
     assert _required_by_name("Knowledge Ingestion OSFT") == ["model_name_or_path", "parent_job_id"]
 
 

@@ -149,6 +149,25 @@ describe("ActionCard", () => {
     expect(screen.getByText("CPU (default)")).toBeInTheDocument()
   })
 
+  it("shows Device: CPU (default) for a head classifier job", () => {
+    const clsAction = {
+      action: "Submit training job",
+      description: "Train classifier",
+      params: {},
+      jobType: "training" as const,
+      config: {
+        algorithm: "classifier_sft",
+        model_name_or_path: "answerdotai/ModernBERT-base",
+        num_train_epochs: 10,
+      },
+    }
+    render(<ActionCard action={clsAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
+    expect(screen.getByText("Device")).toBeInTheDocument()
+    expect(screen.getByText("CPU (default)")).toBeInTheDocument()
+  })
+
   it("shows Device: GPU when an embedding classifier opts into train_on_gpu", () => {
     const embAction = {
       action: "Submit training job",
@@ -162,6 +181,27 @@ describe("ActionCard", () => {
     })
     expect(screen.getByText("Device")).toBeInTheDocument()
     expect(screen.getByText("GPU (1)")).toBeInTheDocument()
+  })
+
+  it("shows Device: GPU for a decoder head classifier with use_peft, CPU for a router", () => {
+    const mk = (algorithm: string) => ({
+      action: "Submit training job",
+      description: "Train",
+      params: {},
+      jobType: "training" as const,
+      config: { algorithm, model_name_or_path: "Qwen/Qwen3-0.6B", use_peft: true },
+    })
+    const { unmount } = render(
+      <ActionCard action={mk("classifier_sft")} onConfirm={vi.fn()} onReject={vi.fn()} />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText("GPU (1, required for LoRA)")).toBeInTheDocument()
+    unmount()
+    // embedding_sft ignores use_peft, so it still trains on CPU.
+    render(<ActionCard action={mk("embedding_sft")} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
+    expect(screen.getByText("CPU (default)")).toBeInTheDocument()
   })
 
   it("does not add a Device row for a generative (non-embedding) training job", () => {
