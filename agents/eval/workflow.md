@@ -467,7 +467,7 @@ eval time or judge cost.
 
 **Classification path:** assemble the config with `eval_mode="classification"`,
 `training_job_id` = the classifier/embedding training job (or `model_name_or_path` =
-the base model, for a classifier comparison's baseline), the held-out dataset as
+the base model, for a classifier comparison's baseline), the eval dataset chosen in Step 1 as
 `parent_job_id`/`eval_data_run_id`, and `text_column`/`label_column` matching the
 dataset (e.g. `text`/`category`). Optionally set `class_labels` (human-readable class
 names indexed by integer label) for readable per-class output. Only
@@ -546,8 +546,10 @@ fetch the aggregate metrics.
 
 **Classification path:** the results are classification metrics, not rubric scores —
 report **accuracy** and **macro-F1** headline numbers, then per-class F1 (and the
-confusion matrix if the user wants detail). For a head classifier these are true
-held-out numbers; also report the **calibrated ECE** (before → after temperature
+confusion matrix if the user wants detail). For a head classifier evaluated on a
+held-out set these are true held-out numbers — if the eval set overlaps the training
+data (a split of the data it trained on), say the numbers are optimistic for that
+reason. Also report the **calibrated ECE** (before → after temperature
 scaling, measured on the part of the eval set not used to fit the temperature) —
 lower is better-calibrated probabilities. Example: "93.9% accuracy, 0.939 macro-F1
 over 77 classes; ECE 0.036 → 0.017." If `calibration` says `skipped`, say calibration

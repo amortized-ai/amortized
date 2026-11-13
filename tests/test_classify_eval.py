@@ -289,3 +289,11 @@ def test_router_results_mark_their_kind(tmp_path, monkeypatch):
     res = _run(mod, {"model_path": "x", "eval_data_path": "y", "label_column": "category"},
                tmp_path, monkeypatch)
     assert res["classifier_kind"] == "router"
+
+
+def test_calibration_needs_the_full_minimum(monkeypatch):
+    pytest.importorskip("torch")
+    mod = _load_classify_eval([{"text": "a_0", "category": "a"}], monkeypatch)
+    logits = np.zeros((399, 2))
+    y = np.zeros(399, dtype=int)
+    assert "skipped" in mod._fit_temperature(logits, y, 0)  # message says 400 — enforce it

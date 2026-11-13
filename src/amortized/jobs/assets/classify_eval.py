@@ -160,7 +160,7 @@ def _fit_temperature(logits, y, seed: int) -> dict:
     rng.shuffle(known)
     n_fit = min(_CAL_FIT_MAX, len(known) // 2)
     fit, held = known[:n_fit], known[n_fit:]
-    if len(held) < _CAL_MIN_HELDOUT or n_fit == 0:
+    if len(known) < 2 * _CAL_MIN_HELDOUT:
         return {
             "skipped": (
                 f"{len(known)} rows with labels the model knows; calibration needs at least"
@@ -228,9 +228,12 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) ->
     id2label = {int(k): v for k, v in model.config.id2label.items()}
     label2id = {str(k): int(v) for k, v in (model.config.label2id or {}).items()}
 
+    class_labels = cfg.get("class_labels") or None
+
     def _label_name(raw) -> str:
-        # Integer-like checkpoint labels ("3") map through class_labels like int ground truth.
-        if isinstance(raw, str) and raw.lstrip("-").isdigit():
+        # With class_labels, integer-like checkpoint labels ("3") map through it like int
+        # ground truth. Without it, keep strings as-is ("01" and "1" are distinct labels).
+        if class_labels and isinstance(raw, str) and raw.lstrip("-").isdigit():
             raw = int(raw)
         return name(raw)
 
@@ -238,16 +241,28 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) ->
     raw_true = [str(r["label"]) for r in rows]
     true = [_label_name(r["label"]) for r in rows]
     logits_list = []
-    for i in range(0, len(texts), 128):
+    batch, i = 128, 0
+    while i < len(texts):
         enc = tok(
-            texts[i : i + 128],
+            texts[i : i + batch],
             truncation=True,
             max_length=max_len,
             padding=True,
             return_tensors="pt",
         ).to(dev)
-        with torch.no_grad():
-            logits_list.append(model(**enc).logits.float().cpu().numpy())
+        try:
+            with torch.no_grad():
+                logits_list.append(model(**enc).logits.float().cpu().numpy())
+        except torch.OutOfMemoryError:
+            # A large decoder head may not fit 128 rows at once: halve the batch and retry.
+            if batch == 1:
+                raise
+            del enc
+            torch.cuda.empty_cache()
+            batch //= 2
+            print(f"out of memory scoring; retrying with batch size {batch}")
+            continue
+        i += batch
     logits = np.concatenate(logits_list)
     if not np.isfinite(logits).all():
         raise ValueError(
