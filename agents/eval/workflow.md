@@ -357,7 +357,8 @@ named HF model) and go straight to Step 3. If they named a model from one
 of their providers (no endpoint URL), resolve it WITHOUT re-asking which
 model. If the model is in `known_endpoints` (from
 `get_eval_endpoint_suggestions`), set the eval's `endpoint` from that entry's
-`base_url` and `model_name`. Use `provider_model_name` only to display the
+`base_url` and `model_name`. Build it as `base_url = entry.base_url` and
+`model = entry.model_name`. Use `provider_model_name` only to display the
 underlying provider model; gateway requests use `model_name`. Otherwise find
 the model with `list_models` and set `base_url` = its provider name (e.g.
 `openai`, `anthropic`) and `model` = its id. If validation rejects that name,
@@ -376,9 +377,10 @@ Present the model-source options as clickable choices:
 3. **A provider model** — a model from the user's configured providers
    (`list_models`), e.g. "gpt-4o-mini (openai)". For a model listed in
    `known_endpoints` (from `get_eval_endpoint_suggestions`), display its
-   `name` and `provider_model_name` and set the eval's `endpoint` using its
-   `base_url` and `model_name`. For any other model, set `base_url` = its
-   provider name and `model` = its id — the platform resolves the URL and key.
+   `name` and `provider_model_name` and set the eval's `endpoint` as
+   `{base_url: entry.base_url, model: entry.model_name}`. For any other model,
+   set `base_url` = its provider name and `model` = its id — the platform
+   resolves the URL and key.
    These evals need no GPU.
 4. "I'll give the endpoint URL" — an external OpenAI-compatible
    endpoint: ask for the URL and the model name it serves.
