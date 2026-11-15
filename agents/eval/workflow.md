@@ -355,13 +355,15 @@ When the user picked a training job or named their fine-tuned model, the
 source is resolved: set `training_job_id` (or `model_name_or_path` for a
 named HF model) and go straight to Step 3. If they named a model from one
 of their providers (no endpoint URL), resolve it WITHOUT re-asking which
-model and set the eval's `endpoint` — then go to Step 3. If the model is in
-`known_endpoints` (from `get_eval_endpoint_suggestions`), use the
-`base_url` it gives; otherwise find it with `list_models` and set
-`base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` =
-its id. If validation rejects that name, ask the user for the endpoint URL
-rather than guessing one. Only
-present the options below when the subject is still open — the user said
+model. If the model is in `known_endpoints` (from
+`get_eval_endpoint_suggestions`), set the eval's `endpoint` from that entry's
+`base_url` and `model_name`. Build it as `base_url = entry.base_url` and
+`model = entry.model_name`. Use `provider_model_name` only to display the
+underlying provider model; gateway requests use `model_name`. Otherwise find
+the model with `list_models` and set `base_url` = its provider name (e.g.
+`openai`, `anthropic`) and `model` = its id. If validation rejects that name,
+ask the user for the endpoint URL rather than guessing one. Then go to Step 3.
+Only present the options below when the subject is still open — the user said
 "evaluate a model" without naming one, or wants a non-trained endpoint.
 
 Present the model-source options as clickable choices:
@@ -374,10 +376,12 @@ Present the model-source options as clickable choices:
    config gets `model_name_or_path` set.
 3. **A provider model** — a model from the user's configured providers
    (`list_models`), e.g. "gpt-4o-mini (openai)". For a model listed in
-   `known_endpoints` (from `get_eval_endpoint_suggestions`), set the eval's
-   `endpoint` to the `base_url` it gives; for any other model, set
-   `base_url` = its provider name and `model` = its id — the platform
-   resolves the URL and key. These evals need no GPU.
+   `known_endpoints` (from `get_eval_endpoint_suggestions`), display its
+   `name` and `provider_model_name` and set the eval's `endpoint` as
+   `{base_url: entry.base_url, model: entry.model_name}`. For any other model,
+   set `base_url` = its provider name and `model` = its id — the platform
+   resolves the URL and key.
+   These evals need no GPU.
 4. "I'll give the endpoint URL" — an external OpenAI-compatible
    endpoint: ask for the URL and the model name it serves.
 
