@@ -15,6 +15,7 @@ import type {
 import { useDatasets, fetchDatasetByRun } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
 import type { DatasetRecord } from "@/types/api"
+import { classifierKindLabel } from "@/features/evaluation/lib/classifier-kind"
 
 interface EvaluationDetailPanelProps {
   group: EvaluationGroup | null
@@ -84,6 +85,7 @@ export function EvaluationDetailPanel({
               <p className="text-xs text-muted-foreground">
                 {modelColumns.length} model{modelColumns.length === 1 ? "" : "s"} ·{" "}
                 {group.metric_names.length} metric{group.metric_names.length === 1 ? "" : "s"}
+                {group.classifier_kind && ` · ${classifierKindLabel(group.classifier_kind)}`}
                 {group.evals.length > modelColumns.length &&
                   ` · ${group.evals.length} runs`}
               </p>

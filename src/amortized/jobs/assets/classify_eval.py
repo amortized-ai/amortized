@@ -91,6 +91,250 @@ def _macro_f1(confusion: dict, labels: list) -> tuple[float, dict]:
     return macro, per_class
 
 
+def _head_kind(model_path: str, trust_remote_code: bool = False) -> str | None:
+    """Which classification head a model carries: "sequence", "other" (multiple-choice /
+    token head), or None for an embedding model (sentence-transformers modules, no head).
+
+    A classifier_sft output ships label_mapping.json plus a config.json naming the head
+    architecture. A base-model baseline may be a Hugging Face id, so resolve its config
+    remotely when there is no local directory."""
+    archs: list[str] = []
+    cfg_path = os.path.join(model_path, "config.json")
+    if os.path.isdir(model_path):
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path) as f:
+                    archs = list(json.load(f).get("architectures") or [])
+            except (ValueError, OSError):
+                archs = []
+        if not archs and os.path.exists(os.path.join(model_path, "label_mapping.json")):
+            return "sequence"  # classifier_sft output with an unnamed architecture
+    else:
+        try:
+            from transformers import AutoConfig
+
+            archs = list(
+                AutoConfig.from_pretrained(
+                    model_path, trust_remote_code=trust_remote_code
+                ).architectures
+                or []
+            )
+        except Exception:
+            return None
+    arch = " ".join(archs)
+    if "ForSequenceClassification" in arch:
+        return "sequence"
+    if "ForMultipleChoice" in arch or "ForTokenClassification" in arch:
+        return "other"
+    return None
+
+
+def _ece(probs, correct, bins: int = 15) -> float:
+
+    conf = probs.max(1)
+    e = 0.0
+    for b in range(bins):
+        m = (conf > b / bins) & (conf <= (b + 1) / bins)
+        if m.sum() > 0:
+            e += abs(correct[m].mean() - conf[m].mean()) * m.mean()
+    return float(e)
+
+
+# Temperature-scaling calibration: fit T on a seeded random slice of the eval set and
+# measure ECE before/after only on the rest, so the reported gain is out-of-sample.
+# Skipped (and reported as skipped, never as T=1.0) when the held-out slice is too small.
+_CAL_FIT_MAX = 1500
+_CAL_MIN_HELDOUT = 200
+
+
+def _fit_temperature(logits, y, seed: int) -> dict:
+    """Fit a softmax temperature on part of (logits, y) and score ECE on the remainder.
+
+    Returns {"ece_before", "ece_after", "temperature", "fit_rows", "heldout_rows"} or
+    {"skipped": reason}. Rows whose label the model doesn't know (y < 0) can't be fit."""
+    import numpy as np
+    import torch
+
+    known = np.flatnonzero(y >= 0)
+    rng = np.random.default_rng(seed)
+    rng.shuffle(known)
+    n_fit = min(_CAL_FIT_MAX, len(known) // 2)
+    fit, held = known[:n_fit], known[n_fit:]
+    if len(known) < 2 * _CAL_MIN_HELDOUT:
+        return {
+            "skipped": (
+                f"{len(known)} rows with labels the model knows; calibration needs at least"
+                f" {2 * _CAL_MIN_HELDOUT} (half to fit T, half to measure ECE)"
+            )
+        }
+    # Fit log T so T stays positive; LBFGS with a line search converges reliably.
+    log_t = torch.zeros(1, requires_grad=True)
+    fit_logits = torch.tensor(logits[fit], dtype=torch.float64)
+    fit_labels = torch.tensor(y[fit])
+    opt = torch.optim.LBFGS([log_t], lr=1.0, max_iter=100, line_search_fn="strong_wolfe")
+
+    def _closure():
+        opt.zero_grad()
+        loss = torch.nn.functional.cross_entropy(fit_logits / log_t.exp(), fit_labels)
+        loss.backward()
+        return loss
+
+    opt.step(_closure)
+    temp = float(log_t.detach().exp())
+    if not np.isfinite(temp) or temp <= 0:
+        return {"skipped": f"temperature fit did not converge (T={temp})"}
+
+    def _softmax(x):
+        e = np.exp(x - x.max(1, keepdims=True))
+        return e / e.sum(1, keepdims=True)
+
+    held_logits = logits[held]
+    correct = (held_logits.argmax(1) == y[held]).astype(float)
+    return {
+        "ece_before": round(_ece(_softmax(held_logits), correct), 4),
+        "ece_after": round(_ece(_softmax(held_logits / temp), correct), 4),
+        "temperature": round(temp, 3),
+        "fit_rows": int(n_fit),
+        "heldout_rows": len(held),
+    }
+
+
+def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) -> None:
+    """Evaluate a classifier_sft head model: argmax predictions on the held-out set, with
+    accuracy / macro-F1 / per-class F1 / confusion + temperature-scaled calibration (ECE).
+
+    Unlike the embedding centroid proxy, this is a *true* held-out classifier accuracy.
+    ``name`` maps a label to its display name (class_labels), applied to both the ground
+    truth and the predictions so they share one label space. The router-only knobs
+    (anchors_per_class, top_k, tau) don't apply here."""
+    import numpy as np
+    import torch
+    from sklearn.metrics import accuracy_score, f1_score
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    mp = cfg["model_path"]
+    max_len = int(cfg.get("max_length") or 512)
+    trust = bool(cfg.get("trust_remote_code"))
+    tok = AutoTokenizer.from_pretrained(mp, trust_remote_code=trust)
+    model = AutoModelForSequenceClassification.from_pretrained(mp, trust_remote_code=trust).eval()
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(dev)
+    if tok.pad_token is None and tok.eos_token is not None:
+        tok.pad_token = tok.eos_token  # decoder backbones ship without a pad token
+    if model.config.pad_token_id is None and tok.pad_token_id is not None:
+        # A decoder classification head finds each row's last real token via pad_token_id
+        # and refuses batches > 1 without it.
+        model.config.pad_token_id = tok.pad_token_id
+    id2label = {int(k): v for k, v in model.config.id2label.items()}
+    label2id = {str(k): int(v) for k, v in (model.config.label2id or {}).items()}
+
+    class_labels = cfg.get("class_labels") or None
+
+    def _label_name(raw) -> str:
+        # With class_labels, integer-like checkpoint labels ("3") map through it like int
+        # ground truth. Without it, keep strings as-is ("01" and "1" are distinct labels).
+        if class_labels and isinstance(raw, str) and raw.lstrip("-").isdigit():
+            raw = int(raw)
+        return name(raw)
+
+    texts = [r["text"] for r in rows]
+    raw_true = [str(r["label"]) for r in rows]
+    true = [_label_name(r["label"]) for r in rows]
+    logits_list = []
+    batch, i = 128, 0
+    while i < len(texts):
+        enc = tok(
+            texts[i : i + batch],
+            truncation=True,
+            max_length=max_len,
+            padding=True,
+            return_tensors="pt",
+        ).to(dev)
+        try:
+            with torch.no_grad():
+                logits_list.append(model(**enc).logits.float().cpu().numpy())
+        except torch.OutOfMemoryError:
+            # A large decoder head may not fit 128 rows at once: halve the batch and retry.
+            if batch == 1:
+                raise
+            del enc
+            torch.cuda.empty_cache()
+            batch //= 2
+            print(f"out of memory scoring; retrying with batch size {batch}")
+            continue
+        i += batch
+    logits = np.concatenate(logits_list)
+    if not np.isfinite(logits).all():
+        raise ValueError(
+            "the classifier produced non-finite logits (NaN/inf) — the checkpoint is broken"
+            " (e.g. diverged training); retrain before evaluating"
+        )
+    pred_idx = logits.argmax(1)
+    pred = [_label_name(id2label.get(int(i), i)) for i in pred_idx]
+
+    accuracy = accuracy_score(true, pred)
+    labels_sorted = sorted(set(true) | set(pred))
+    macro_f1 = f1_score(true, pred, average="macro", labels=labels_sorted, zero_division=0)
+    per_class = f1_score(true, pred, average=None, labels=labels_sorted, zero_division=0)
+
+    # Resolve calibration targets in the same (class_labels-mapped) label space as scoring,
+    # so integer ground truth matches a checkpoint whose label2id is keyed by class names.
+    id_by_name = {_label_name(k): v for k, v in label2id.items()}
+    y_idx = np.array(
+        [id_by_name.get(t, label2id.get(r, -1)) for t, r in zip(true, raw_true, strict=True)]
+    )
+    calibration = _fit_temperature(logits, y_idx, int(cfg.get("seed", 42)))
+
+    confusion = {t: {p: 0 for p in labels_sorted} for t in labels_sorted}
+    for t, p in zip(true, pred, strict=False):
+        confusion[t][p] += 1
+
+    metrics = {
+        "eval_mode": "classification",
+        "results": {
+            "classifier_kind": "head",
+            "scores": {
+                "accuracy": round(float(accuracy), 4),
+                "macro_f1": round(float(macro_f1), 4),
+            },
+            "model": {"num_samples": len(rows)},
+            "accuracy": round(float(accuracy), 4),
+            "macro_f1": round(float(macro_f1), 4),
+            "per_class_f1": {
+                lbl: round(float(f), 4)
+                for lbl, f in zip(labels_sorted, per_class, strict=False)
+            },
+            "confusion": confusion,
+            "num_classes": len(labels_sorted),
+            "num_samples": len(rows),
+            "calibration": calibration,
+            "metric_meaning": (
+                "True held-out classifier accuracy: argmax of a trained classification head on "
+                "the held-out set (not a separability proxy). Calibration = temperature-scaled "
+                "ECE, with T fit on one random part of the eval set and ECE measured on the rest."
+            ),
+        },
+    }
+    os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, "metrics.json"), "w") as f:
+        json.dump(metrics, f, indent=2, allow_nan=False)
+    with open(os.path.join(output_dir, "results.jsonl"), "w") as f:
+        for text, t, p in zip(texts, true, pred, strict=True):
+            row = {"text": text, "actual_name": t, "predicted_name": p, "correct": t == p}
+            f.write(json.dumps(row) + "\n")
+    if "skipped" in calibration:
+        cal_msg = f"calibration skipped: {calibration['skipped']}"
+    else:
+        cal_msg = (
+            f"ECE {calibration['ece_before']:.3f} -> {calibration['ece_after']:.3f}"
+            f" (T={calibration['temperature']:.2f}, on {calibration['heldout_rows']} held-out rows)"
+        )
+    print(
+        f"classification eval (head): accuracy={accuracy:.2%} macro_f1={macro_f1:.4f} "
+        f"over {len(rows)} examples in {len(labels_sorted)} classes; {cal_msg}"
+    )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
@@ -116,6 +360,18 @@ def main() -> None:
 
     rng = random.Random(seed)
     rows = _load_rows(cfg["eval_data_path"], text_col, label_col)
+
+    # A classifier_sft head model is evaluated by direct argmax (true held-out accuracy +
+    # calibration); an embedding model falls through to the nearest-centroid separability proxy.
+    kind = _head_kind(cfg["model_path"], bool(cfg.get("trust_remote_code")))
+    if kind == "other":
+        raise ValueError(
+            "this model has a multiple-choice or token-classification head; classification"
+            " eval scores sequence-classification heads only (one text -> one label)"
+        )
+    if kind == "sequence":
+        _head_classifier_eval(cfg, rows, output_dir, name)
+        return
 
     by_label: dict[int, list[str]] = {}
     for r in rows:
@@ -221,6 +477,7 @@ def main() -> None:
     metrics = {
         "eval_mode": "classification",
         "results": {
+            "classifier_kind": "router",
             # Mirror the generative runner so on_success + UI reuse the shape.
             "scores": {"accuracy": round(accuracy, 4), "macro_f1": round(macro_f1, 4)},
             "model": {"num_samples": total},

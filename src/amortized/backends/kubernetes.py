@@ -255,6 +255,15 @@ class KubernetesBackend:
         if spec.resources.gpus > 0:
             resources["limits"] = {"nvidia.com/gpu": str(spec.resources.gpus)}
             resources["requests"] = {"nvidia.com/gpu": str(spec.resources.gpus)}
+        else:
+            # Where nvidia is the node's DEFAULT container runtime (common with the GPU
+            # operator, and our kind clusters), a pod that requests no GPU still gets every
+            # GPU on the node: CUDA images set NVIDIA_VISIBLE_DEVICES=all and nothing
+            # overrides it without a device-plugin allocation. A CPU job (embedding/classifier
+            # training, classification eval) would then train on GPUs outside the quota and
+            # OOM on GPUs other jobs hold. Hide them explicitly.
+            env_vars.append(V1EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="void"))
+            env_vars.append(V1EnvVar(name="CUDA_VISIBLE_DEVICES", value=""))
         if spec.resources.memory_gb:
             mem = f"{spec.resources.memory_gb}Gi"
             resources.setdefault("requests", {})["memory"] = mem

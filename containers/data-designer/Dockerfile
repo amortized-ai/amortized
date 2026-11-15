@@ -2,7 +2,9 @@ FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-RUN uv pip install --system --no-cache data-designer pandas mlflow boto3
+# typer 0.29 removed Option(click_type=...), which data-designer's CLI still uses, so
+# `data-designer plugin install` fails on newer typer.
+RUN uv pip install --system --no-cache data-designer "typer<0.29" pandas mlflow boto3
 RUN echo "y" | data-designer plugin install retrieval-sdg
 
 COPY upload_to_mlflow.py /usr/local/bin/upload_to_mlflow.py

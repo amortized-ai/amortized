@@ -173,3 +173,27 @@ class TestLoadBackends:
             _load_backends()
         names = [b["name"] for b in list_backends()]
         assert names == ["local"]
+
+
+class TestPodSpecGpuVisibility:
+    """With nvidia as a node's default runtime, a pod that requests no GPU still sees all
+    of them unless it hides them — CPU jobs would then train on GPUs outside the quota."""
+
+    @staticmethod
+    def _env(gpus: int) -> dict[str, str]:
+        from amortized.backends.kubernetes import KubernetesBackend
+
+        backend = KubernetesBackend(namespace="test-jobs")
+        spec = JobSpec(job_id="j1", command=["true"], resources=Resources(gpus=gpus))
+        pod = backend._build_pod_spec(spec, "amortized-j1")
+        return {e.name: e.value for e in pod.containers[0].env}
+
+    def test_cpu_pod_hides_gpus(self) -> None:
+        env = self._env(0)
+        assert env["NVIDIA_VISIBLE_DEVICES"] == "void"
+        assert env["CUDA_VISIBLE_DEVICES"] == ""
+
+    def test_gpu_pod_leaves_visibility_to_the_device_plugin(self) -> None:
+        env = self._env(1)
+        assert "NVIDIA_VISIBLE_DEVICES" not in env
+        assert "CUDA_VISIBLE_DEVICES" not in env

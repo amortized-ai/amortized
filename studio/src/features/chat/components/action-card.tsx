@@ -73,15 +73,22 @@ function extractTrainingSummary(config: Record<string, unknown>): [string, strin
   if (config.unfreeze_rank_ratio) rows.push(["Unfreeze ratio", String(config.unfreeze_rank_ratio)])
   if (config.nproc_per_node) rows.push(["GPUs", String(config.nproc_per_node)])
 
-  // Embedding classifiers run on CPU by default (no nproc_per_node), with an optional
-  // single-GPU opt-in via train_on_gpu. Always show the device so the choice is visible
-  // on the card regardless of what the assistant wrote in the message.
-  // Match the backend's check (estimate_gpu_demand / _CPU_TRAINING_ALGORITHMS), which
-  // compares the stripped — not lowercased — value against these canonical algorithm names,
-  // so a non-canonical casing renders and schedules consistently (both treat it as generative).
+  // Classifier (head) and embedding-router training runs on CPU by default (no
+  // nproc_per_node), with an optional single-GPU opt-in via train_on_gpu. Always show
+  // the device so the choice is visible on the card regardless of what the assistant
+  // wrote in the message. Match the backend's check (estimate_gpu_demand /
+  // _CPU_TRAINING_ALGORITHMS), which compares the stripped — not lowercased — value
+  // against these canonical algorithm names, so a non-canonical casing renders and
+  // schedules consistently (both treat it as generative).
+  // A classifier_sft decoder backbone fine-tuned with use_peft (LoRA) also needs the GPU.
   const algo = String(config.algorithm ?? "").trim()
-  if (["embedding_sft", "embedding", "classifier"].includes(algo))
-    rows.push(["Device", config.train_on_gpu ? "GPU (1)" : "CPU (default)"])
+  if (["classifier_sft", "classifier", "embedding_sft", "embedding"].includes(algo)) {
+    const peftGpu = ["classifier_sft", "classifier"].includes(algo) && Boolean(config.use_peft)
+    rows.push([
+      "Device",
+      config.train_on_gpu ? "GPU (1)" : peftGpu ? "GPU (1, required for LoRA)" : "CPU (default)",
+    ])
+  }
 
   return rows
 }
@@ -100,6 +107,8 @@ function extractEvalSummary(config: Record<string, unknown>): [string, string][]
   if (config.training_job_id) rows.push(["Training job", String(config.training_job_id).slice(0, 8)])
   if (config.model_name_or_path && !endpointModel) rows.push(["Model", String(config.model_name_or_path)])
   if (config.eval_data_run_id) rows.push(["Eval data run", String(config.eval_data_run_id).slice(0, 8)])
+  const judgeModel = (config.judge as Record<string, unknown> | undefined)?.model
+  if (judgeModel) rows.push(["Judge model", String(judgeModel)])
   const rubric = config.rubric as { name?: string }[] | undefined
   if (rubric?.length) rows.push(["Rubric", rubric.map((c) => c.name).join(", ")])
   if (config.max_samples) rows.push(["Max samples", String(config.max_samples)])
@@ -163,10 +172,17 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   const summary = action.config
     ? extractConfigSummary(action.jobType, action.config, action.outputPrompt, action.prompts)
     : []
-  // The training dataset's record count is resolved by the backend (not in the
-  // config), so the user always sees how many records they're about to train on.
-  if (action.jobType === "training" && typeof action.dataRecordCount === "number") {
-    summary.push(["Training records", action.dataRecordCount.toLocaleString()])
+  // The dataset's record count is resolved by the backend (not in the config), so
+  // the user always sees how much data the job reads. Eval labels it as the dataset
+  // size because max_samples (its own row) can cap how many records are evaluated.
+  const recordsLabel =
+    action.jobType === "training"
+      ? "Training records"
+      : action.jobType === "eval"
+        ? "Eval dataset size"
+        : null
+  if (recordsLabel && typeof action.dataRecordCount === "number") {
+    summary.push([recordsLabel, action.dataRecordCount.toLocaleString()])
   }
 
   return (
