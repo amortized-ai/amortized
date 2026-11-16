@@ -7,12 +7,13 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from amortized.backends import BackendHandle
 from amortized.config import settings as _settings
 from amortized.core.compute import get_backend
 from amortized.core.placeholders import find_prompt_refs, find_unresolved_placeholders
-from amortized.models import JobStatus, JobType
+from amortized.models import INLINE_API_KEY_ERROR, JobStatus, JobType
 
 if TYPE_CHECKING:
     from amortized.db.repository import Repository
@@ -136,6 +137,46 @@ def gpu_budget_error(job_type: JobType, config: dict[str, Any]) -> str | None:
     )
 
 
+def _url_carries_credentials(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parts = urlsplit(value.strip())
+    except ValueError:
+        return True  # can't tell, so don't store it
+    return bool(parts.username or parts.password or parts.query)
+
+
+def _api_key_paths(value: Any, path: str = "") -> list[str]:
+    if isinstance(value, dict):
+        found: list[str] = []
+        for key, item in value.items():
+            child = f"{path}.{key}" if path else str(key)
+            name = str(key).lower().replace("-", "_")
+            if name in ("api_key", "apikey"):
+                if item not in (None, ""):
+                    found.append(child)
+            elif name == "base_url" and _url_carries_credentials(item):
+                found.append(child)
+            else:
+                found.extend(_api_key_paths(item, child))
+        return found
+    if isinstance(value, list):
+        return [p for i, item in enumerate(value) for p in _api_key_paths(item, f"{path}[{i}]")]
+    return []
+
+
+def inline_credential_error(config: dict[str, Any]) -> str | None:
+    """Error when a job config carries an API key, else None.
+
+    A config is stored, shown on the confirmation card and in the API, and copied by
+    retries, so a key in it would leak through all of those."""
+    paths = _api_key_paths(config)
+    if not paths:
+        return None
+    return f"{', '.join(paths)}: {INLINE_API_KEY_ERROR}"
+
+
 async def create_job(
     repo: Repository,
     *,
@@ -148,6 +189,10 @@ async def create_job(
 ) -> dict[str, Any]:
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
+
+    credential_error = inline_credential_error(config)
+    if credential_error:
+        raise InvalidJobStateError(credential_error)
 
     if job_type == JobType.training:
         algorithm = str(config.get("algorithm", "")).strip().replace("-", "_")

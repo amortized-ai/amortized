@@ -148,7 +148,7 @@ async def _credential_secret(
     from amortized.core.model_catalog import inject_enabled_provider_keys
 
     inject_enabled_provider_keys(env)
-    model = _endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY", env)
+    model = _endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
     data = {
         "api-key": env.get(model["api_key_env"], "")
         or os.getenv(model["api_key_env"], "")
@@ -162,7 +162,7 @@ async def _credential_secret(
             data["hf-token"] = os.environ[key]
             break
     if judge:
-        spec = _endpoint_spec({"judge": judge}, "judge", "EVAL_JUDGE_API_KEY", env)
+        spec = _endpoint_spec({"judge": judge}, "judge", "EVAL_JUDGE_API_KEY")
         data.update(
             {
                 "judge_url": spec["base_url"],
@@ -395,8 +395,7 @@ async def prepare(
     if config.get("eval_mode") == "classification":
         endpoint = {"base_url": "http://unused.invalid", "model": model_path}
     elif config.get("endpoint"):
-        env: dict[str, str] = {}
-        resolved = _endpoint_spec(config, "endpoint", "EVAL_MODEL_API_KEY", env)
+        resolved = _endpoint_spec(config, "endpoint", "EVAL_MODEL_API_KEY")
         endpoint = {**config["endpoint"], "base_url": resolved["base_url"]}
     else:
         endpoint = await prepare_serving(job, store, execution)

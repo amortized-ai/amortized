@@ -665,31 +665,13 @@ async def test_cancel_api_records_intent_without_inventing_terminal_outcome(hub_
     assert cancelled.json()["cancel_requested"] is True
 
 
-async def test_prepared_credentials_are_erased_from_both_config_snapshots(
-    hub_http_client, monkeypatch
-):
-    from amortized.db.connection import get_pool
-    from amortized.db.evalhub import EvalHubRepository
-    from amortized.db.repository import Repository
-
+async def test_hub_eval_refuses_an_inline_api_key(hub_http_client):
     created = await hub_http_client.post(
         "/api/v1/jobs/eval",
         json={**TASK, "endpoint": {**TASK["endpoint"], "api_key": "private-key"}},
     )
+    assert created.status_code == 422
     assert "private-key" not in created.text
-    job_id = created.json()["id"]
-    payload = {"name": "amortized-" + job_id, "model": {"auth": {"secret_ref": "owned"}}}
-    monkeypatch.setattr(lifecycle.preparation, "prepare", AsyncMock(return_value=payload))
-    async with get_pool().acquire() as conn:
-        repo = Repository(conn)
-        store = EvalHubRepository(repo)
-        await lifecycle.tick(await repo.get_job(job_id), store)
-        saved = await repo.get_job(job_id)
-        assert "api_key" not in saved["config"]["endpoint"]
-        assert "api_key" not in json.loads(saved["request_config"])["endpoint"]
-        execution = await store.get(job_id)
-        assert execution["state"] == "ready"
-        assert execution["request"] == payload
 
 
 async def test_restart_routes_hub_job_away_from_native_builder_and_primary_mlflow(monkeypatch):

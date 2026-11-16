@@ -118,7 +118,7 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
     for key in ("endpoint", "endpoint_base", "endpoint_tuned", "judge"):
         if not config.get(key):
             continue
-        spec = _endpoint_spec(config, key, "UNUSED", {})
+        spec = _endpoint_spec(config, key, "UNUSED")
         if spec["provider_type"] != "openai":
             return [
                 f"{key}: use an OpenAI-compatible gateway for this provider; "
@@ -128,7 +128,7 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             return [f"{key}: expected a routable HTTP(S) endpoint"]
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            return [f"{key}: credentials belong in api_key, not endpoint URLs"]
+            return [f"{key}: an endpoint URL can't carry credentials, a query or a fragment"]
         if parsed.hostname in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
             return [f"{key}: loopback endpoints cannot be reached from Eval Hub workloads"]
     if any(config.get(key) for key in ("endpoint_base", "endpoint_tuned")):
