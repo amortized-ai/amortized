@@ -374,12 +374,19 @@ chart does not install a cluster-wide operator.
    This requires deployment privileges there. Keep provider IDs/configuration
    immutable while evaluations are active; create a new provider ID/release for
    a changed protocol rather than mutating a running request's implementation.
-5. Configure the Hub service's authenticated HTTPS URL, Amortized's SA token path,
-   CA ConfigMap and tenant API RoleBinding. Hub's tenant is the compute namespace,
-   never a browser-supplied value. The operator provisions tenant runtime RBAC and
-   helper service accounts. Label a pre-existing jobs namespace
-   `evalhub.trustyai.opendatahub.io/tenant=true` when using multi-tenancy; chart-created
-   namespaces receive that label when the URL is set.
+5. Configure the Hub service's authenticated HTTPS URL, Amortized's SA token path and
+   CA ConfigMap, and set `evalhub.operator.name` to the Hub's name. Hub's tenant is the
+   compute namespace, never a browser-supplied value. The operator provisions tenant
+   runtime RBAC and helper service accounts. Label a pre-existing jobs namespace
+   `evalhub.trustyai.opendatahub.io/tenant=true`; chart-created namespaces receive that
+   label when the URL is set.
+   - The Hub is multi-tenant, so it lives in a namespace of its own. The operator won't
+     run a multi-tenant Hub in a tenant namespace (`InvalidPlacement`), and the chart
+     refuses `evalhub.operator.namespace` equal to `namespace` or `jobsNamespace`.
+   - The chart creates the Role `amortized-evalhub-user` in the jobs namespace, with
+     the operator's tenant user rules, and binds Amortized's service account to it.
+     Operator releases differ in the user Role they create there; RHOAI 3.5.3 creates
+     none. Installing the chart needs those permissions.
 6. Reuse MLflow and S3/MinIO where compatible. The staging bucket must already exist.
    Its S3 connection Secret must exist in the jobs namespace. Hub's initializer
    expects `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_ENDPOINT` and region;
@@ -418,18 +425,19 @@ Example connection values (substitute real namespaces, URLs and published digest
 
 ```yaml
 evalhub:
-  url: https://evalhub.amortized-jobs.svc:8443
+  url: https://evalhub.amortized-evalhub.svc:8443
   caConfigMap: openshift-service-ca.crt
   stagingBucket: amortized
   providers: [amortized-lighteval]
   operator:
     createInstance: true
-    namespace: amortized-jobs
-    databaseSecret: evalhub-db
+    name: evalhub
+    namespace: amortized-evalhub         # the Hub's own namespace, not jobsNamespace
+    databaseSecret: evalhub-db           # in amortized-evalhub
     createProviders: true
     namespaceForProviders: trustyai-system
     taskAdapterImage: ghcr.io/amortized-ai/evalhub-adapter@sha256:<published digest>
-    jobServiceAccount: evalhub-amortized-jobs-job
+    jobServiceAccount: evalhub-amortized-evalhub-job   # <name>-<namespace>-job
 ```
 
 Native Anthropic authentication is currently rejected on the Hub path: the

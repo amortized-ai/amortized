@@ -97,7 +97,11 @@ evalhub:
   # These optional resources register a dedicated instance and pinned providers.
   operator:
     createInstance: false
+    # The Hub instance's name, also when createInstance is false: the chart's user Role
+    # grants access to this Hub only.
     name: evalhub
+    # The Hub's own namespace, not namespace or jobsNamespace: the chart's Hub is
+    # multi-tenant and serves the jobs namespace as a tenant.
     namespace: ""
     databaseSecret: "" # Secret with db-url in instance namespace; separate Hub DB
     createProviders: false
@@ -107,8 +111,6 @@ evalhub:
     # TrustyAI lm-eval adapter quay.io/opendatahub/ta-lmes-job:odh-3.6.0, pinned. The catalog's
     # odh-3.4-ea2 ships eval-hub-sdk 0.1.1, which can't read Hub 1.0.3's job spec.
     lmEvalImage: quay.io/opendatahub/ta-lmes-job@sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0
-    # Existing operator tenant API Role; set empty only when auth is handled elsewhere.
-    apiRole: evalhub-user
     jobServiceAccount: "" # actual operator-created adapter/sidecar SA for MLflow
 
 studio:

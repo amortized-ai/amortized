@@ -37,17 +37,53 @@ subjects:
   - kind: ServiceAccount
     name: amortized-server
     namespace: {{ .Values.namespace }}
-{{- if and .Values.evalhub.url .Values.evalhub.operator.apiRole }}
+{{- if .Values.evalhub.url }}
+---
+{{- /*
+Hub authorizes each call against its tenant, the jobs namespace. Operator releases differ in
+which user Role they create there (RHOAI 3.5.3 creates none for a multi-tenant Hub), so the
+chart owns one. The rules are the operator's own tenantUserRules. The binding is new, not
+amortized-evalhub-client, because a RoleBinding's roleRef can't change on upgrade.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: amortized-evalhub-user
+  namespace: {{ .Values.jobsNamespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["evalhubs"]
+    verbs: ["get", "list"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["evaluations"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["collections", "providers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["evalhubs/proxy"]
+    resourceNames: [{{ .Values.evalhub.operator.name | quote }}]
+    verbs: ["get", "create"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["status-events"]
+    verbs: ["create"]
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["experiments"]
+    verbs: ["get", "list", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: amortized-evalhub-client
+  name: amortized-evalhub-user
   namespace: {{ .Values.jobsNamespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ .Values.evalhub.operator.apiRole }}
+  name: amortized-evalhub-user
 subjects:
   - kind: ServiceAccount
     name: amortized-server

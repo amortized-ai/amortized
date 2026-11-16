@@ -15,13 +15,20 @@ data:
   {{- (.Files.Glob "files/evalhub/compat/*.json").AsConfig | nindent 2 }}
 {{- end }}
 {{- if .Values.evalhub.operator.createInstance }}
+{{- $hubNamespace := required "evalhub.operator.namespace is required" .Values.evalhub.operator.namespace }}
+{{- /* A multi-tenant Hub serves the jobs namespace as a tenant, and the operator refuses to
+       run one inside a tenant namespace (InvalidPlacement). */}}
+{{- if or (eq $hubNamespace .Values.namespace) (eq $hubNamespace .Values.jobsNamespace) }}
+{{- fail "evalhub.operator.namespace must be a namespace of its own: the chart's Hub is multi-tenant, and the operator won't run a multi-tenant Hub in the tenant (jobs) namespace" }}
+{{- end }}
 ---
-apiVersion: trustyai.opendatahub.io/v1alpha1
+apiVersion: trustyai.opendatahub.io/v1
 kind: EvalHub
 metadata:
   name: {{ .Values.evalhub.operator.name }}
-  namespace: {{ required "evalhub.operator.namespace is required" .Values.evalhub.operator.namespace }}
+  namespace: {{ $hubNamespace }}
 spec:
+  tenancy: multi
   replicas: 1
   database:
     type: postgresql
@@ -30,6 +37,9 @@ spec:
     - amortized
     - amortized-lm-eval
     - amortized-lighteval
+  # Absent, the CRD fills in the operator's own collections, which reference providers
+  # this Hub doesn't register.
+  collections: []
   env:
     - name: MLFLOW_TRACKING_URI
       value: {{ include "amortized.mlflowTrackingUri" . | quote }}
