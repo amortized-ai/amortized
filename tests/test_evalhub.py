@@ -412,6 +412,50 @@ async def test_task_generates_once_and_does_not_leak_reference(tmp_path, monkeyp
     assert summary["results"]["scores"] == {"quality": 0.8}
 
 
+@pytest.mark.asyncio
+async def test_task_counts_samples_the_judge_gave_no_score(tmp_path, monkeypatch):
+    from amortized.evaluation import generation
+
+    data = tmp_path / "data"
+    data.mkdir()
+    row = {"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]}
+    (data / "rows.jsonl").write_text((json.dumps(row) + "\n") * 2)
+    monkeypatch.setattr(
+        generation, "eval_endpoint", AsyncMock(return_value=[{"output": "a", "error": ""}] * 2)
+    )
+    # One sample scored, one where the judge errored (score_one then returns all None).
+    monkeypatch.setattr(
+        generation, "score_one", AsyncMock(side_effect=[{"quality": 8.0}, {"quality": None}])
+    )
+    summary = await generation.run(
+        {
+            "eval_data_path": str(data),
+            "output_dir": str(tmp_path / "out"),
+            "endpoints": {"model": {}, "judge": {}},
+            "rubric": [{"name": "quality", "description": "test"}],
+        }
+    )
+    assert summary["results"]["judge"] == {"num_samples": 2, "num_succeeded": 1, "error_rate": 0.5}
+    assert summary["results"]["scores"] == {"quality": 0.8}
+
+
+def test_native_eval_fails_when_the_judge_mostly_gave_no_score(tmp_path, monkeypatch):
+    from amortized.evaluation import generation
+
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    summary = {
+        "results": {
+            "model": {"error_rate": 0.0},
+            "judge": {"num_samples": 3, "num_succeeded": 1, "error_rate": 0.6667},
+        }
+    }
+    monkeypatch.setattr(generation, "run", AsyncMock(return_value=summary))
+    monkeypatch.setattr("sys.argv", ["run_eval.py", "--config", str(config)])
+    with pytest.raises(SystemExit, match="judge gave no score for 67% of judged samples"):
+        generation.main()
+
+
 @pytest.fixture
 async def hub_http_client(monkeypatch):
     import amortized.config as config_mod
@@ -954,6 +998,51 @@ def test_task_adapter_generates_scores_and_artifacts_using_sdk_contract(tmp_path
     ]
     assert all(a.local_path.is_file() for a in instance.mlflow_artifacts)
     assert json.loads((instance.output_dir / "results.jsonl").read_text())["reference"] == "5"
+
+
+def test_task_adapter_fails_when_every_judge_call_fails(tmp_path, monkeypatch):
+    from evalhub.adapter.models import JobSpec
+
+    from amortized.evaluation import adapter, generation
+
+    data = tmp_path / "data"
+    data.mkdir()
+    row = {
+        "messages": [{"role": "user", "content": "2 + 3?"}, {"role": "assistant", "content": "5"}]
+    }
+    (data / "sample.jsonl").write_text(json.dumps(row) + "\n")
+    monkeypatch.setattr(adapter, "TASK_DATA_PATH", str(data))
+    monkeypatch.setattr(
+        adapter, "resolve_model_credentials", lambda: MagicMock(api_key="api-key:ref")
+    )
+    monkeypatch.setattr(
+        generation, "eval_endpoint", AsyncMock(return_value=[{"output": "5", "error": ""}])
+    )
+    # The judge endpoint answers 502: call_model raises, and score_one turns that into None.
+    monkeypatch.setattr(
+        generation, "call_model", AsyncMock(side_effect=RuntimeError("HTTP 502 Bad Gateway"))
+    )
+    monkeypatch.setattr(
+        adapter,
+        "read_model_auth_key",
+        {"judge_url": "http://judge/v1", "judge_api-key": "judge-key"}.get,
+    )
+    spec = JobSpec(
+        id="hub-123",
+        provider_id="amortized",
+        benchmark_id="task",
+        benchmark_index=0,
+        callback_url="http://sidecar/callback",
+        model={"url": "http://sidecar/v1", "name": "model"},
+        parameters={
+            "evaluation": {"kind": "task"},
+            "rubric": [{"name": "accuracy", "description": "Matches the reference"}],
+            "judge_model": "judge",
+        },
+    )
+    instance = object.__new__(adapter.AmortizedTaskAdapter)
+    with pytest.raises(RuntimeError, match="Judge gave no score"):
+        instance.run_benchmark_job(spec, MagicMock())
 
 
 async def test_embedding_download_secret_obeys_forward_env_policy(monkeypatch):

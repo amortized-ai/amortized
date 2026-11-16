@@ -492,6 +492,16 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
             results["scores"] = scores_out
             results["scores_n"] = scores_n
             results["num_scored"] = len(scorable)
+            # A judged sample fails when the judge gave no score at all: the call errored, or
+            # its reply had none.
+            judged = sum(
+                1 for i in scorable if any(v is not None for v in sample_scores[i].values())
+            )
+            results["judge"] = {
+                "num_samples": len(scorable),
+                "num_succeeded": judged,
+                "error_rate": round(1 - judged / len(scorable), 4) if scorable else 0.0,
+            }
 
     rows = []
     for i, sample in enumerate(samples):
@@ -539,11 +549,14 @@ def main() -> None:
 
     summary = asyncio.run(run(config))
 
-    # Hard-fail if the model mostly errored — metrics would be meaningless
+    # Hard-fail if the model or the judge mostly errored — metrics would be meaningless
     if summary["results"]["model"]["error_rate"] > 0.5:
         raise SystemExit(
             f"model errored on {summary['results']['model']['error_rate']:.0%} of samples"
         )
+    judge = summary["results"].get("judge")
+    if judge and judge["error_rate"] > 0.5:
+        raise SystemExit(f"judge gave no score for {judge['error_rate']:.0%} of judged samples")
 
 
 if __name__ == "__main__":

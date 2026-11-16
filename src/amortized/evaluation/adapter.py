@@ -81,6 +81,8 @@ class AmortizedTaskAdapter(FrameworkAdapter):
             summary = asyncio.run(run(parameters))["results"]
             if summary["model"]["error_rate"] > 0.5:
                 raise RuntimeError("Model errored on more than half of evaluation samples")
+            if summary.get("judge", {}).get("error_rate", 0) > 0.5:
+                raise RuntimeError("Judge gave no score for more than half of judged samples")
         # Re-emit classification metadata too, keeping detailed output in the same run.
         (output / "metrics.json").write_text(json.dumps({"results": summary}))
         self.mlflow_artifacts = [
