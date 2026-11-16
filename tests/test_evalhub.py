@@ -983,6 +983,42 @@ async def test_embedding_download_secret_obeys_forward_env_policy(monkeypatch):
     )
 
 
+async def test_https_model_secret_carries_cluster_ca(monkeypatch, tmp_path):
+    import kubernetes_asyncio.client as kube
+
+    from amortized.backends.kubernetes import KubernetesBackend
+    from amortized.integrations.evalhub import preparation
+
+    store = MemoryStore("preparing")
+    backend = MagicMock(spec=KubernetesBackend)
+    backend._get_client = AsyncMock()
+    api = MagicMock()
+    api.create_namespaced_secret = AsyncMock()
+    monkeypatch.setattr(preparation, "get_backend", lambda _: backend)
+    monkeypatch.setattr(kube, "CoreV1Api", lambda _: api)
+    bundle = tmp_path / "service-ca.crt"
+    bundle.write_text("-----BEGIN CERTIFICATE-----\ncluster\n-----END CERTIFICATE-----\n")
+    settings = preparation.config_mod.settings
+    monkeypatch.setattr(settings, "evalhub_ca_bundle", str(bundle))
+
+    async def secret_for(url: str, judge_url: str = "") -> dict[str, str]:
+        endpoint = {"base_url": url, "model": "granite"}
+        judge = {"base_url": judge_url, "model": "judge"} if judge_url else None
+        await preparation._credential_secret(store.job, store, endpoint, judge)
+        return api.create_namespaced_secret.call_args.args[1].string_data
+
+    assert (await secret_for("https://granite.models.svc:8000/v1"))["ca_cert"] == (
+        bundle.read_text()
+    )
+    assert "ca_cert" not in await secret_for("http://model.amortized.svc:8000/v1")
+    # Hub's sidecar also proxies judge_url, so an https judge needs the CA too.
+    assert "ca_cert" in await secret_for(
+        "http://model.amortized.svc:8000/v1", "https://granite.models.svc:8000/v1"
+    )
+    monkeypatch.setattr(settings, "evalhub_ca_bundle", "")
+    assert "ca_cert" not in await secret_for("https://granite.models.svc:8000/v1")
+
+
 def test_embedding_adapter_uses_projected_token_and_canonical_anchor_query(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace

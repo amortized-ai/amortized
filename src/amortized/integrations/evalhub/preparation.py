@@ -154,6 +154,7 @@ async def _credential_secret(
         or os.getenv(model["api_key_env"], "")
         or "unused-anonymous-key"
     }
+    urls = [model["base_url"]]
     # Match the native job's explicit credential-forwarding policy. Hub projects
     # this supported key into the adapter for gated embedding model downloads.
     for key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
@@ -170,6 +171,13 @@ async def _credential_secret(
                 or "unused-anonymous-key",
             }
         )
+        urls.append(spec["base_url"])
+    # The cluster CA that signs Hub's certificate (OpenShift's service CA) also signs
+    # in-cluster HTTPS model servers. Hub's sidecar proxies both the model and judge_url
+    # calls, and adds ca_cert to the system roots.
+    ca_bundle = config_mod.settings.evalhub_ca_bundle
+    if any(url.startswith("https://") for url in urls) and ca_bundle and Path(ca_bundle).is_file():
+        data["ca_cert"] = Path(ca_bundle).read_text()
     secret = V1Secret(
         metadata=V1ObjectMeta(name=name, labels={"amortized/job-id": job["id"]}), string_data=data
     )

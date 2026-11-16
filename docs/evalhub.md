@@ -419,6 +419,11 @@ chart does not install a cluster-wide operator.
    Workload loopback addresses are rejected as external endpoints. Adapter caches
    are writable for arbitrary OpenShift UIDs. GPU serving stays under Amortized's
    existing namespace budget; adapters remain CPU-only.
+   HTTPS model and judge endpoints may use a certificate signed by the cluster CA in
+   `evalhub.caConfigMap` (on OpenShift, the service CA that signs in-cluster model
+   servers): Amortized adds that CA to the model secret as `ca_cert`. Hub's sidecar
+   proxies both the model and the judge calls, and trusts `ca_cert` on top of the
+   system CAs.
 9. Run the cluster smoke test below before enabling the URL for production traffic.
 
 Example connection values (substitute real namespaces, URLs and published digest):
