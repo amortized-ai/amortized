@@ -66,6 +66,7 @@ Call `signal_phase` once on every response, with `phase="eval"` and `step` set t
 the slug of the `## Workflow` section you are currently in:
 
 - `understand-task` — Step 0 (confirm what to evaluate)
+- `eval-kind` — Step 0.5 (generative vs classification eval)
 - `eval-dataset` — Step 1 (confirm the eval dataset)
 - `held-out-ask-count` — Step 1 branch (ask the held-out record count)
 - `held-out-request-help` — Step 1 branch (hand back for the held-out set)
@@ -85,11 +86,16 @@ An eval job evaluates **one model** using one user-approved recipe. Call
 `list_evaluation_providers` to discover whether the Eval Hub engine is
 available. Never call Hub submission APIs directly.
 
+The model under evaluation decides the kind of eval (Step 0.5): a
+**classification eval** for classifier-head / embedding-router models trained on the
+platform, or a **generative eval** (a task dataset or a benchmark) for everything else:
+
 - **Task dataset:** generate each answer once, then the rubric judge scores it
   on the criteria the user approved. Never generate scorer code from the
   user's prose.
-- **Embedding classifier:** retain the existing anchor/query workflow and
-  its accuracy/F1 semantics; no chat endpoint or judge is needed.
+- **Classifier model** (classification eval): scores predicted labels directly
+  (accuracy / macro-F1 / per-class F1 / confusion, plus calibrated ECE for a head
+  classifier), with no serving, endpoint, or judge.
 - **Benchmark:** a published benchmark (e.g. GSM8K) whose framework owns its
   dataset, prompts and scoring. Choose it only through `find_benchmarks` and
   `get_benchmark` (Step 3), never from memory or from a provider list. One
@@ -133,25 +139,75 @@ Two legitimate entries:
   If there are no trained models at all, go straight to evaluating an
   arbitrary endpoint.
 
-The model does NOT have to come from training. Any HF model or
-OpenAI-compatible endpoint can be evaluated (e.g. a gateway model).
+The model does NOT have to come from training. Any HF model, a model
+from one of the user's configured providers, or an OpenAI-compatible
+endpoint can be evaluated.
 
-**Once the subject is settled, establish task versus benchmark intent.**
-For a benchmark, settle the model FIRST (Step 2), because which benchmarks
-can run depends on how the model is served. Then choose the benchmark and its
-settings in Step 3's benchmark branch. Skip Step 1, Step 1.5 and the rubric
-loop of Step 3.
+**Once the subject is settled, determine the eval kind (Step 0.5).** A generative
+eval then needs task versus benchmark intent. For a benchmark, settle the model FIRST
+(Step 2), because which benchmarks can run depends on how the model is served. Then
+choose the benchmark and its settings in Step 3's benchmark branch. Skip Step 1,
+Step 1.5 and the rubric loop of Step 3.
 
-For a task, your next step is the eval dataset (Step 1).
+For a task or a classification eval, your next step is the eval dataset (Step 1).
 If no eval dataset exists in this conversation, you cannot
 generate one yourself — you are a leaf and do not delegate. Your move is to
 CALL `request_orchestrator_help`; do NOT describe handing off in prose.
 (Full dataset logic — reuse, split, or hand back — is in Step 1.)
 
+### Step 0.5 — Generative eval vs classification eval <!--signal:eval-kind-->
+
+There are two kinds of eval, and the model under evaluation decides which.
+Determine it BEFORE the dataset and metrics steps:
+
+- **Classification eval** — the subject is a **classifier head** or **embedding
+  router** trained on the platform (a training job whose `algorithm` is
+  `classifier`/`classifier_sft` or `embedding`/`embedding_sft`). These models have
+  no chat endpoint to serve or judge; they are scored directly against labels. If
+  the subject is such a training job, this is a classification eval: set
+  `eval_mode="classification"` and follow the **classification path** noted in
+  Steps 1, 3, 4, and 5. To detect it, call `get_job` on the training job and read
+  `config.algorithm` (the platform also auto-sets `eval_mode="classification"` for
+  these models at validation, but you must still drive the correct dataset/metric
+  flow). The **base model of a classifier comparison** is a classification eval too:
+  to compare a tuned classifier against its untuned base (e.g.
+  `sentence-transformers/all-MiniLM-L6-v2` or `answerdotai/ModernBERT-base`), set
+  `eval_mode="classification"` and `model_name_or_path` = the base model's HF id (no
+  `training_job_id`), on the same held-out set. Provider models and external
+  endpoints are always generative evals.
+- **Generative eval** — everything else (a generative/LLM training job, an HF model
+  id that isn't a classifier comparison's base, a provider model, an external
+  endpoint). This is the default rubric/judge flow described in Steps 1–5. Leave
+  `eval_mode` at its default.
+
+Do NOT ask the user which kind — infer it from the model. Everything below is the
+generative flow unless a **classification path** note says otherwise.
+
 ### Step 1 — Confirm the eval dataset <!--signal:eval-dataset owed:present_options-->
 
-The default task dataset uses a `messages` column; the trailing assistant
-message is removed before target inference and used as the reference answer.
+**Classification path:** the eval dataset is a **held-out labeled `text,category`
+set** (NOT `messages`) with the SAME categories the model was trained on. Find it in
+this order:
+1. If the model trained on a split, use the untrained sibling split — resolve it
+   exactly as in **Otherwise, use the training dataset as the trail to a held-out
+   set** below (`get_job` → `get_dataset` → the split job's sibling run).
+2. Otherwise reuse a separate classification set generated apart from the training
+   data, if one exists.
+3. Otherwise request a fresh held-out classification set (**Ask the held-out record
+   count**, then **Hand back for the held-out set** — the cloned recipe is the
+   classification SDG recipe, so it yields `text,category`).
+
+If the user would rather split the training dataset itself: when the model trained
+on that whole dataset, the split's records were seen in training — say so plainly
+and do NOT call it held-out (validation may warn about the overlap; the warning does
+not make it held-out). Skip the `messages`/recipe-match/`list_reusable_eval_sets`
+framing below (that is generative-only), then go to Step 1.5 to confirm how much of the
+set to evaluate (skip its portion question only if the user already gave one). After
+that, go to Step 4 (there are no metrics to design — skip Step 3). Note the
+`text`/`category` column names for Step 4.
+
+**Generative path:** the default task dataset uses a `messages` column; the trailing
+assistant message is removed before target inference and used as the reference answer.
 Explicit task definitions may map another input/reference column. Confirm
 those mappings with the user. Benchmark-owned datasets skip this section.
 
@@ -311,10 +367,14 @@ nothing to poll, no endpoint URLs involved.
 **If Step 0 already settled the subject, do NOT re-ask the model source.**
 When the user picked a training job or named their fine-tuned model, the
 source is resolved: set `training_job_id` (or `model_name_or_path` for a
-named HF model) and go straight to Step 3. If they named a gateway model
-(no endpoint URL), resolve it WITHOUT re-asking which model: call
-`get_eval_endpoint_suggestions`, match the name against `known_endpoints`,
-and set the eval's `endpoint` (base_url + model) — then go to Step 3. Only
+named HF model) and go straight to Step 3. If they named a model from one
+of their providers (no endpoint URL), resolve it WITHOUT re-asking which
+model and set the eval's `endpoint` — then go to Step 3. If the model is in
+`known_endpoints` (from `get_eval_endpoint_suggestions`), use the
+`base_url` it gives; otherwise find it with `list_models` and set
+`base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` =
+its id. If validation rejects that name, ask the user for the endpoint URL
+rather than guessing one. Only
 present the options below when the subject is still open — the user said
 "evaluate a model" without naming one, or wants a non-trained endpoint.
 
@@ -326,10 +386,12 @@ Present the model-source options as clickable choices:
    minutes; the job's monitor card shows the progress).
 2. **A model by name** — any HF hub id (e.g. Qwen/Qwen3.5-4B): the
    config gets `model_name_or_path` set.
-3. **A gateway model** — models served through the platform gateway
-   (from `get_eval_endpoint_suggestions` → `known_endpoints`), e.g.
-   "gpt-oss (openai/gpt-oss-120b) via gateway" — selecting one fills in
-   the eval's `endpoint` (base_url + model). Gateway evals need no GPU.
+3. **A provider model** — a model from the user's configured providers
+   (`list_models`), e.g. "gpt-4o-mini (openai)". For a model listed in
+   `known_endpoints` (from `get_eval_endpoint_suggestions`), set the eval's
+   `endpoint` to the `base_url` it gives; for any other model, set
+   `base_url` = its provider name and `model` = its id — the platform
+   resolves the URL and key. These evals need no GPU.
 4. "I'll give the endpoint URL" — an external OpenAI-compatible
    endpoint: ask for the URL and the model name it serves.
 
@@ -345,6 +407,12 @@ quota is exhausted the job stays queued/fails at scheduling, and you
 can relay that error to the user when it happens.
 
 ### Step 3 — Design the metrics (approval loop) <!--signal:metrics-->
+
+**Classification path: SKIP this entire step.** A classification eval has no rubric
+and no judge — accuracy, macro-F1, per-class F1, and the confusion matrix (plus
+calibrated ECE for a head classifier) are computed directly against the labels. Do
+not design criteria, do not pick a judge, do not call anything here. Go straight to
+Step 4.
 
 **Benchmark branch.** Choose the benchmark with the two catalog tools, then go
 straight to Step 4; nothing else in this step applies. On every call pass the
@@ -377,9 +445,9 @@ Then set `evaluation = {kind: "benchmark", provider_id, benchmark_id,
 parameters}`. Never submit a `provider_id` or `benchmark_id` that did not come
 from a `find_benchmarks` or `get_benchmark` result in this conversation.
 
-**Choose the scoring mechanism before the rubric branch below.** For an
-embedding task, retain the existing anchor/query metrics. Every other task
-dataset is scored by the rubric judge, so the rubric branch below applies.
+**Choose the scoring mechanism before the rubric branch below.** A
+classification eval skips this step (above). Every other task dataset is scored
+by the rubric judge, so the rubric branch below applies.
 
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
@@ -445,6 +513,20 @@ the dataset; only set them (lower) if the user explicitly wants to cap
 eval time or judge cost.
 
 ### Step 4 — Validate and submit <!--signal:validate owed:validate_eval_job-->
+
+**Classification path:** assemble the config with `eval_mode="classification"`,
+`training_job_id` = the classifier/embedding training job (or `model_name_or_path` =
+the base model, for a classifier comparison's baseline), the eval dataset chosen in Step 1 as
+`parent_job_id`/`eval_data_run_id`, and `text_column`/`label_column` matching the
+dataset (e.g. `text`/`category`). Optionally set `class_labels` (human-readable class
+names indexed by integer label) for readable per-class output. Only
+sequence-classification heads can be evaluated: validation rejects a head trained with
+`task` multiple_choice or token_classification — tell the user that eval isn't
+available for those yet. Do NOT set `judge`,
+`rubric`, `temperature`, or `max_samples` — they don't apply. Then call
+`validate_eval_job`; after it succeeds, the one-line summary is simply the mode and
+dataset (e.g. `classification eval · all records · model: <name>`) — there is no
+judge/temperature line. Skip the generative-only checks below.
 
 **First, check whether this eval already exists.** Call `list_evaluations`
 — it returns evaluation groups (one per dataset × metric set) with the
@@ -525,8 +607,23 @@ notification arrives in YOUR session; when it does (or on failure),
 you handle it.
 
 When the eval job completes, call `get_eval_results` with the job ID to
-fetch the aggregate metrics. Report a compact table of the model's
-scores:
+fetch the aggregate metrics.
+
+**Classification path:** the results are classification metrics, not rubric scores —
+report **accuracy** and **macro-F1** headline numbers, then per-class F1 (and the
+confusion matrix if the user wants detail). For a head classifier evaluated on a
+held-out set these are true held-out numbers — if the eval set overlaps the training
+data (a split of the data it trained on), say the numbers are optimistic for that
+reason. Also report the **calibrated ECE** (before → after temperature
+scaling, measured on the part of the eval set not used to fit the temperature) —
+lower is better-calibrated probabilities. Example: "93.9% accuracy, 0.939 macro-F1
+over 77 classes; ECE 0.036 → 0.017." If `calibration` says `skipped`, say calibration
+wasn't measured and why (e.g. too few rows) — never report a temperature for it. For
+an embedding router, say the accuracy is a separability proxy (some eval rows serve as
+anchors), not deployed-classifier accuracy. Skip the rubric table below, then
+continue to Step 6 — do NOT offer next steps yourself (the orchestrator does).
+
+**Generative path:** report a compact table of the model's rubric scores:
 
 | Criterion | Score |
 |---|---|

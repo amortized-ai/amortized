@@ -19,6 +19,7 @@ from amortized.core.jobs import (
     InvalidJobStateError,
     JobNotFoundError,
     deserialize_handle,
+    gpu_budget_error,
 )
 from amortized.core.jobs import (
     cancel_job as core_cancel_job,
@@ -35,6 +36,7 @@ from amortized.core.jobs import (
 from amortized.core.jobs import (
     list_jobs as core_list_jobs,
 )
+from amortized.core.model_catalog import enabled_provider_defs, resolve_provider
 from amortized.core.placeholders import (
     PROMPT_ID_PREFIX,
     find_prompt_refs,
@@ -227,6 +229,10 @@ async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[st
     return errors
 
 
+# An immutable Hugging Face revision: a full git commit hash.
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
+
+
 async def _validate_training_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -242,8 +248,28 @@ async def _validate_training_data(
             "algorithm is a required property — provide it (sft, lora_sft, osft, dpo, grpo, "
             "lora_grpo, kto, gkd), or pass the entire config as a single config_json string"
         )
+    if config.get("trust_remote_code") and not _COMMIT_SHA.fullmatch(
+        str(config.get("revision") or "").strip()
+    ):
+        # Remote code runs inside the training pod, which holds storage and MLflow
+        # credentials — only allow it pinned to a reviewed commit. A branch or tag (even
+        # "main") can move between review and execution, so require the full commit hash.
+        errors.append(
+            "trust_remote_code=true requires revision set to the full 40-character commit"
+            " hash whose custom code you reviewed (a branch or tag can change before the"
+            " job runs)"
+        )
     data_path = config.get("data_path", "")
     data_run_id = str(config.get("data_run_id", "") or "")
+
+    if parent_job_id and data_run_id:
+        errors.append(
+            "set only one training data source, not both parent_job_id and data_run_id:"
+            f" keep data_run_id ({data_run_id}) — the dataset to train on, e.g. the train"
+            " split — and remove parent_job_id. The parent SDG job's full output also"
+            " holds any rows a split set aside for evaluation."
+        )
+        return errors
 
     if not parent_job_id and not data_path and not data_run_id:
         errors.append(
@@ -330,15 +356,31 @@ async def _training_shape_violations(
     algorithm = str(config.get("algorithm", "")).replace("-", "_")
     algorithm = ALGO_ALIASES.get(algorithm, algorithm)
     columns = sorted(first.keys())
-    if algorithm in _EMBEDDING_ALGORITHMS:
-        text_col = str(config.get("text_column") or "text")
-        label_col = str(config.get("label_column") or "category")
-        missing = [c for c in (text_col, label_col) if c not in first]
+    if algorithm in _CLASSIFICATION_ALGORITHMS:
+        # Check the columns training will actually read, with training-hub's defaults when
+        # unset (label_column is never forwarded if omitted): text+label for sequence
+        # classification and the router, +options for multiple choice, tokens+ner_tags
+        # for token classification.
+        task = str(config.get("task") or "sequence_classification")
+        if algorithm == "classifier_sft" and task == "token_classification":
+            needed = [
+                str(config.get("tokens_column") or "tokens"),
+                str(config.get("label_column") or "ner_tags"),
+            ]
+        else:
+            needed = [
+                str(config.get("text_column") or "text"),
+                str(config.get("label_column") or "label"),
+            ]
+            if algorithm == "classifier_sft" and task == "multiple_choice":
+                needed.append(str(config.get("options_column") or "options"))
+        missing = [c for c in needed if c not in first]
         if missing:
             return [
-                f"training data: algorithm '{algorithm}' needs flat columns {missing}, but"
-                f" the dataset has {columns}. Use an embedding-classifier dataset"
-                " (text + category) for this algorithm."
+                f"training data: algorithm '{algorithm}' needs columns {missing}, but"
+                f" the dataset has {columns}. Set text_column/label_column (and"
+                " options_column/tokens_column for those tasks) to the dataset's columns —"
+                " a classification SDG dataset uses label_column='category'."
             ]
     elif algorithm in _SFT_MESSAGES_ALGORITHMS and "messages" not in first:
         return [
@@ -440,6 +482,29 @@ def _validate_eval_rubric_judge(config: dict[str, Any]) -> list[str]:
             " explicitly (there is no default judge)"
         ]
     return []
+
+
+def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
+    """Each endpoint's base_url must be an http(s) URL or a configured provider's name.
+
+    Anything else is called as a literal URL at runtime and fails every sample."""
+    errors: list[str] = []
+    for key in ("endpoint", "endpoint_base", "endpoint_tuned", "judge"):
+        endpoint = config.get(key)
+        if not isinstance(endpoint, dict):
+            continue
+        base_url = str(endpoint.get("base_url") or "").strip()
+        if not base_url or base_url.lower().startswith(("http://", "https://")):
+            continue
+        if resolve_provider(base_url) is None:
+            names = ", ".join(p["name"] for p in enabled_provider_defs()) or "none configured"
+            errors.append(
+                f"{key}.base_url {base_url!r} is neither an http(s) URL nor a configured"
+                f" provider — set it to the model's provider name (one of: {names}) or to"
+                " the endpoint's full URL (get_eval_endpoint_suggestions lists the URLs of"
+                " pre-registered endpoints in known_endpoints)"
+            )
+    return errors
 
 
 async def _validate_eval_data(
@@ -563,10 +628,24 @@ _GENERIC_TUNABLE_FIELDS = (
 # LoRA adapter knobs — meaningful only when the run uses PEFT/LoRA; irrelevant (and never
 # defaulted) for full fine-tunes or OSFT, so don't surface them there.
 _LORA_TUNABLE_FIELDS = ("lora_r", "lora_alpha", "lora_dropout")
-# Embedding/classifier-specific knobs the trainer defaults; only meaningful for those runs.
+# Embedding-router (contrastive embedding_sft) knobs the trainer defaults; meaningless for a
+# classifier head, so only surfaced for embedding runs.
 _EMBEDDING_TUNABLE_FIELDS = ("loss_type", "batch_sampler")
 
-_EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
+# Embedding-router algorithms (contrastive embedding_sft) — the alias and the resolved name.
+_EMBEDDING_ALGORITHMS = {"embedding_sft", "embedding"}
+
+# Classification-family algorithms: a classifier head (classifier_sft) or an embedding router
+# (embedding_sft). Both train on flat text,category data and are scored with
+# eval_mode="classification" (head -> argmax accuracy/F1/ECE; router -> nearest-anchor routing).
+# Stored configs carry either the alias ("classifier"/"embedding") or the resolved name,
+# so list all four.
+_CLASSIFICATION_ALGORITHMS = {
+    "classifier_sft",
+    "classifier",
+    "embedding_sft",
+    "embedding",
+}
 
 # Algorithms that train LoRA adapters (vs. full-parameter or OSFT); gate LoRA knobs on these.
 _LORA_ALGORITHMS = {"lora_sft", "lora_grpo"}
@@ -601,10 +680,11 @@ async def _apply_classification_eval_mode(
 ) -> list[str]:
     """Keep eval_mode consistent with the model being evaluated.
 
-    An embedding model (trained with embedding_sft) can only be evaluated as a
-    classifier, and the classification eval only works on an embedding model.
-    When a tuned model is referenced, default/validate eval_mode against the
-    training job's algorithm so users don't hit a confusing dispatch-time failure.
+    A classifier head (classifier_sft) or embedding router (embedding_sft) can
+    only be scored with eval_mode="classification", and that mode only works on
+    one of those models (it has no endpoint to serve or judge). When a tuned
+    model is referenced, default/validate eval_mode against the training job's
+    algorithm so users don't hit a confusing dispatch-time failure.
     Mutates ``config`` (may set eval_mode) and returns any errors.
     """
     training_job_id = str(config.get("training_job_id", "") or "").strip()
@@ -619,23 +699,37 @@ async def _apply_classification_eval_mode(
             parent_config = json.loads(parent_config)
         except (ValueError, TypeError):
             parent_config = {}
-    algorithm = str(parent_config.get("algorithm", "")).replace("-", "_")
-    is_embedding = algorithm in _EMBEDDING_ALGORITHMS
+    algorithm = str(parent_config.get("algorithm", "")).strip().replace("-", "_")
+    algorithm = ALGO_ALIASES.get(algorithm, algorithm)
+    is_classification_model = algorithm in _CLASSIFICATION_ALGORITHMS
     eval_mode = config.get("eval_mode")
 
-    if is_embedding:
+    if is_classification_model:
         if not eval_mode:
             config["eval_mode"] = "classification"  # the only mode that fits
         elif eval_mode != "classification":
             return [
-                "training_job_id is an embedding model (embedding_sft); its eval_mode"
-                " must be 'classification' (a generative/judge eval cannot score an"
-                " embedding model)"
+                "training_job_id is a classifier/embedding model (classifier_sft or"
+                " embedding_sft); its eval_mode must be 'classification' (a"
+                " generative/judge eval cannot score it)"
             ]
+        task = str(parent_config.get("task") or "sequence_classification")
+        if algorithm == "classifier_sft" and task != "sequence_classification":
+            return [
+                f"training job {training_job_id[:8]} trained a {task} head; classification"
+                " eval scores sequence-classification heads only (one text -> one label),"
+                " so it cannot evaluate this model yet"
+            ]
+        # Stamped server-side so the comparison view keeps a head's held-out accuracy
+        # apart from a router's separability proxy, and so admission (estimate_gpu_demand)
+        # and the builder agree that a decoder head (trained with use_peft) evals on a GPU.
+        config["classifier_kind"] = "head" if algorithm == "classifier_sft" else "router"
+        if algorithm == "classifier_sft" and parent_config.get("use_peft"):
+            config["eval_on_gpu"] = True
     elif eval_mode == "classification":
         return [
-            "eval_mode='classification' requires an embedding model — train with"
-            " algorithm='embedding_sft' (or 'classifier') first"
+            "eval_mode='classification' requires a classifier or embedding model —"
+            " train with algorithm='classifier' (head) or 'embedding' (router) first"
         ]
     return []
 
@@ -812,6 +906,7 @@ async def create_eval_job(
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
+    errors.extend(_validate_eval_endpoints(config))
     errors.extend(await _validate_eval_definition(config))
     if not errors:
         errors.extend((await _pin_benchmark(config, approved=True))[1])
@@ -915,6 +1010,12 @@ async def retry_job(
     # a parent_job_id override would otherwise be stored unvalidated (linking the
     # retry to a missing or unfinished parent).
     parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
+    # Training jobs created before both data sources were rejected can carry a parent and a
+    # data_run_id; keep the data_run_id (what the job trains on, and what the 422 asks for)
+    # so the retry isn't blocked by a stored parent the caller cannot override.
+    if job_type == JobType.training.value and parent_job_id and config.get("data_run_id"):
+        parent_job_id = ""
+        config.pop("parent_job_id", None)
 
     # Per-type validation mirrors each create endpoint (SDG has none at this layer).
     if job_type == JobType.training.value:
@@ -930,6 +1031,7 @@ async def retry_job(
         errors = await _validate_eval_data(config, parent_job_id, db)
         errors += await _apply_classification_eval_mode(config, db)
         errors += _validate_eval_rubric_judge(config)
+        errors += _validate_eval_endpoints(config)
         errors += await _validate_eval_definition(config)
         if not errors:
             errors += (await _pin_benchmark(config, approved=True))[1]
@@ -1285,7 +1387,8 @@ async def clone_sdg_config_for_eval(
         "Any hyperparameter you mention to the user must be an explicit field in "
         "this config; fields you leave unset use the trainer default and the card "
         "shows them as such — do not state a value you did not set. "
-        "Set parent_job_id to chain from a completed SDG job."
+        "Set parent_job_id to chain from a completed SDG job, or data_run_id to train"
+        " on a dataset run (upload or split) — never both."
     ),
 )
 async def validate_training_job(
@@ -1299,6 +1402,9 @@ async def validate_training_job(
     errors = await _validate_training_data(config, parent_job_id, db)
     model_errors, model_warnings = await _validate_model_source(config, db)
     errors.extend(model_errors)
+    budget_error = gpu_budget_error(JobType.training, config)
+    if budget_error:
+        errors.append(budget_error)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -1384,6 +1490,10 @@ async def validate_eval_job(
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
+    errors.extend(_validate_eval_endpoints(config))
+    budget_error = gpu_budget_error(JobType.eval, config)
+    if budget_error:
+        errors.append(budget_error)
     errors.extend(await _validate_eval_definition(config))
     recipe = None
     if not errors:
@@ -1423,13 +1533,10 @@ async def validate_eval_job(
             ],
         )
 
-    # Count the run the eval job actually scores. resolve_parent_artifacts injects the
-    # parent sdg/upload output as eval_data_path unconditionally, so a parent wins over
-    # eval_data_run_id (jobs/eval.py only downloads the run when there is no parent) —
-    # resolve it parent-first to match.
-    data_run = await _resolve_data_run(
-        Repository(db), parent_job_id, str(config.get("eval_data_run_id") or "")
-    )
+    # Count the run the eval job actually scores: an explicit eval_data_run_id (e.g. a
+    # held-out split) wins over the parent's output, as in resolve_parent_artifacts.
+    eval_data_run_id = str(config.get("eval_data_run_id") or "")
+    data_run = eval_data_run_id or await _resolve_data_run(Repository(db), parent_job_id, "")
     record_count = await _dataset_record_count(data_run)
 
     return ValidatedJobConfig(

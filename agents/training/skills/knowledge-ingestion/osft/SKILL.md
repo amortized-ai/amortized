@@ -19,13 +19,13 @@ for knowledge ingestion. It outperforms standard SFT by 30+ percentage
 points in open-book settings.
 
 > **Scope.** This guide is written around document-grounded QA, but OSFT/SFT also
-> covers any plain **`messages`-based** fine-tune — including a **generative (LLM)
-> classifier** trained on `sdg-classification`-skill data. For those non-document
-> tasks, skip the document-specific steps below (uploads, chunk/coverage math) and
-> take the training data from the SDG `parent_job_id` as usual; the model,
-> epochs, and learning-rate guidance still apply. (Note: most classifier tasks
-> want the **`sdg-embedding-classifier`** sub-skill instead — this generative path is
-> the rare case where the user explicitly wants an LLM to emit the label.)
+> covers any plain **`messages`-based** fine-tune (instruction-following, style,
+> task behavior). For those non-document tasks, skip the document-specific steps
+> below (uploads, chunk/coverage math) and take the training data from the SDG
+> `parent_job_id` as usual; the model, epochs, and learning-rate guidance still
+> apply. (Note: for **classifying text into a fixed set of categories**, use the
+> **`training-classifier`** skill instead — a dedicated classification head or
+> embedding router is faster and more accurate than a generative fine-tune.)
 
 ## How This Works
 
@@ -74,11 +74,18 @@ Ask the user:
    The model choice affects all downstream hyperparameters — gather
    them after.
 
-2. **GPUs** — Estimate the number of GPUs needed based on the model
-   size and available VRAM. Default to 1 GPU (`nproc_per_node: 1`)
-   for models that fit in a single GPU's memory. For larger models
-   (e.g. 14B+ parameters), recommend additional GPUs as needed and
-   explain the reasoning.
+2. **GPUs** — Estimate the number of GPUs needed from the estimated
+   VRAM. Call `estimate_training_resources` with the chosen model id,
+   method, and the config's `effective_batch_size`, `max_length` (as
+   `max_seq_len`), `max_tokens_per_gpu` and `unfreeze_rank_ratio`. Then
+   set `nproc_per_node` to the smallest GPU count within the compute budget
+   (gathered in the workflow; H100 80 GB by default) in
+   `per_gpu_vram_gb_by_gpu_count` whose value is at most ~90% of one
+   GPU's memory. Do NOT divide `vram_gb` by the GPU
+   memory: only part of the memory splits across GPUs. Briefly explain
+   the numbers behind the choice.
+
+   If no count fits, follow the workflow's When the Config Doesn't Fit.
 3. **Training data** — Should come from a completed SDG job. Use
    `parent_job_id` to chain SDG → Training automatically. Ask the user
    for the SDG job ID if not already in the conversation.

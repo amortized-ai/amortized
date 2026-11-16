@@ -54,9 +54,14 @@ class LocalBackend:
                 part.replace("/amortized/config.yaml", os.path.join(work_dir, "config.yaml"))
                 .replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
                 .replace("/amortized/merge_lora.py", os.path.join(work_dir, "merge_lora.py"))
+                .replace("/amortized/estimate_vram.py", os.path.join(work_dir, "estimate_vram.py"))
                 .replace(
                     "/amortized/patch_model_config.py",
                     os.path.join(work_dir, "patch_model_config.py"),
+                )
+                .replace(
+                    "/amortized/normalize_parquet_strings.py",
+                    os.path.join(work_dir, "normalize_parquet_strings.py"),
                 )
                 .replace("/amortized/work", work_dir)
                 .replace("python3.11", sys.executable)

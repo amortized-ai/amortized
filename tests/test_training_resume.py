@@ -236,6 +236,46 @@ class TestBuildGpuResources:
         result = await training_builder.build({"id": "sft1", "type": "training"}, config, {})
         assert result.resources.gpus == 1
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("algorithm", "expandable"), [("osft", True), ("lora", False)])
+    async def test_sft_osft_use_expandable_segments(self, algorithm: str, expandable: bool) -> None:
+        config = {"algorithm": algorithm, "model_name_or_path": "m", "data_path": "/d.jsonl"}
+        result = await training_builder.build({"id": "a1", "type": "training"}, config, {})
+        expected = "expandable_segments:True" if expandable else None
+        assert result.env.get("PYTORCH_CUDA_ALLOC_CONF") == expected
+
+    @pytest.mark.asyncio
+    async def test_classifier_sft_defaults_to_cpu(self) -> None:
+        # classifier_sft (and the "classifier" alias) is single-device: CPU by default.
+        for algo in ("classifier_sft", "classifier"):
+            config = {
+                "algorithm": algo,
+                "model_name_or_path": "answerdotai/ModernBERT-base",
+                "data_path": "/data/train.parquet",
+            }
+            result = await training_builder.build({"id": "clf", "type": "training"}, config, {})
+            assert result.resources.gpus == 0, f"{algo} should default to CPU"
+
+    @pytest.mark.asyncio
+    async def test_hyphenated_classifier_sft_builds_like_underscore(self) -> None:
+        config = {
+            "algorithm": "classifier-sft", "model_name_or_path": "m", "data_path": "/d.parquet"
+        }
+        result = await training_builder.build({"id": "h1", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+        assert result.command[:2] == ["thub", "classifier-sft"]
+
+    @pytest.mark.asyncio
+    async def test_classifier_sft_gpu_via_train_on_gpu_or_peft(self) -> None:
+        base = {"algorithm": "classifier_sft", "model_name_or_path": "answerdotai/ModernBERT-base",
+                "data_path": "/d.parquet"}
+        job1 = {"id": "c1", "type": "training"}
+        r1 = await training_builder.build(job1, {**base, "train_on_gpu": True}, {})
+        assert r1.resources.gpus == 1  # encoder GPU opt-in
+        job2 = {"id": "c2", "type": "training"}
+        r2 = await training_builder.build(job2, {**base, "use_peft": True}, {})
+        assert r2.resources.gpus == 1  # decoder LoRA -> 1 GPU
+
 
 class TestDataRunIdSkipped:
     def test_data_run_id_not_in_training_hub_config(self) -> None:

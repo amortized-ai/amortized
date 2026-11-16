@@ -311,6 +311,8 @@ export interface EvaluationGroup {
   metric_names: string[]
   metric_metadata?: Record<string, EvalMetricMetadata>
   primary_metric?: string | null
+  /** Classification evals only: "head" = held-out accuracy, "router" = separability proxy. */
+  classifier_kind?: "head" | "router" | null
   evals: EvaluationEntry[]
   latest_created_at: string | null
 }

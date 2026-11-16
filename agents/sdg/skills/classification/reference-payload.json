@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "name": "Embedding Classifier Data",
-    "description": "Generate labeled (text, category) examples to train a compact embedding classifier/router with embedding_sft — no messages/SFT transform."
+    "name": "Classification Data",
+    "description": "Generate labeled (text, category) examples to train a text classifier — the same flat data trains either a classifier head (classifier_sft, default) or an embedding router (embedding_sft). No messages/SFT transform."
   },
   "num_records": 400,
   "topic": "custom classifier",
