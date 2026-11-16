@@ -140,6 +140,13 @@ class TrainingJobConfig(BaseModel):
     lora_r: int | None = Field(None, ge=1, description="LoRA rank")
     lora_alpha: int | None = Field(None, ge=1, description="LoRA alpha")
     lora_dropout: float | None = Field(None, description="LoRA dropout rate")
+    lora_target_modules: list[str] | None = Field(
+        None,
+        description=(
+            "classifier_sft with use_peft: module names to apply LoRA to. Unset (recommended)"
+            " uses PEFT's per-architecture targets, falling back to all-linear."
+        ),
+    )
     unfreeze_rank_ratio: float | None = Field(
         None, description="OSFT: fraction of weights trainable (default 0.2)"
     )
@@ -148,13 +155,17 @@ class TrainingJobConfig(BaseModel):
     # parameters — otherwise the agent can't pass e.g. label_column and the worker
     # falls back to a 'label' column that a {text, category} dataset doesn't have.
     text_column: str | None = Field(
-        None, description="embedding_sft: text column name in the dataset (default 'text')"
+        None,
+        description=(
+            "classifier_sft/embedding_sft: text column name in the dataset"
+            " (default 'text')"
+        ),
     )
     label_column: str | None = Field(
         None,
         description=(
-            "embedding_sft: label/category column name (default 'label'). Set to"
-            " 'category' for the embedding-classifier SDG datasets."
+            "classifier_sft/embedding_sft: label/category column name (default"
+            " 'label'). Set to 'category' for the classification SDG datasets."
         ),
     )
     loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = (
@@ -179,13 +190,52 @@ class TrainingJobConfig(BaseModel):
         description="embedding_sft: warmup fraction of total steps (0.0-1.0)",
     )
     seed: int | None = Field(None, ge=0, description="embedding_sft: random seed")
+    # --- classifier_sft (decision/classification head) ---
+    task: Literal["sequence_classification", "multiple_choice", "token_classification"] | None = (
+        Field(
+            None,
+            description=(
+                "classifier_sft decision primitive: sequence_classification (default; fixed-label"
+                " classification / yes-no), multiple_choice (pick-one-of-K per example;"
+                " encoder backbones only), or token_classification (span/entity extraction)."
+            ),
+        )
+    )
+    options_column: str | None = Field(
+        None, description="classifier_sft multiple_choice: options-list column (default 'options')"
+    )
+    tokens_column: str | None = Field(
+        None,
+        description="classifier_sft token_classification: pre-split tokens column (default tokens)",
+    )
+    trust_remote_code: bool | None = Field(
+        None,
+        description=(
+            "classifier_sft: allow custom architectures that ship an HF auto_map (opt-in;"
+            " security-sensitive — requires 'revision' = the full commit hash). Needed for"
+            " some custom decision models."
+        ),
+    )
+    revision: str | None = Field(
+        None,
+        description=(
+            "classifier_sft: pin the model repo to a revision; with trust_remote_code it must"
+            " be the full 40-character commit hash"
+        ),
+    )
     nproc_per_node: int = Field(
         1,
         ge=1,
         description=(
-            "GPUs for this single training job (single-node multi-GPU). Training Hub"
-            " launches torchrun across this many GPUs, and the pod requests that many"
-            " nvidia.com/gpu — so it needs ONE node with >= nproc_per_node GPUs. Default 1."
+            "GPUs for this single training job (single-node multi-GPU). The pod requests that"
+            " many nvidia.com/gpu — so it needs ONE node with >= nproc_per_node GPUs. Default 1."
+            " sft/osft: effective_batch_size is the global batch across all GPUs; it defaults"
+            " to 4 x per_device_train_batch_size (8 if unset) — training derives micro-batch"
+            " and grad-accum from max_tokens_per_gpu. lora_sft: ONE process with the model's"
+            " layers split across the GPUs (more VRAM, not more throughput); effective batch"
+            " defaults to per_device_train_batch_size x gradient_accumulation_steps"
+            " (grad-accum defaults to 1), or 8 if neither is set. For both, an explicit"
+            " effective_batch_size takes precedence and the GPU count does NOT multiply it."
             " Must be <= the per-user GPU budget. IGNORED for embedding_sft (single-device,"
             " no torchrun) — use train_on_gpu instead."
         ),
@@ -193,12 +243,11 @@ class TrainingJobConfig(BaseModel):
     train_on_gpu: bool = Field(
         False,
         description=(
-            "embedding_sft ONLY: train the embedding classifier on a GPU (1) instead of the"
-            " CPU default (0). embedding_sft trains in-process on a single device, so this is a"
-            " boolean, not a GPU count. CPU is fine for small/quick runs; a GPU is ~100x faster"
-            " (benchmark: all-MiniLM ~24 samples/s CPU vs ~2800/s on an H100), which matters for"
-            " many epochs or large datasets. Ignored for all other algorithms (they use"
-            " nproc_per_node)."
+            "embedding_sft / classifier_sft (single-device, in-process): train on a GPU (1)"
+            " instead of the CPU default (0). A boolean, not a GPU count. CPU is fine for"
+            " small/quick runs; a GPU is much faster for many epochs / large datasets. (For a"
+            " classifier_sft decoder backbone, use_peft forces 1 GPU regardless.) Ignored for"
+            " the torchrun algorithms (sft/osft/lora), which use nproc_per_node."
         ),
     )
     topic: str = Field(
@@ -423,6 +472,7 @@ class ConfigResponse(BaseModel):
     mlflow_gateway_uri: str = ""
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)
+    gpu_budget: int = Field(0, description="Max GPUs one training job may use; 0 = CPU only")
 
 
 # ---------------------------------------------------------------------------
@@ -545,24 +595,37 @@ class SDGJobRequest(_ConfigJsonMixin):
 # ---------------------------------------------------------------------------
 
 
+INLINE_API_KEY_ERROR = (
+    "API keys are not accepted in job configs, including inside a URL (user:password@ or"
+    " query parameters). Add the model's provider under Settings (MaaS for an"
+    " OpenAI-compatible endpoint, or EnMaaS, OpenAI, Anthropic), or ask your administrator"
+    " to configure it, then set base_url to the provider's name."
+)
+
+
 class EvalEndpoint(BaseModel):
     base_url: str = Field(
         ...,
         min_length=1,
-        description="OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)",
+        description=(
+            "The name of a configured provider (e.g. openai, maas), which supplies the URL"
+            " and key, or the URL of an endpoint that needs no key"
+        ),
     )
     model: str = Field(
         ...,
         min_length=1,
         description="Model name sent as 'model' in chat completion requests",
     )
-    api_key: str = Field(
-        "",
-        description=(
-            "Optional bearer token. Never echoed in API responses;"
-            " scrubbed from the DB once the job is dispatched."
-        ),
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_api_key(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "api_key" in data:
+            if data["api_key"] not in (None, ""):
+                raise ValueError(INLINE_API_KEY_ERROR)
+            return {k: v for k, v in data.items() if k != "api_key"}
+        return data
 
 
 class EvalRubricCriterion(BaseModel):
@@ -593,7 +656,7 @@ class EvalJobConfig(BaseModel):
         None,
         description=(
             "External OpenAI-compatible endpoint serving the model to evaluate"
-            " (e.g. a gateway model). When omitted, set training_job_id or"
+            " (a provider model). When omitted, set training_job_id or"
             " model_name_or_path and the eval job serves the model itself."
         ),
     )
@@ -671,10 +734,12 @@ class EvalJobConfig(BaseModel):
         description=(
             "Evaluation mode. 'generative' (default) serves the model and scores"
             " free-form outputs with an LLM judge against a rubric. 'classification'"
-            " evaluates an embedding classifier/router: the held-out labeled dataset"
-            " is split into per-class anchors and query examples, and the tuned"
-            " embedding model routes each query to its nearest class (accuracy /"
-            " macro-F1 / confusion). No judge or rubric is used."
+            " scores a classifier head (classifier_sft) or embedding router"
+            " (embedding_sft) on a held-out labeled text,category dataset — no judge"
+            " or rubric. A head classifier is scored by argmax (accuracy / macro-F1 /"
+            " per-class F1 / confusion + calibrated ECE); an embedding router is split"
+            " into per-class anchors and queries and routes each query to its nearest"
+            " class (accuracy / macro-F1 / confusion). The eval auto-detects which."
         ),
     )
     class_labels: list[str] | None = Field(

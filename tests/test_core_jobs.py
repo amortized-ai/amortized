@@ -1,5 +1,6 @@
 """Tests for core/jobs.py — no HTTP server required."""
 
+import json
 import os
 import subprocess
 
@@ -107,6 +108,23 @@ class TestCreateJob:
         assert "train_on_gpu" not in str(exc.value)
 
     @pytest.mark.asyncio
+    async def test_zero_budget_does_not_suggest_reducing_nproc(
+        self, repo: Repository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # nproc_per_node is at least 1, so with no GPU budget "reduce nproc_per_node" can't
+        # be followed; the error says what can run instead.
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        with pytest.raises(InvalidJobStateError, match="only CPU classifier training") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.training,
+                config={"algorithm": "sft", "model_name_or_path": "t", "data_path": "t.jsonl"},
+            )
+        assert "reduce nproc_per_node" not in str(exc.value)
+
+    @pytest.mark.asyncio
     async def test_create_rejects_embedding_gpu_over_budget_names_train_on_gpu(
         self, repo: Repository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -127,6 +145,87 @@ class TestCreateJob:
                 },
             )
         assert "nproc_per_node" not in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_api_key_anywhere_in_config(self, repo: Repository) -> None:
+        # Every job type is stored through create_job, so a key nested anywhere is refused
+        # before the row (and its request_config snapshot) is written.
+        with pytest.raises(InvalidJobStateError, match="provider under Settings") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.eval,
+                config={
+                    "judge": {"base_url": "http://j:8000/v1", "model": "m", "api_key": "sk-1"},
+                    "extra": [{"apiKey": "sk-2"}],
+                },
+                models_checked=True,  # the core credential rule, independent of admission
+            )
+        assert "judge.api_key" in str(exc.value)
+        assert "extra[0].apiKey" in str(exc.value)
+        assert "sk-1" not in str(exc.value)
+        assert await repo.conn.fetchval("SELECT count(*) FROM jobs") == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://user:sk-1@vllm.example.com/v1",
+            "https://vllm.example.com/v1?api_key=sk-1",
+            "https://user:sk-1@[vllm/v1?token=sk-1",
+        ],
+    )
+    async def test_create_rejects_credentials_in_base_url(
+        self, repo: Repository, base_url: str
+    ) -> None:
+        with pytest.raises(InvalidJobStateError, match=r"judge\.base_url") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.eval,
+                config={"judge": {"base_url": base_url, "model": "m"}},
+                models_checked=True,  # the core credential rule, independent of admission
+            )
+        assert "sk-1" not in str(exc.value)
+        assert await repo.conn.fetchval("SELECT count(*) FROM jobs") == 0
+
+    @pytest.mark.asyncio
+    async def test_create_allows_empty_api_key(self, repo: Repository) -> None:
+        row = await create_job(
+            repo,
+            job_type=JobType.eval,
+            config={"endpoint": {"base_url": "http://e:8000/v1", "model": "m", "api_key": ""}},
+            models_checked=True,  # core behavior; admission is tested separately
+        )
+        assert row["status"] == "queued"
+
+
+    @pytest.mark.asyncio
+    async def test_create_stores_resolved_classifier_aliases(self, repo: Repository) -> None:
+        # Stored configs keep their meaning if an alias is repointed later ("classifier"
+        # used to mean embedding_sft): the alias is stored as the concrete algorithm.
+        for alias, resolved in (("classifier", "classifier_sft"), ("embedding", "embedding_sft")):
+            row = await create_job(
+                repo,
+                job_type=JobType.training,
+                config={"algorithm": f" {alias} ", "model_name_or_path": "m", "data_path": "d"},
+            )
+            config = row["config"] if isinstance(row["config"], dict) else json.loads(row["config"])
+            assert config["algorithm"] == resolved
+
+    @pytest.mark.asyncio
+    async def test_classification_eval_over_budget_names_eval_on_gpu(
+        self, repo: Repository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        with pytest.raises(InvalidJobStateError, match="eval_on_gpu") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.eval,
+                config={"eval_mode": "classification", "training_job_id": "t", "eval_on_gpu": True},
+                models_checked=True,  # the core budget rule, independent of admission
+            )
+        assert "endpoint" not in str(exc.value)
 
 
 class TestGetJob:
@@ -260,6 +359,39 @@ class TestEstimateGpuDemand:
                 "config": {"algorithm": "embedding_sft", "train_on_gpu": True, "nproc_per_node": 4},
             }
         ) == 1
+
+    def test_classifier_sft_gpu_demand(self) -> None:
+        # classifier_sft: CPU default (0); 1 GPU via train_on_gpu OR use_peft (decoder LoRA).
+        for algo in ("classifier_sft", "classifier"):
+            base = {"type": "training", "config": {"algorithm": algo}}
+            assert estimate_gpu_demand(base) == 0
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "train_on_gpu": True}}
+            ) == 1
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "use_peft": True}}
+            ) == 1
+
+    def test_use_peft_needs_gpu_only_for_classifier_sft(self) -> None:
+        # embedding_sft ignores use_peft (the builder requests 0 GPUs), so admission must too.
+        for algo in ("embedding_sft", "embedding"):
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "use_peft": True}}
+            ) == 0
+
+    def test_hyphenated_algorithm_spelling_matches_builder(self) -> None:
+        # The API and builder treat classifier-sft as classifier_sft; admission must too.
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "classifier-sft"}}
+        ) == 0
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "classifier-sft", "use_peft": True}}
+        ) == 1
+
+    def test_eval_classification_decoder_head_needs_gpu(self) -> None:
+        # The API stamps eval_on_gpu for a decoder head (trained with use_peft).
+        job = {"type": "eval", "config": {"eval_mode": "classification", "eval_on_gpu": True}}
+        assert estimate_gpu_demand(job) == 1
 
     def test_sdg_and_upload_need_no_gpu(self) -> None:
         assert estimate_gpu_demand({"type": "sdg", "config": {}}) == 0

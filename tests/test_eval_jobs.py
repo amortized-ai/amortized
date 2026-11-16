@@ -139,23 +139,78 @@ class TestCreateEvalJob:
         assert "succeeded" in response.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_api_key_not_echoed_in_response(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(
-            client,
-            endpoint={
-                "base_url": "http://tuned:8000/v1",
-                "model": "qwen-tuned",
-                "api_key": "sk-secret",
+    @pytest.mark.parametrize("path", ["/api/v1/jobs/eval", "/api/v1/jobs/eval/validate"])
+    async def test_inline_api_key_rejected_and_not_stored(
+        self, client: httpx.AsyncClient, path: str
+    ) -> None:
+        response = await client.post(
+            path,
+            json={
+                **EVAL_BODY,
+                "judge": {**JUDGE, "api_key": "sk-judge-secret"},
             },
         )
-        assert response.status_code == 201
-        config = response.json()["config"]
-        assert "api_key" not in config["endpoint"]
+        assert response.status_code == 422
+        body = response.text
+        assert "provider under Settings" in body
+        assert "sk-judge-secret" not in body
+
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            leaked = await conn.fetchval(
+                "SELECT count(*) FROM jobs"
+                " WHERE config::text LIKE '%sk-judge%' OR request_config::text LIKE '%sk-judge%'"
+            )
+        assert leaked == 0
+
+    @pytest.mark.asyncio
+    async def test_literal_url_needs_a_host(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={**EVAL_BODY, "judge": {"base_url": "https://", "model": "gpt-judge"}},
+        )
+        assert response.status_code == 422
+        assert "judge.base_url is not a valid URL" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_api_key_in_untyped_endpoint_rejected(self, client: httpx.AsyncClient) -> None:
+        # Legacy endpoint_* fields are untyped extras, so the schema cannot catch the key;
+        # the config-wide check does.
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={
+                **EVAL_BODY,
+                "endpoint_tuned": {"base_url": "http://t:8000/v1", "model": "m", "api_key": "k"},
+            },
+        )
+        assert response.status_code == 422
+        assert "endpoint_tuned.api_key" in response.json()["message"]
 
 
 
 
 class TestClassificationEvalBuilder:
+    @pytest.mark.asyncio
+    async def test_eval_scores_eval_data_run_even_with_parent(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # The worker's sequence: with a parent SDG job AND eval_data_run_id, the eval
+        # downloads eval_data_run_id (e.g. a held-out split), not the parent's output.
+        job = {"id": "e2", "type": "eval", "parent_job_id": "sdg-1"}
+        config = {
+            "eval_mode": "classification",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "eval_data_run_id": "split-run",
+            "class_labels": ["A", "B"],
+        }
+        config, parent_pre = await _resolve_parent_artifacts(job, config)
+        result = await eval_builder.build(job, config, {})
+        downloads = [c for c in parent_pre + result.pre_commands if "artifacts download" in c]
+        assert downloads == [
+            "mlflow artifacts download -r split-run -a generated_data -d /amortized/work/eval_data"
+        ]
+
     @pytest.mark.asyncio
     async def test_build_classification_eval_base_model(self) -> None:
         import json
@@ -208,6 +263,45 @@ class TestClassificationEvalBuilder:
             )
 
 
+class TestClassificationEvalFromTrainingJob:
+    @staticmethod
+    def _patch_parent(monkeypatch, parent_config: dict) -> None:
+        async def _fake(_jid):
+            return "run-1", parent_config
+
+        monkeypatch.setattr(eval_builder, "_classification_training_parent", _fake)
+
+    @pytest.mark.asyncio
+    async def test_forwards_training_settings_and_gpu(self, monkeypatch) -> None:
+        import json
+
+        self._patch_parent(
+            monkeypatch,
+            {"algorithm": "classifier_sft", "max_length": 128, "trust_remote_code": True,
+             "revision": "abc", "use_peft": True},
+        )
+        config = {"eval_mode": "classification", "training_job_id": "t1",
+                  "eval_data_run_id": "r1", "eval_on_gpu": True}
+        result = await eval_builder.build({"id": "e1", "type": "eval"}, config, {})
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["max_length"] == 128
+        assert runner["trust_remote_code"] is True
+        assert result.resources.gpus == 1
+
+    @pytest.mark.asyncio
+    async def test_cpu_by_default_and_rejects_non_sequence_task(self, monkeypatch) -> None:
+        from amortized.jobs.base import JobBuildError
+
+        self._patch_parent(monkeypatch, {"algorithm": "classifier_sft"})
+        config = {"eval_mode": "classification", "training_job_id": "t1", "eval_data_run_id": "r1"}
+        result = await eval_builder.build({"id": "e1", "type": "eval"}, dict(config), {})
+        assert result.resources.gpus == 0
+
+        self._patch_parent(monkeypatch, {"algorithm": "classifier_sft", "task": "multiple_choice"})
+        with pytest.raises(JobBuildError, match="multiple_choice"):
+            await eval_builder.build({"id": "e1", "type": "eval"}, dict(config), {})
+
+
 class TestClassificationEvalModeGuardrail:
     @staticmethod
     def _patch_training_job(monkeypatch, algorithm: str) -> None:
@@ -233,6 +327,28 @@ class TestClassificationEvalModeGuardrail:
         assert config["eval_mode"] == "classification"
 
     @pytest.mark.asyncio
+    async def test_auto_sets_classification_for_head_classifier(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        # Head classifier may be stored under the alias ("classifier") or the
+        # resolved name ("classifier_sft"); both must route to classification eval.
+        for algo in ("classifier", "classifier_sft"):
+            self._patch_training_job(monkeypatch, algo)
+            config = {"training_job_id": "t1"}
+            errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+            assert errors == [], algo
+            assert config["eval_mode"] == "classification", algo
+
+    @pytest.mark.asyncio
+    async def test_rejects_generative_eval_on_head_classifier(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "classifier_sft")
+        config = {"training_job_id": "t1", "eval_mode": "generative"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors and "classification" in errors[0]
+
+    @pytest.mark.asyncio
     async def test_rejects_generative_eval_on_embedding_model(self, monkeypatch) -> None:
         from amortized.api import jobs as jobs_api
 
@@ -249,6 +365,46 @@ class TestClassificationEvalModeGuardrail:
         config = {"training_job_id": "t1", "eval_mode": "classification"}
         errors = await jobs_api._apply_classification_eval_mode(config, db=None)
         assert errors and "embedding model" in errors[0]
+
+    @staticmethod
+    def _patch_parent_config(monkeypatch, parent_config: dict) -> None:
+        from amortized.api import jobs as jobs_api
+
+        class _FakeRepo:
+            def __init__(self, _db):
+                pass
+
+            async def get_job(self, _jid):
+                return {"type": "training", "config": parent_config}
+
+        monkeypatch.setattr(jobs_api, "Repository", _FakeRepo)
+
+    @pytest.mark.asyncio
+    async def test_stamps_classifier_kind_and_decoder_gpu(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        cases = [
+            ({"algorithm": "classifier_sft"}, "head", False),
+            ({"algorithm": " classifier_sft ", "use_peft": True}, "head", True),  # padded value
+            ({"algorithm": "embedding_sft", "use_peft": True}, "router", False),
+        ]
+        for parent, kind, gpu in cases:
+            self._patch_parent_config(monkeypatch, parent)
+            config = {"training_job_id": "t1"}
+            assert await jobs_api._apply_classification_eval_mode(config, db=None) == []
+            assert config["eval_mode"] == "classification", parent
+            assert config["classifier_kind"] == kind, parent
+            assert bool(config.get("eval_on_gpu")) is gpu, parent
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_sequence_classifier_tasks(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        for task in ("multiple_choice", "token_classification"):
+            self._patch_parent_config(monkeypatch, {"algorithm": "classifier_sft", "task": task})
+            config = {"training_job_id": "t1"}
+            errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+            assert errors and task in errors[0] and "sequence-classification" in errors[0]
 
     @pytest.mark.asyncio
     async def test_noop_without_training_job(self, monkeypatch) -> None:
@@ -426,7 +582,9 @@ class TestEvalBuilder:
         assert runner["endpoints"]["model"]["model"] == "legacy-tuned"
 
     @pytest.mark.asyncio
-    async def test_build_scrubs_api_keys_from_resolved_config(self) -> None:
+    async def test_build_rejects_inline_api_key(self) -> None:
+        from amortized.jobs.base import JobBuildError
+
         config = {
             **EVAL_BODY,
             "judge": JUDGE,
@@ -436,10 +594,8 @@ class TestEvalBuilder:
                 "api_key": "sk-secret",
             },
         }
-        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
-
-        assert result.env["EVAL_MODEL_API_KEY"] == "sk-secret"
-        assert "api_key" not in result.resolved_config["endpoint"]
+        with pytest.raises(JobBuildError, match="provider under Settings"):
+            await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
     @pytest.mark.asyncio
     async def test_build_no_judge_without_rubric(self) -> None:
@@ -783,6 +939,28 @@ class TestRetryEvalJob:
         assert config["topic"] == "rfe"
 
     @pytest.mark.asyncio
+    async def test_retry_rejects_unresolvable_endpoint_base_url(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A job stored before endpoint validation existed can carry base_url "gateway";
+        # retrying it hits the same 422 as create instead of failing every sample.
+        job_id = await self._seed_failed_eval(client)
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE jobs
+                      SET request_config = jsonb_set(
+                          request_config, '{judge}',
+                          '{"base_url": "gateway", "model": "judge-model"}'::jsonb)
+                    WHERE id = $1""",
+                job_id,
+            )
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert response.status_code == 422
+        assert "judge.base_url 'gateway' is neither" in response.text
+
+    @pytest.mark.asyncio
     async def test_retry_legacy_row_strips_runtime_keys(
         self, client: httpx.AsyncClient
     ) -> None:
@@ -981,9 +1159,9 @@ class TestEvalEndpointSuggestions:
 
 class TestJudgeProviderResolution:
     """The judge/endpoint api-key wiring: a base_url naming an enabled provider
-    resolves to that provider's real endpoint + its injected key env-var, so a
-    BYOK-stripped judge authenticates with the forwarded provider key (the same
-    keys SDG forwards). A literal URL with an inline key is left untouched (KIND)."""
+    resolves to its real endpoint + its injected key env-var, so the job authenticates
+    with the forwarded key (the same keys SDG forwards). Any other base_url is a
+    keyless URL."""
 
     def test_provider_name_resolves_to_endpoint_and_injected_key(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -998,29 +1176,42 @@ class TestJudgeProviderResolution:
             if name == "openai"
             else None,
         )
-        env: dict[str, str] = {}
         spec = eval_builder._endpoint_spec(
             {"judge": {"base_url": "openai", "model": "gpt-5"}},
             "judge",
             "EVAL_JUDGE_API_KEY",
-            env,
         )
         assert spec["base_url"] == "https://api.openai.com/v1"
         # points at the injected provider key var, not the bespoke (unset) one
         assert spec["api_key_env"] == "OPENAI_API_KEY"
 
-    def test_literal_url_with_inline_key_unchanged(self, monkeypatch) -> None:
+    def test_literal_url_is_keyless(self, monkeypatch) -> None:
         monkeypatch.setattr(eval_builder, "resolve_provider", lambda name: None)
-        env: dict[str, str] = {}
         spec = eval_builder._endpoint_spec(
-            {"judge": {"base_url": "http://judge:8000/v1", "model": "m", "api_key": "sk-x"}},
+            {"judge": {"base_url": "http://judge:8000/v1", "model": "m"}},
             "judge",
             "EVAL_JUDGE_API_KEY",
-            env,
         )
         assert spec["base_url"] == "http://judge:8000/v1"
         assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
-        assert env["EVAL_JUDGE_API_KEY"] == "sk-x"
+
+    @pytest.mark.asyncio
+    async def test_provider_name_delivers_its_key_only_through_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("MAAS_BASE_URL", "https://maas.example.com/v1/")
+        monkeypatch.setenv("MAAS_API_KEY", "sk-maas-secret")
+        config = {**EVAL_BODY, "endpoint": {"base_url": "maas", "model": "qwen"}}
+
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["endpoints"]["model"]["base_url"] == "https://maas.example.com/v1"
+        assert runner["endpoints"]["model"]["api_key_env"] == "MAAS_API_KEY"
+        # the key travels only in the job's env (a per-job Secret), never in its config
+        assert result.env["MAAS_API_KEY"] == "sk-maas-secret"
+        assert "sk-maas-secret" not in result.config_files["config.json"]
+        assert "sk-maas-secret" not in json.dumps(result.resolved_config)
 
 
 class TestAdaptBodyForParamError:
@@ -1267,3 +1458,36 @@ class TestJobImageTag:
             {"id": "t1", "type": "training"}, {"algorithm": "osft"}, {}
         )
         assert train.image == f"{reg}/training:latest"
+
+
+class TestClassificationEvalOnSuccess:
+    @pytest.mark.asyncio
+    async def test_tags_runner_detected_classifier_kind(self, monkeypatch) -> None:
+        import json
+
+        import amortized.config as config_mod
+        from amortized.core import mlflow_client
+
+        tags: dict[str, str] = {}
+
+        async def _tag(_run, key, value):
+            tags[key] = value
+
+        class _Client:
+            def __init__(self, _uri):
+                pass
+
+            async def get_artifact_text(self, _run, _path):
+                return json.dumps({"results": {
+                    "classifier_kind": "head",
+                    "scores": {"accuracy": 0.9, "macro_f1": 0.9},
+                    "model": {"num_samples": 10},
+                }})
+
+        monkeypatch.setattr(eval_builder, "set_mlflow_run_tag", _tag)
+        monkeypatch.setattr(mlflow_client, "MLflowClient", _Client)
+        monkeypatch.setattr(config_mod.settings, "mlflow_tracking_uri", "http://mlflow")
+        job = {"id": "e1", "config": {"eval_mode": "classification", "model_name_or_path": "m"}}
+        await eval_builder.on_success(job, "run-1")
+        assert tags["eval_classifier_kind"] == "head"
+        assert tags["eval_score_accuracy"] == "0.9"

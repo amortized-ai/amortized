@@ -149,6 +149,25 @@ describe("ActionCard", () => {
     expect(screen.getByText("CPU (default)")).toBeInTheDocument()
   })
 
+  it("shows Device: CPU (default) for a head classifier job", () => {
+    const clsAction = {
+      action: "Submit training job",
+      description: "Train classifier",
+      params: {},
+      jobType: "training" as const,
+      config: {
+        algorithm: "classifier_sft",
+        model_name_or_path: "answerdotai/ModernBERT-base",
+        num_train_epochs: 10,
+      },
+    }
+    render(<ActionCard action={clsAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
+    expect(screen.getByText("Device")).toBeInTheDocument()
+    expect(screen.getByText("CPU (default)")).toBeInTheDocument()
+  })
+
   it("shows Device: GPU when an embedding classifier opts into train_on_gpu", () => {
     const embAction = {
       action: "Submit training job",
@@ -164,6 +183,27 @@ describe("ActionCard", () => {
     expect(screen.getByText("GPU (1)")).toBeInTheDocument()
   })
 
+  it("shows Device: GPU for a decoder head classifier with use_peft, CPU for a router", () => {
+    const mk = (algorithm: string) => ({
+      action: "Submit training job",
+      description: "Train",
+      params: {},
+      jobType: "training" as const,
+      config: { algorithm, model_name_or_path: "Qwen/Qwen3-0.6B", use_peft: true },
+    })
+    const { unmount } = render(
+      <ActionCard action={mk("classifier_sft")} onConfirm={vi.fn()} onReject={vi.fn()} />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText("GPU (1, required for LoRA)")).toBeInTheDocument()
+    unmount()
+    // embedding_sft ignores use_peft, so it still trains on CPU.
+    render(<ActionCard action={mk("embedding_sft")} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
+    expect(screen.getByText("CPU (default)")).toBeInTheDocument()
+  })
+
   it("does not add a Device row for a generative (non-embedding) training job", () => {
     const sftAction = {
       action: "Submit training job",
@@ -176,6 +216,56 @@ describe("ActionCard", () => {
       wrapper: Wrapper,
     })
     expect(screen.queryByText("Device")).not.toBeInTheDocument()
+  })
+
+  const evalAction = {
+    action: "Create EVAL Job",
+    description: "Submit this eval job?",
+    params: {},
+    jobType: "eval" as const,
+    config: {
+      training_job_id: "62d4af6b-0000-0000-0000-000000000000",
+      judge: { base_url: "http://gateway:5000/gateway", model: "gpt-oss" },
+      rubric: [{ name: "what" }, { name: "why" }],
+    },
+    dataRecordCount: 150,
+  }
+
+  it("shows the judge model and eval dataset size on an eval card", () => {
+    render(<ActionCard action={evalAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
+    expect(screen.getByText("Judge model")).toBeInTheDocument()
+    expect(screen.getByText("gpt-oss")).toBeInTheDocument()
+    expect(screen.getByText("Eval dataset size")).toBeInTheDocument()
+    expect(screen.getByText("150")).toBeInTheDocument()
+  })
+
+  it("shows max_samples alongside the dataset size when it caps the eval", () => {
+    render(
+      <ActionCard
+        action={{ ...evalAction, config: { ...evalAction.config, max_samples: 10 } }}
+        onConfirm={vi.fn()}
+        onReject={vi.fn()}
+      />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText("Eval dataset size")).toBeInTheDocument()
+    expect(screen.getByText("Max samples")).toBeInTheDocument()
+    expect(screen.getByText("10")).toBeInTheDocument()
+  })
+
+  it("omits the judge model row when the eval config has no judge", () => {
+    const noJudge = { ...evalAction.config, judge: undefined }
+    render(
+      <ActionCard
+        action={{ ...evalAction, config: noJudge }}
+        onConfirm={vi.fn()}
+        onReject={vi.fn()}
+      />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.queryByText("Judge model")).not.toBeInTheDocument()
   })
 })
 

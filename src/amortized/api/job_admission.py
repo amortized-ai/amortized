@@ -18,7 +18,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from amortized.core.jobs import InvalidJobStateError, create_job
+from amortized.core.jobs import (
+    InvalidJobStateError,
+    create_job,
+    gpu_budget_error,
+    inline_credential_error,
+)
 from amortized.core.model_check_client import check_job_models
 from amortized.core.model_endpoints import FAILED, UNVERIFIED, CheckResult
 from amortized.db.connection import get_pool
@@ -95,6 +100,15 @@ async def admit_job(
     2. The model check, with no connection held.
     3. In a fresh connection: ``prechecks`` again (upstream state may have changed during the
        check), ``before_insert`` side effects, then the insert with the check report."""
+    # Config-only rejections first: a config carrying credentials must never be probed (a
+    # user:password@ base_url would otherwise be sent before create_job refuses it), and a job
+    # over the GPU budget shouldn't wait out a model check it can never use.
+    static_errors = [
+        e for e in (inline_credential_error(config), gpu_budget_error(job_type, config)) if e
+    ]
+    if static_errors:
+        raise HTTPException(status_code=422, detail=static_errors)
+
     if prechecks is not None:
         async with get_pool().acquire() as conn:
             errors = await prechecks(Repository(conn))

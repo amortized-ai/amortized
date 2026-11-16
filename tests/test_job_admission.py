@@ -111,28 +111,42 @@ class TestDefiniteFailuresBlock:
         assert "not_found" in resp.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_failure_message_never_carries_the_key(self, client, real_check) -> None:
-        real_check(
-            lambda r: (
-                httpx.Response(401)
-                if r.url.host == "judge"
-                else httpx.Response(200, json=OPENAI_OK)
-            )
-        )
-        body = {**EVAL_BODY, "judge": {**EVAL_BODY["judge"], "api_key": "sk-inline-secret"}}
-        resp = await client.post("/api/v1/jobs/eval", json=body)
+    async def test_forwarded_key_is_used_and_never_echoed(
+        self, client, real_check, monkeypatch
+    ) -> None:
+        # Job configs carry no keys; a literal-URL judge authenticates through a key the
+        # server forwards to job pods (EVAL_JUDGE_API_KEY), and the check must send that same key.
+        monkeypatch.setattr(config_mod.settings, "forward_env", ["EVAL_JUDGE_API_KEY"])
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "sk-forwarded-secret")
+        seen_auth: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "judge":
+                seen_auth.append(request.headers.get("Authorization", ""))
+                return httpx.Response(401)
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
+        resp = await client.post("/api/v1/jobs/eval", json=EVAL_BODY)
         assert resp.status_code == 422
         assert "auth_failed" in resp.text
-        assert "sk-inline-secret" not in resp.text
+        assert "sk-forwarded-secret" not in resp.text
+        assert seen_auth and seen_auth[0] == "Bearer sk-forwarded-secret"
 
     @pytest.mark.asyncio
-    async def test_config_error_blocks_with_the_same_code(self, client, real_check) -> None:
-        real_check(lambda _r: httpx.Response(200, json=OPENAI_OK))
+    async def test_unknown_provider_is_rejected_before_any_probe(self, client, real_check) -> None:
+        probed: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            probed.append(str(request.url))
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
         body = {**EVAL_BODY, "judge": {"base_url": "anthropic", "model": "claude"}}
         resp = await client.post("/api/v1/jobs/eval", json=body)
         assert resp.status_code == 422
-        assert resp.json()["code"] == "model_check_failed"
-        assert resp.json()["details"][0]["field"] == "judge"
+        assert "judge" in resp.json()["message"]
+        assert probed == []
         assert await _job_count() == 0
 
 

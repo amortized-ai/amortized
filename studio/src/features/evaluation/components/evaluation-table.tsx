@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
 import type { EvaluationGroup } from "@/lib/api-client"
+import { classifierKindLabel } from "@/features/evaluation/lib/classifier-kind"
 
 interface EvaluationTableProps {
   groups: EvaluationGroup[]
@@ -30,6 +31,11 @@ export function EvaluationTable({
         cell: ({ row }) => (
           <span className="font-medium truncate block">
             {row.original.dataset.name}
+            {row.original.classifier_kind && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {classifierKindLabel(row.original.classifier_kind)}
+              </span>
+            )}
           </span>
         ),
       },

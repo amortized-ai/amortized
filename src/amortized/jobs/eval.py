@@ -11,8 +11,9 @@ Two modes:
   GPU allocation matches training jobs: the pod requests
   ``nvidia.com/gpu`` (``nproc_per_node``) and is bounded by the user's
   namespace quota — GPUs are assumed free, so no occupancy checking.
-- **External endpoint**: ``endpoint`` points at an OpenAI-compatible URL
-  (e.g. a gateway model). CPU-only, no GPU.
+- **External endpoint**: ``endpoint`` names a provider (resolved to its URL
+  + key env var), or a keyless OpenAI-compatible URL.
+  CPU-only, no GPU.
 
 Training Hub exports of VLM text backbones (e.g. Qwen3.5) carry a bare
 text config that stock vLLM cannot serve; those are handled through
@@ -42,10 +43,9 @@ from amortized.core.model_endpoints import (
 )
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import resolve_training_model, set_mlflow_run_tag
+from amortized.models import INLINE_API_KEY_ERROR
 
 logger = logging.getLogger("amortized.jobs.eval")
-
-_ENDPOINT_KEYS = ("endpoint", "endpoint_base", "endpoint_tuned", "judge")
 
 DEFAULT_SERVE_PORT = 8000
 
@@ -56,29 +56,25 @@ _ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 SERVE_STARTUP_TIMEOUT = 900
 
 
-def _endpoint_spec(
-    config: dict[str, Any], key: str, env_name: str, env: dict[str, str]
-) -> dict[str, str]:
+def _endpoint_spec(config: dict[str, Any], key: str, env_name: str) -> dict[str, str]:
     endpoint = config.get(key)
     if not isinstance(endpoint, dict) or not endpoint.get("base_url") or not endpoint.get("model"):
         raise JobBuildError(f"{key}: base_url and model are required")
+    if endpoint.get("api_key"):
+        raise JobBuildError(f"{key}.api_key: {INLINE_API_KEY_ERROR}")
     base_url = str(endpoint["base_url"])
-    api_key = endpoint.get("api_key", "")
-    # A base_url that names an enabled provider (e.g. "openai") resolves to that
-    # provider's real endpoint + its injected key env-var — the same catalog SDG
-    # uses — so a BYOK-stripped judge/endpoint still authenticates with the
-    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...). The
-    # provider_type (openai|anthropic) selects the runner's calling paradigm so the
-    # judge supports exactly what the SDG teacher does (incl. native Anthropic).
+    # A base_url that names an enabled provider (e.g. "openai") resolves to its real
+    # endpoint + its injected key env-var — the same catalog SDG uses — so the job
+    # authenticates with the forwarded key (OPENAI_API_KEY, MAAS_API_KEY, ...). The
+    # provider_type (openai|anthropic) selects the runner's calling paradigm so the judge
+    # supports exactly what the SDG teacher does (incl. native Anthropic). Any other
+    # base_url is a keyless URL.
     provider_type = "openai"
     provider = resolve_provider(base_url)
     if provider:
         base_url = provider.get("endpoint", base_url)
         provider_type = provider.get("provider_type") or "openai"
-        if not api_key:
-            env_name = provider.get("api_key", env_name)
-    if api_key:
-        env[env_name] = api_key
+        env_name = provider.get("api_key", env_name)
     return {
         "base_url": base_url.rstrip("/"),
         "model": str(endpoint["model"]),
@@ -105,8 +101,8 @@ def model_checks(
     config: dict[str, Any], env: dict[str, str]
 ) -> tuple[list[ModelEndpoint], list[ConfigError]]:
     """The LLM endpoints this eval will call (judge, and an external model under test), with
-    credentials resolved exactly as ``build()`` delivers them: the forwarded server env, then
-    every enabled provider's key, then any inline key."""
+    credentials resolved exactly as the job pod receives them: the forwarded server env plus
+    every enabled provider's key."""
     if config.get("eval_mode") == "classification":
         return [], []
     job_env = dict(env)
@@ -144,7 +140,11 @@ def model_checks(
                 )
             )
             continue
-        spec = _endpoint_spec({key: endpoint_cfg}, key, default_key_env, job_env)
+        try:
+            spec = _endpoint_spec({key: endpoint_cfg}, key, default_key_env)
+        except JobBuildError as exc:  # e.g. an inline api_key — rejected, never probed
+            errors.append(ConfigError(label, "invalid_endpoint", str(exc)))
+            continue
         endpoints.append(
             endpoint_with_credential(
                 label,
@@ -281,8 +281,8 @@ async def _build_embedded_serving(
     return pre_commands, script, extras
 
 
-async def _classification_training_run_id(training_job_id: str) -> str:
-    """Resolve the MLflow run id of a completed training job."""
+async def _classification_training_parent(training_job_id: str) -> tuple[str, dict[str, Any]]:
+    """Resolve the MLflow run id and stored config of a completed training job."""
     from amortized.db.connection import get_pool
     from amortized.db.repository import Repository
     from amortized.models import JobStatus
@@ -302,7 +302,13 @@ async def _classification_training_run_id(training_job_id: str) -> str:
     run_id = str(parent.get("mlflow_run_id", "") or "")
     if not run_id:
         raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
-    return run_id
+    parent_config = parent.get("config") or {}
+    if isinstance(parent_config, str):
+        try:
+            parent_config = json.loads(parent_config)
+        except ValueError:
+            parent_config = {}
+    return run_id, parent_config if isinstance(parent_config, dict) else {}
 
 
 async def _build_classification_eval(
@@ -323,8 +329,16 @@ async def _build_classification_eval(
     # 1. Model to evaluate: a tuned model (training_job_id) or a base ST model.
     training_job_id = str(config.get("training_job_id", "")).strip()
     model_name_or_path = str(config.get("model_name_or_path", "")).strip()
+    parent_config: dict[str, Any] = {}
     if training_job_id:
-        run_id = await _classification_training_run_id(training_job_id)
+        run_id, parent_config = await _classification_training_parent(training_job_id)
+        task = str(parent_config.get("task") or "sequence_classification")
+        if task != "sequence_classification":
+            # The API rejects this up front; guard here too (retries, direct worker paths).
+            raise JobBuildError(
+                f"training job {training_job_id[:8]} trained a {task} head; classification"
+                " eval scores sequence-classification heads only"
+            )
         local_dir = "/amortized/work/eval_model"
         pre_commands.append(
             f"mlflow artifacts download -r {shlex.quote(run_id)}"
@@ -339,8 +353,8 @@ async def _build_classification_eval(
             " model_name_or_path (base model baseline)"
         )
 
-    # 2. Held-out labeled dataset. resolve_parent_artifacts already sets
-    #    eval_data_path for a parent sdg/upload job; else download by run id.
+    # 2. Held-out labeled dataset: eval_data_run_id when set, else the parent sdg/upload
+    #    output that resolve_parent_artifacts put in eval_data_path.
     eval_data_path = config.get("eval_data_path", "")
     eval_data_run_id = str(config.get("eval_data_run_id", "") or "")
     if not eval_data_path and eval_data_run_id:
@@ -366,6 +380,10 @@ async def _build_classification_eval(
         "top_k": int(config.get("top_k", 3)),
         "tau": float(config.get("tau", 0.0)),
         "seed": int(config.get("seed", 42)),
+        # Head path: score at the length the model trained at, and load a custom
+        # architecture the way training did (its code ships with the saved model).
+        "max_length": config.get("max_length") or parent_config.get("max_length"),
+        "trust_remote_code": bool(parent_config.get("trust_remote_code")),
         "output_dir": "/amortized/work/results",
     }
     config_files["config.json"] = json.dumps(runner_config)
@@ -388,9 +406,14 @@ async def _build_classification_eval(
         config_files=config_files,
         pre_commands=pre_commands,
         post_commands=[post_cmd],
-        # Classification eval encodes a small set on CPU by design (no GPU/quota);
-        # nproc_per_node is documented as ignored here, so don't let it request GPUs.
-        resources=Resources(gpus=0, cpus=4, memory_gb=8),
+        # Classification eval encodes a small set on CPU by default; a decoder head (the API
+        # stamps eval_on_gpu, matching estimate_gpu_demand) is too big for the CPU pod and
+        # gets 1 GPU. nproc_per_node is documented as ignored here.
+        resources=(
+            Resources(gpus=1, cpus=4, memory_gb=32)
+            if config.get("eval_on_gpu")
+            else Resources(gpus=0, cpus=4, memory_gb=8)
+        ),
         # Classification eval runs in the training image (sentence-transformers) — pin it with
         # training_image_tag (upstream lifecycle), not job_image_tag.
         image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
@@ -451,7 +474,7 @@ async def build(
                 config_files[asset] = f.read()
     else:
         model_key = external_key or "endpoint_base"
-        model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY", env)
+        model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY")
         pre_commands = []
         extras = {}
         resources = Resources(gpus=0, cpus=2, memory_gb=4)
@@ -469,9 +492,7 @@ async def build(
             " must set `judge` explicitly (there is no default judge)"
         )
     if judge_cfg:
-        endpoints["judge"] = _endpoint_spec(
-            {"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY", env
-        )
+        endpoints["judge"] = _endpoint_spec({"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY")
 
     eval_data_path = config.get("eval_data_path", "")
     eval_data_run_id = config.get("eval_data_run_id", "")
@@ -510,12 +531,6 @@ async def build(
     )
 
     resolved_config = dict(config)
-    for key in _ENDPOINT_KEYS:
-        endpoint = resolved_config.get(key)
-        if isinstance(endpoint, dict):
-            scrubbed = dict(endpoint)
-            scrubbed.pop("api_key", None)
-            resolved_config[key] = scrubbed
     resolved_config["eval_data_path"] = eval_data_path
     resolved_config.update(extras)
 
@@ -569,6 +584,11 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         num_samples = model_metrics.get("num_samples")
         if num_samples is not None:
             await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(num_samples))
+        # Classification eval: which path scored the model (head = held-out accuracy,
+        # router = separability proxy) — the Evaluation tab groups on it.
+        classifier_kind = metrics.get("classifier_kind")
+        if classifier_kind in ("head", "router"):
+            await set_mlflow_run_tag(mlflow_run_id, "eval_classifier_kind", classifier_kind)
         # Transparency: how many samples the judge actually scored and
         # which model judged — a partial judge run otherwise looks like a
         # full one in the comparison table.

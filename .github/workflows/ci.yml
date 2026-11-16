@@ -37,8 +37,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: astral-sh/setup-uv@v10.3.3
+
+      # uv, like the server Dockerfile: pip's resolver gives up (resolution-too-deep)
+      # backtracking aiobotocore (via asynth -> s3fs) against boto3.
       - name: Install dependencies
-        run: pip install -e '.[dev]'
+        run: uv pip install --system -e '.[dev]'
 
       - name: Lint
         run: ruff check src/ tests/

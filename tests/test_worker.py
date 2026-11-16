@@ -488,9 +488,8 @@ class TestTrainingHubConfig:
         assert "max_batch_len" not in sft
 
     def test_thub_config_yaml_lora_sft_unchanged(self) -> None:
-        # lora_sft behavior is intentionally preserved: effective_batch_size + max_seq_len +
-        # the (thub-ignored) max_batch_len, and NO amortized-set learning_rate (thub lora-sft
-        # applies its own 2e-4 default).
+        # lora_sft: effective_batch_size + max_seq_len, NO amortized-set learning_rate (thub
+        # lora-sft applies its own 2e-4 default), and no max_batch_len (not a lora-sft knob).
         from amortized.jobs.training import _training_hub_config_yaml
 
         parsed = yaml.safe_load(_training_hub_config_yaml(
@@ -498,9 +497,55 @@ class TestTrainingHubConfig:
         ))
         assert parsed["effective_batch_size"] == 8
         assert parsed["max_seq_len"] == 2048
-        assert parsed["max_batch_len"] == 60000
+        assert "max_batch_len" not in parsed
         assert "max_tokens_per_gpu" not in parsed
         assert "learning_rate" not in parsed
+        assert "enable_model_splitting" not in parsed
+
+    def test_thub_config_yaml_lora_sft_effective_batch_is_per_device_times_grad_accum(
+        self,
+    ) -> None:
+        # thub lora-sft is one process (world_size 1) and runs
+        # micro = effective_batch_size // gradient_accumulation_steps, so effective must be
+        # per-device x grad-accum — never multiplied by nproc_per_node.
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"algorithm": "lora_sft", "model_name_or_path": "m", "data_path": "/d"}
+
+        def eff(**kw: object) -> int:
+            parsed = yaml.safe_load(_training_hub_config_yaml("lora_sft", {**base, **kw}))
+            assert "micro_batch_size" not in parsed
+            return int(parsed["effective_batch_size"])
+
+        assert eff(per_device_train_batch_size=1, gradient_accumulation_steps=4,
+                   nproc_per_node=4) == 4
+        assert eff(per_device_train_batch_size=1) == 1
+        assert eff(per_device_train_batch_size=2, gradient_accumulation_steps=8) == 16
+        assert eff(effective_batch_size=32, per_device_train_batch_size=1) == 32
+        assert eff() == 8
+
+    def test_thub_config_yaml_lora_sft_multi_gpu_enables_model_splitting(self) -> None:
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"algorithm": "lora_sft", "model_name_or_path": "m", "data_path": "/d"}
+        multi = yaml.safe_load(_training_hub_config_yaml("lora_sft", {**base, "nproc_per_node": 4}))
+        assert multi["enable_model_splitting"] is True
+        assert multi["nproc_per_node"] == 4
+
+        single = yaml.safe_load(
+            _training_hub_config_yaml("lora_sft", {**base, "nproc_per_node": 1})
+        )
+        assert "enable_model_splitting" not in single
+
+        opt_out = yaml.safe_load(_training_hub_config_yaml(
+            "lora_sft", {**base, "nproc_per_node": 4, "enable_model_splitting": False}
+        ))
+        assert opt_out["enable_model_splitting"] is False
+
+        sft = yaml.safe_load(_training_hub_config_yaml(
+            "sft", {**base, "algorithm": "sft", "nproc_per_node": 4}
+        ))
+        assert "enable_model_splitting" not in sft
 
     def test_thub_config_yaml_gepa_output_dir(self) -> None:
         from amortized.jobs.training import _training_hub_config_yaml
@@ -585,17 +630,128 @@ class TestTrainingHubConfig:
         parsed = yaml.safe_load(_training_hub_config_yaml("embedding_sft", config))
         assert "train_on_gpu" not in parsed
 
-    async def test_embedding_sft_aliases_map_to_subcommand(self) -> None:
+    def test_thub_config_yaml_classifier_sft(self) -> None:
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "classifier_sft",
+            "model_name_or_path": "answerdotai/ModernBERT-base",
+            "data_path": "/data/train.parquet",
+            "num_train_epochs": 5,
+            "per_device_train_batch_size": 32,
+            "max_length": 64,
+            "text_column": "text",
+            "label_column": "category",
+            "task": "sequence_classification",
+            "use_peft": True,
+            "trust_remote_code": True,
+            "output_dir": "/output",
+        }
+        parsed = yaml.safe_load(_training_hub_config_yaml("classifier_sft", config))
+        assert parsed["model_path"] == "answerdotai/ModernBERT-base"
+        assert parsed["num_epochs"] == 5
+        assert parsed["batch_size"] == 32  # micro_batch_size -> batch_size
+        assert parsed["max_seq_len"] == 64
+        assert parsed["task"] == "sequence_classification"
+        assert parsed["label_column"] == "category"
+        # use_peft is globally skip-keyed but classifier_sft re-adds it;
+        # trust_remote_code flows through
+        assert parsed["use_peft"] is True
+        assert parsed["trust_remote_code"] is True
+        # no sequence-packing / data_output_dir / train_on_gpu leakage
+        assert "max_tokens_per_gpu" not in parsed
+        assert "max_batch_len" not in parsed
+        assert "data_output_dir" not in parsed
+        assert "train_on_gpu" not in parsed
+        # unset lora_target_modules is not emitted (training-hub picks PEFT defaults / all-linear)
+        assert "lora_target_modules" not in parsed
+
+    def test_thub_config_yaml_classifier_sft_lora_target_modules(self) -> None:
+        # globally skip-keyed (the generative LoRA path doesn't take it) but classifier_sft does
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "classifier_sft",
+            "model_name_or_path": "answerdotai/ModernBERT-base",
+            "use_peft": True,
+            "lora_target_modules": ["Wqkv", "Wo"],
+            "output_dir": "/output",
+        }
+        parsed = yaml.safe_load(_training_hub_config_yaml("classifier_sft", config))
+        assert parsed["lora_target_modules"] == ["Wqkv", "Wo"]
+        # other algorithms keep skipping it
+        sft = yaml.safe_load(_training_hub_config_yaml("osft", {**config, "algorithm": "osft"}))
+        assert "lora_target_modules" not in sft
+
+    def test_thub_config_yaml_classifier_sft_peft_learning_rate(self) -> None:
+        # A LoRA decoder head collapses to one class at the 2e-5 encoder default, so use_peft
+        # defaults the rate to 1e-4; an explicit rate (and the non-peft path) are untouched.
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"algorithm": "classifier_sft", "model_name_or_path": "Qwen/Qwen3-0.6B",
+                "output_dir": "/output"}
+        peft = yaml.safe_load(
+            _training_hub_config_yaml("classifier_sft", {**base, "use_peft": True})
+        )
+        assert peft["learning_rate"] == 1e-4
+        explicit = yaml.safe_load(_training_hub_config_yaml(
+            "classifier_sft", {**base, "use_peft": True, "learning_rate": 5e-4}))
+        assert explicit["learning_rate"] == 5e-4
+        encoder = yaml.safe_load(_training_hub_config_yaml("classifier_sft", base))
+        assert "learning_rate" not in encoder
+
+    async def test_algorithm_aliases_map_to_subcommand(self) -> None:
         from amortized.jobs.training import build
 
-        for alias in ("embedding_sft", "classifier", "embedding"):
+        # embedding/embedding_sft -> thub embedding-sft; classifier/classifier_sft -> classifier-sft
+        cases = {
+            "embedding_sft": "embedding-sft",
+            "embedding": "embedding-sft",
+            "classifier_sft": "classifier-sft",
+            "classifier": "classifier-sft",
+        }
+        for alias, subcmd in cases.items():
             cfg = {
                 "algorithm": alias,
-                "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                "model_name_or_path": "answerdotai/ModernBERT-base",
                 "data_path": "/data/train.parquet",
             }
             result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
-            assert result.command == ["thub", "embedding-sft", "--config", "/amortized/config.yaml"]
+            assert result.command == ["thub", subcmd, "--config", "/amortized/config.yaml"]
+
+    async def test_embedding_sft_normalizes_data_before_training(self) -> None:
+        from amortized.jobs.training import build
+
+        cfg = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/amortized/work/data/generated_data",
+        }
+        result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
+        assert result.pre_commands == [
+            "python3 /amortized/normalize_parquet_strings.py /amortized/work/data/generated_data"
+        ]
+        assert "def normalize(" in result.config_files["normalize_parquet_strings.py"]
+
+    async def test_embedding_sft_leaves_caller_data_path_alone(self) -> None:
+        from amortized.jobs.training import build
+
+        # Only the job's own downloaded copy is rewritten, never a caller's dataset.
+        cfg = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.parquet",
+        }
+        result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
+        assert result.pre_commands == []
+
+    async def test_other_algorithms_skip_data_normalization(self) -> None:
+        from amortized.jobs.training import build
+
+        cfg = {"algorithm": "sft", "model_name_or_path": "m", "data_path": "/data/train.jsonl"}
+        result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
+        assert result.pre_commands == []
+        assert "normalize_parquet_strings.py" not in result.config_files
 
 
 class TestResolveParentArtifacts:
@@ -661,6 +817,39 @@ class TestResolveParentArtifacts:
         assert pre_commands[0] == (
             "mlflow artifacts download -r dataset-run-xyz -a generated_data -d /amortized/work/data"
         )
+
+    @pytest.mark.asyncio
+    async def test_data_run_id_wins_over_parent(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # The split's data_run_id is what the job trains on; the parent SDG run also
+        # holds the held-out rows. The parent is never looked up (no DB pool here).
+        training_job = {"id": "training-1", "type": "training", "parent_job_id": "sdg-1"}
+        config: dict[str, object] = {
+            "algorithm": "embedding_sft",
+            "data_run_id": "split-train-run",
+        }
+
+        result_config, pre_commands = await _resolve_parent_artifacts(training_job, config)
+
+        assert result_config["data_path"] == "/amortized/work/data/generated_data"
+        assert pre_commands == [
+            "mlflow artifacts download -r split-train-run -a generated_data -d /amortized/work/data"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_eval_data_run_id_wins_over_parent(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # An eval scores its eval_data_run_id (the eval builder downloads it); the parent
+        # SDG job stays lineage only and is never looked up (no DB pool here).
+        eval_job = {"id": "eval-1", "type": "eval", "parent_job_id": "sdg-1"}
+        config: dict[str, object] = {"eval_data_run_id": "split-portion-run"}
+
+        result_config, pre_commands = await _resolve_parent_artifacts(eval_job, config)
+
+        assert pre_commands == []
+        assert "eval_data_path" not in result_config
 
     @pytest.mark.asyncio
     async def test_explicit_data_path_wins_over_data_run_id(self) -> None:

@@ -230,12 +230,14 @@ class TestCheckJobModels:
             return [_ok(e) for e in endpoints]
 
         monkeypatch.setattr(client, "run_checks", fake)
+        monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
+        monkeypatch.setattr(
+            config_mod.settings, "forward_env", ["EVAL_MODEL_API_KEY", "EVAL_JUDGE_API_KEY"]
+        )
+        monkeypatch.setenv("EVAL_MODEL_API_KEY", "k1")
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "k2")
         same = {"base_url": "http://gw/v1", "model": "m"}
-        config = {
-            "endpoint": {**same, "api_key": "k1"},
-            "judge": {**same, "api_key": "k2"},
-            "rubric": [{"name": "x"}],
-        }
+        config = {"endpoint": dict(same), "judge": dict(same), "rubric": [{"name": "x"}]}
         asyncio.run(client.check_job_models("eval", config))
         assert len(checked) == 2  # same model, different credentials -> both checked
 
@@ -260,20 +262,29 @@ class TestEvalHook:
         assert judge.api_key == "sk-forwarded"
         assert judge.credential_id.startswith("EVAL_JUDGE_API_KEY:")
 
-    def test_inline_key_and_unauthenticated(self, monkeypatch) -> None:
+    def test_unauthenticated_literal_url(self, monkeypatch) -> None:
         monkeypatch.setattr(config_mod.settings, "forward_env", [])
         monkeypatch.delenv("EVAL_JUDGE_API_KEY", raising=False)
-        monkeypatch.delenv("EVAL_MODEL_API_KEY", raising=False)
         monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
-        endpoints, _ = self._checks(
+        endpoints, errors = self._checks(
+            {"model_name_or_path": "m", "judge": {"base_url": "http://judge/v1", "model": "j"}}
+        )
+        assert errors == []
+        (judge,) = endpoints
+        assert judge.api_key == "" and judge.credential_id == ""
+
+    def test_inline_key_is_a_config_error_never_probed(self, monkeypatch) -> None:
+        # The request schema rejects inline keys; the hook still refuses one defensively.
+        monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
+        endpoints, errors = self._checks(
             {
-                "endpoint": {"base_url": "http://tuned/v1", "model": "t", "api_key": "sk-inline"},
-                "judge": {"base_url": "http://judge/v1", "model": "j"},
+                "model_name_or_path": "m",
+                "judge": {"base_url": "http://judge/v1", "model": "j", "api_key": "sk-x"},
             }
         )
-        by_label = {e.label: e for e in endpoints}
-        assert by_label["model under test"].api_key == "sk-inline"
-        assert by_label["judge"].api_key == "" and by_label["judge"].credential_id == ""
+        assert endpoints == []
+        assert [(e.label, e.reason) for e in errors] == [("judge", "invalid_endpoint")]
+        assert "sk-x" not in errors[0].message
 
     def test_provider_backed_judge(self, monkeypatch) -> None:
         provider = {

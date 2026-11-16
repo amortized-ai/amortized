@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "name": "Classifier (head)",
+    "description": "Default: train a classification head with classifier_sft (best accuracy + calibration for a fixed label set). For an embedding router instead, set algorithm=\"embedding\" with a sentence-transformers model + contrastive loss. Pair with the Classification SDG template.",
+    "required": [
+      "model_name_or_path",
+      "parent_job_id"
+    ]
+  },
+  "algorithm": "classifier",
+  "model_name_or_path": "answerdotai/ModernBERT-base",
+  "task": "sequence_classification",
+  "num_train_epochs": 10,
+  "per_device_train_batch_size": 32,
+  "learning_rate": 2e-05,
+  "text_column": "text",
+  "label_column": "category",
+  "warmup_ratio": 0.1,
+  "seed": 42,
+  "train_on_gpu": false,
+  "parent_job_id": "<SDG_JOB_ID>"
+}
