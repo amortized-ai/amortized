@@ -8,6 +8,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from evalhub.adapter import DefaultCallbacks, FrameworkAdapter
 from evalhub.adapter.auth import read_model_auth_key, resolve_model_credentials
@@ -19,6 +20,16 @@ from evalhub.models import EvaluationResult, JobPhase, JobStatus
 from amortized.evaluation.generation import run
 
 TASK_DATA_PATH = "/test_data/data"
+
+
+def classification_scorer() -> Any:
+    """The shared classification eval (classify_eval.py), loaded from its file."""
+    asset = Path(__file__).parents[1] / "jobs/assets/classify_eval.py"
+    spec = importlib.util.spec_from_file_location("amortized_classification_scorer", asset)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class AmortizedTaskAdapter(FrameworkAdapter):
@@ -35,20 +46,18 @@ class AmortizedTaskAdapter(FrameworkAdapter):
         if parameters.get("eval_mode") == "classification":
             if credentials.hf_token:
                 os.environ["HF_TOKEN"] = credentials.hf_token
-            asset = Path(__file__).parents[1] / "jobs/assets/classify_eval.py"
-            spec = importlib.util.spec_from_file_location("amortized_embedding_scorer", asset)
-            assert spec is not None and spec.loader is not None
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
             parameters["model_path"] = config.model.name
-            summary = module.run(parameters)["results"]
+            summary = classification_scorer().run(parameters)["results"]
+            # A classifier head is scored by argmax on every row; an embedding router by
+            # anchor/query, on the rows left after drawing anchors.
+            head = summary.get("classifier_kind") == "head"
             summary["metric_metadata"] = {
                 name: {
                     "unit": "fraction",
                     "direction": "higher",
                     "range": [0, 1],
-                    "num_samples": summary["num_queries"],
-                    "scorer_id": "embedding_anchor_query",
+                    "num_samples": summary["num_samples" if head else "num_queries"],
+                    "scorer_id": "classifier_head" if head else "embedding_anchor_query",
                     "scorer_version": "1",
                 }
                 for name in ("accuracy", "macro_f1")

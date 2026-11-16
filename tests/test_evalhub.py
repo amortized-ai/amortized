@@ -838,6 +838,31 @@ async def test_server_limits_say_the_request_cannot_fix_them(monkeypatch, overri
     assert reason in error and SERVER_LIMIT in error
 
 
+async def test_hub_refuses_a_classifier_head_that_needs_a_gpu(monkeypatch):
+    import amortized.config as config_mod
+
+    monkeypatch.setattr(config_mod, "settings", config_mod.Settings(**HUB_SETTINGS))
+    config = {**TASK, "eval_mode": "classification", "eval_on_gpu": True}
+    [error] = await client.validate_definition(config)
+    assert "use_peft" in error and "CPU only" in error
+
+
+async def test_tuned_classifier_scores_with_its_training_settings():
+    from amortized.integrations.evalhub import preparation
+
+    trained = {"algorithm": "classifier_sft", "max_length": 256, "trust_remote_code": True}
+    repo = MagicMock(get_job=AsyncMock(return_value={"config": json.dumps(trained)}))
+    config = {"eval_mode": "classification", "training_job_id": "train-1"}
+    assert await preparation._classifier_parameters(config, repo) == {
+        "max_length": 256,
+        "trust_remote_code": True,
+    }
+    repo.get_job.assert_awaited_once_with("train-1")
+    # A base-model baseline (no training job) and a generative eval add nothing.
+    assert await preparation._classifier_parameters({"eval_mode": "classification"}, repo) == {}
+    assert await preparation._classifier_parameters({"training_job_id": "train-1"}, repo) == {}
+
+
 @pytest.mark.asyncio
 async def test_validate_api_refuses_hub_eval_when_mlflow_has_no_workspaces(
     hub_http_client, monkeypatch
@@ -1156,6 +1181,52 @@ def test_embedding_adapter_uses_projected_token_and_canonical_anchor_query(tmp_p
         "macro_f1": 1.0,
     }
     assert len((instance.output_dir / "results.jsonl").read_text().splitlines()) == 4
+
+
+def test_classifier_head_adapter_reports_head_metrics(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from evalhub.adapter.models import JobSpec
+
+    from amortized.evaluation import adapter
+
+    monkeypatch.setattr(
+        adapter, "resolve_model_credentials", lambda: SimpleNamespace(hf_token=None)
+    )
+    received = {}
+
+    def run(parameters):
+        received.update(parameters)
+        # The head path's shape (classify_eval._head_classifier_eval): no num_queries.
+        return {
+            "results": {
+                "classifier_kind": "head",
+                "scores": {"accuracy": 0.9, "macro_f1": 0.8},
+                "model": {"num_samples": 10},
+                "num_samples": 10,
+            }
+        }
+
+    monkeypatch.setattr(adapter, "classification_scorer", lambda: SimpleNamespace(run=run))
+    spec = JobSpec(
+        id="hub-head",
+        provider_id="amortized",
+        benchmark_id="task",
+        benchmark_index=0,
+        callback_url="http://sidecar/callback",
+        model={"url": "http://unused.invalid/v1", "name": "/test_data/model"},
+        parameters={"eval_mode": "classification", "max_length": 256},
+    )
+    instance = object.__new__(adapter.AmortizedTaskAdapter)
+    results = instance.run_benchmark_job(spec, MagicMock())
+    assert received["model_path"] == "/test_data/model" and received["max_length"] == 256
+    assert results.num_examples_evaluated == 10
+    assert {r.metric_name: r.metric_value for r in results.results} == {
+        "accuracy": 0.9,
+        "macro_f1": 0.8,
+    }
+    assert {r.metadata["scorer_id"] for r in results.results} == {"classifier_head"}
+    assert {r.metadata["num_samples"] for r in results.results} == {10}
 
 
 async def test_failed_cancel_transport_still_observes_a_completed_engine_job(monkeypatch):

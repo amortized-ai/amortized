@@ -544,7 +544,9 @@ async def _validate_eval_definition(config: dict[str, Any]) -> list[str]:
     errors = await validate_definition(config)
     definition = config.get("evaluation") or {}
     if config.get("eval_mode") == "classification" and definition.get("kind") == "benchmark":
-        errors.append("embedding models require anchor/query task evaluation, not a chat benchmark")
+        errors.append(
+            "classifier and embedding models need a classification evaluation, not a benchmark"
+        )
     if (
         config.get("eval_mode") != "classification"
         and definition.get("kind") != "benchmark"

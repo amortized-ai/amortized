@@ -139,6 +139,13 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         # Catalog membership, compatibility and settings are checked when the
         # recipe is pinned (benchmark_recipe), from the same catalog read.
         return []
+    if config.get("eval_on_gpu"):
+        # Stamped at validation for a decoder classifier head (classifier_sft with use_peft).
+        return [
+            "This classifier head was trained with use_peft and needs a GPU to evaluate,"
+            " but Eval Hub's task adapter runs on CPU only. Train the head without use_peft"
+            " to evaluate it here."
+        ]
     provider_id, benchmark_id = settings.evalhub_task_provider, "task"
     try:
         async with client() as sdk:

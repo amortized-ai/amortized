@@ -62,11 +62,11 @@ async def stage_inputs(job: dict[str, Any], repo: Any) -> tuple[dict[str, Any], 
     if config.get("eval_mode") == "classification" and config.get("training_job_id"):
         training = await repo.get_job(config["training_job_id"])
         if not training or training["status"] != "succeeded" or not training.get("mlflow_run_id"):
-            raise JobBuildError("Embedding training job must be succeeded with model artifacts")
+            raise JobBuildError("Classifier training job must be succeeded with model artifacts")
         run_id = training["mlflow_run_id"]
         models = await _artifact_paths(mlflow, run_id, "model")
         if not models:
-            raise JobBuildError("Embedding training run has no model artifacts")
+            raise JobBuildError("Classifier training run has no model artifacts")
         sources.extend((run_id, p, p) for p in models)
         model_path = "/test_data/model"
 
@@ -426,6 +426,7 @@ async def prepare(
         )
         parameters = {key: config[key] for key in keys if key in config}
         parameters["dataset_identity"] = inputs["dataset_identity"]
+        parameters.update(await _classifier_parameters(config, store.repo))
         if config.get("judge"):
             parameters["judge_model"] = config["judge"]["model"]
         selected = {
@@ -435,6 +436,22 @@ async def prepare(
             "test_data_ref": data_ref,
         }
     return hub_request(execution["correlation"], job["id"], endpoint, secret, [selected])
+
+
+async def _classifier_parameters(config: dict[str, Any], repo: Any) -> dict[str, Any]:
+    """Settings a tuned classifier is scored with, from its training job (as in the native
+    eval): a head scores at the length it trained at, and loads a custom architecture the
+    way training did (its code ships with the saved model)."""
+    if config.get("eval_mode") != "classification" or not config.get("training_job_id"):
+        return {}
+    training = await repo.get_job(config["training_job_id"]) or {}
+    trained = training.get("config") or {}
+    if isinstance(trained, str):
+        trained = json.loads(trained)
+    parameters: dict[str, Any] = {"trust_remote_code": bool(trained.get("trust_remote_code"))}
+    if max_length := config.get("max_length") or trained.get("max_length"):
+        parameters["max_length"] = max_length
+    return parameters
 
 
 async def cleanup(execution: dict[str, Any]) -> None:
