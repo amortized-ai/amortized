@@ -23,6 +23,7 @@ from amortized.core.model_endpoints import (
 )
 from amortized.jobs import eval as eval_builder
 from amortized.jobs import sdg as sdg_builder
+from amortized.model_check import checker
 
 
 def _eps(n: int) -> list[ModelEndpoint]:
@@ -392,3 +393,79 @@ class TestSdgHook:
         config["columns"] = [{"name": "c", "model_config_alias": "teacher"}]
         endpoints, _ = sdg_builder.model_checks(config, {})
         assert len(endpoints) == 1
+
+
+class TestSdgGatewayTeacher:
+    """data-designer's built-in gateway provider (what list_models reports on gateway-only
+    clusters) isn't in the server's catalog; it resolves through gateway_url."""
+
+    GATEWAY = "http://mlflow.amortized.svc.cluster.local:5000/gateway/mlflow/v1"
+
+    def _config(self, model: str = "gpt-oss") -> dict[str, Any]:
+        return {
+            "model_configs": [{"alias": "text", "model": model, "provider": "gateway"}],
+            "columns": [{"name": "q", "model_alias": "text"}],
+        }
+
+    @pytest.fixture(autouse=True)
+    def _gateway_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(model_endpoints, "resolve_provider", lambda _n: None)
+        monkeypatch.setattr(sdg_builder, "inject_enabled_provider_keys", lambda _env: None)
+        monkeypatch.setattr(config_mod.settings, "gateway_url", self.GATEWAY)
+
+    def test_gateway_teacher_is_checked_against_the_gateway_url(self) -> None:
+        endpoints, errors = sdg_builder.model_checks(self._config(), {})
+        assert errors == []
+        [ep] = endpoints
+        assert (ep.label, ep.base_url, ep.model, ep.provider_type) == (
+            "teacher text",
+            self.GATEWAY,
+            "gpt-oss",
+            "openai",
+        )
+        assert ep.api_key == "not-needed"
+        [ep2], _ = sdg_builder.model_checks(self._config(), {"DD_API_KEY": "forwarded"})
+        assert ep2.api_key == "not-needed"
+
+    @pytest.mark.asyncio
+    async def test_bad_gateway_model_is_probed_and_fails(self, monkeypatch) -> None:
+        monkeypatch.setattr(config_mod.settings, "model_check_url", "")
+        monkeypatch.setattr(checker, "BACKOFF_SECONDS", (0.0, 0.0))
+        seen: list[tuple[str, str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            seen.append((str(request.url), body["model"], request.headers["Authorization"]))
+            return (
+                httpx.Response(404)
+                if body["model"] == "nope"
+                else httpx.Response(
+                    200, json={"choices": [{"message": {"role": "assistant", "content": "pong"}}]}
+                )
+            )
+
+        real_client = httpx.AsyncClient
+        monkeypatch.setattr(
+            checker.httpx,
+            "AsyncClient",
+            lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw),
+        )
+        report = await client.check_job_models("sdg", self._config("nope"))
+        assert report.config_errors == []
+        assert [(r.outcome, r.reason) for r in report.results] == [("failed", "not_found")]
+        assert seen == [(f"{self.GATEWAY}/chat/completions", "nope", "Bearer not-needed")]
+
+    def test_no_gateway_url_means_nothing_to_check(self, monkeypatch) -> None:
+        monkeypatch.setattr(config_mod.settings, "gateway_url", "")
+        assert sdg_builder.model_checks(self._config(), {}) == ([], [])
+
+    def test_a_catalog_provider_named_gateway_wins(self, monkeypatch) -> None:
+        custom = {**OPENAI_PROVIDER, "name": "gateway", "endpoint": "https://gw.example/v1"}
+        monkeypatch.setattr(model_endpoints, "resolve_provider", lambda _n: custom)
+        monkeypatch.setattr(
+            sdg_builder,
+            "inject_enabled_provider_keys",
+            lambda env: env.update({"OPENAI_API_KEY": "sk-p"}),
+        )
+        [ep], _ = sdg_builder.model_checks(self._config(), {})
+        assert (ep.base_url, ep.api_key) == ("https://gw.example/v1", "sk-p")

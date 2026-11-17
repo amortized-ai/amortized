@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+import amortized.config as config_mod
 from amortized.core.model_catalog import resolve_provider
 from amortized.model_check.types import (
     FAILED,
@@ -77,11 +78,24 @@ def endpoint_with_credential(
     )
 
 
+def _gateway_endpoint(label: str, model: str, env: dict[str, str]) -> ModelEndpoint | None:
+    """Data designer's built-in gateway provider. It isn't in the server's provider
+    catalog — the job image defines it — so it resolves through the server's gateway_url.
+    None when no gateway is configured: there's nothing the server can check."""
+    gateway_url = config_mod.settings.gateway_url.strip()
+    if not gateway_url:
+        return None
+    return endpoint_with_credential(label, gateway_url, model, "openai", "DD_API_KEY", env)
+
+
 def provider_endpoint(
     label: str, provider_name: str, model: str, env: dict[str, str]
-) -> ModelEndpoint | ConfigError:
-    """Resolve a model served by a named provider (e.g. an SDG teacher's ``provider``)."""
+) -> ModelEndpoint | ConfigError | None:
+    """Resolve a model served by a named provider (e.g. an SDG teacher's provider).
+    None means the endpoint can't be checked from the server (an unconfigured gateway)."""
     provider = resolve_provider(provider_name)
+    if provider is None and provider_name.strip().lower() == "gateway":
+        return _gateway_endpoint(label, model, env)
     if provider is None:
         return ConfigError(
             label,

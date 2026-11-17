@@ -41,6 +41,9 @@ class SDGBuildError(JobBuildError):
     """Raised when SDG config building fails and the job should be marked failed."""
 
 
+_BASE_ENV = {"DD_API_KEY": "not-needed"}
+
+
 def model_checks(
     config: dict[str, Any], env: dict[str, str]
 ) -> tuple[list[ModelEndpoint], list[ConfigError]]:
@@ -52,7 +55,7 @@ def model_checks(
         for col in config.get("columns") or []
         if isinstance(col, dict) and (col.get("model_alias") or col.get("model_config_alias"))
     }
-    job_env = dict(env)
+    job_env = {**env, **_BASE_ENV}  # build()'s env wins over the forwarded env in the worker
     inject_enabled_provider_keys(job_env)
     endpoints: list[ModelEndpoint] = []
     errors: list[ConfigError] = []
@@ -70,7 +73,7 @@ def model_checks(
         )
         if isinstance(resolved, ConfigError):
             errors.append(resolved)
-        else:
+        elif resolved is not None:
             endpoints.append(resolved)
     return endpoints, errors
 
@@ -107,7 +110,7 @@ async def build(
 ) -> JobBuildResult:
     import yaml
 
-    env: dict[str, str] = {"DD_API_KEY": "not-needed"}
+    env: dict[str, str] = dict(_BASE_ENV)
     job_id = job["id"]
 
     for key in _STALE_CONFIG_KEYS:
