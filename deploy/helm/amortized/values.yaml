@@ -55,8 +55,8 @@ images:
 
 # Model-liveness check service: verifies the LLM endpoints a job will call (eval judge,
 # SDG teacher models) at validate/create time, so a dead endpoint is rejected immediately
-# instead of failing a long-running job. Runs in the jobs namespace; only the server may
-# call it (NetworkPolicy). Disable to run the check in-process inside the server instead.
+# instead of failing a long-running job. Runs beside the server (same namespace); only the
+# server may call it. Disable to run the check in-process inside the server instead.
 modelCheck:
   enabled: true
   port: 7351

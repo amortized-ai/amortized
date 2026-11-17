@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     )
     model_check_url: str = Field(
         "",
-        description="Base URL of the model-liveness check service (deployed in the jobs "
-        "namespace). Empty runs the check in-process — for local development.",
+        description="Base URL of the model-liveness check service (deployed beside the "
+        "server). Empty runs the check in-process — for local development.",
     )
     model_check_deadline_seconds: float = Field(
         20.0,

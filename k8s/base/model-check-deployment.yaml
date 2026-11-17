@@ -1,13 +1,12 @@
 # Model-liveness check service: a small, stateless helper the server calls at job
 # validate/create time to verify the LLM endpoints a job will use (eval judge, SDG teacher
-# models) actually answer. Runs in the jobs namespace so it shares the job pods' network
-# position. Callers send each endpoint's resolved key in the request; nothing is mounted or
-# stored here.
+# models) actually answer. Runs beside the server (same namespace). Callers send each
+# endpoint's resolved key in the request; nothing is mounted or stored here.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: amortized-model-check
-  namespace: amortized-jobs
+  namespace: amortized
   labels:
     app: amortized
     component: model-check
