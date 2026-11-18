@@ -192,6 +192,22 @@ evalhub:
     jobServiceAccount: evalhub-amortized-evalhub-job   # <name>-<namespace>-job
 ```
 
+### One Hub for several releases
+
+The Hub is multi-tenant, so one Hub and one set of provider ConfigMaps can serve
+several Amortized releases, each with its own jobs namespace. The provider ConfigMap
+names and the Hub instance name are fixed, so only one release may create them.
+
+- Install the Hub and the providers once: an admin, or one release, with
+  `createInstance: true` and `createProviders: true`, as in the example above.
+- Every other release sets both to `false` and points at the same Hub: the same
+  `url`, `caConfigMap`, `operator.name` and `operator.namespace`. Each release still
+  creates its own `amortized-evalhub-user` Role in its jobs namespace.
+- The chart adds the tenant label only to namespaces it creates. With
+  `createNamespaces: false`, whoever creates the jobs namespace must add
+  `evalhub.trustyai.opendatahub.io/tenant=true`. studio-gateway creates per-user
+  namespaces itself and passes no `evalhub.*` values yet, so its stacks run with Hub
+  off.
 
 Native Anthropic authentication is currently rejected on the Hub path: the
 reviewed credential proxy injects Authorization bearer/basic auth, not Anthropic's
