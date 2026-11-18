@@ -125,6 +125,19 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
+  const confirmingSubmission =
+    !isTerminal && (executionPhase === "uncertain" || executionPhase === "submitting")
+  const stageLabel = isTerminal
+    ? statusToStageLabel(status, jobType, stageMarker)
+    : confirmingSubmission
+      ? cancelRequested
+        ? "Cancellation requested — confirming the submission to Eval Hub…"
+        : "Confirming the submission to Eval Hub…"
+      : cancelRequested
+        ? "Cancellation requested — waiting for the execution to stop"
+        : executionPhase === "preparing"
+          ? "Preparing evaluation data and model"
+          : statusToStageLabel(status, jobType, stageMarker)
   const progress = avgDuration && status === "running"
     ? Math.min(95, Math.round((elapsed / avgDuration) * 100))
     : statusToProgress(status, elapsed)
@@ -264,16 +277,10 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       </p>
 
       {/* Stage */}
-      <p className="text-xs text-muted-foreground mb-2">
-        {cancelRequested && !isTerminal
-          ? "Cancellation requested — waiting for the execution to stop"
-          : executionPhase === "uncertain" || executionPhase === "submitting"
-            ? "Verifying evaluation submission"
-            : executionPhase === "preparing"
-              ? "Preparing evaluation data and model"
-              : statusToStageLabel(status, jobType, stageMarker)}
-      </p>
-      {syncError && <p className="text-xs text-muted-foreground mb-2">{syncError}</p>}
+      <p className="text-xs text-muted-foreground mb-2">{stageLabel}</p>
+      {syncError && !confirmingSubmission && (
+        <p className="text-xs text-muted-foreground mb-2">{syncError}</p>
+      )}
 
       {/* Progress bar */}
       <div className="h-2 w-full rounded-full bg-rh-gray-20 dark:bg-rh-gray-70 mb-2">

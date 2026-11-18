@@ -696,7 +696,9 @@ function EvalResultsTab({ job }: { job: Job }) {
                   <th className="px-4 py-2.5 text-left font-medium">Criterion</th>
                   <th className="px-4 py-2.5 text-right font-medium">Score</th>
                   <th className="px-4 py-2.5 text-right font-medium">Scored</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Invalid</th>
+                  {results.metric_metadata && (
+                    <th className="px-4 py-2.5 text-right font-medium">Invalid</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -716,9 +718,11 @@ function EvalResultsTab({ job }: { job: Job }) {
                     <td className="px-4 py-2.5 text-right font-mono text-xs">
                       {results.scores_n?.[name] ?? "—"}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-xs">
-                      {results.metric_metadata?.[name]?.num_invalid ?? "—"}
-                    </td>
+                    {results.metric_metadata && (
+                      <td className="px-4 py-2.5 text-right font-mono text-xs">
+                        {results.metric_metadata[name]?.num_invalid ?? "—"}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

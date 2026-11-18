@@ -239,8 +239,9 @@ async def create_job(
         stored_config.pop("parent_job_id")
 
     import amortized.config as config_mod
+    from amortized.integrations.evalhub import runs_on_hub
 
-    hub_owned = job_type == JobType.eval and bool(config_mod.settings.evalhub_url)
+    hub_owned = job_type == JobType.eval and runs_on_hub(config)
 
     # The immutable request and outbox appear together, only after create-time
     # application checks. No remote submission occurs on the HTTP/card path.

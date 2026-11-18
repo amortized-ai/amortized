@@ -336,7 +336,7 @@ def _load_evidence(
 
 def _save(path: Path, evidence: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    temporary.write_text(contract.dump(evidence, str(path)))
     os.replace(temporary, path)
 
 

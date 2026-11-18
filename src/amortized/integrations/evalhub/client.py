@@ -1,5 +1,6 @@
 """SDK transport with non-retrying submission and server-owned tenant mapping."""
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
@@ -7,7 +8,9 @@ from evalhub import AsyncEvalHubClient
 from evalhub.models import JobSubmissionRequest
 
 import amortized.config as config_mod
-from amortized.integrations.evalhub import server_limit
+from amortized.integrations.evalhub import runs_on_hub, server_limit
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -86,7 +89,7 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
     """Read-only pre-confirmation catalog/capability checks."""
     definition = config.get("evaluation") or {}
     settings = config_mod.settings
-    if not settings.evalhub_url:
+    if not runs_on_hub(config):
         return (
             ["evaluation definitions require the configured Eval Hub engine"] if definition else []
         )
@@ -139,13 +142,6 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         # Catalog membership, compatibility and settings are checked when the
         # recipe is pinned (benchmark_recipe), from the same catalog read.
         return []
-    if config.get("eval_on_gpu"):
-        # Stamped at validation for a decoder classifier head (classifier_sft with use_peft).
-        return [
-            "This classifier head was trained with use_peft and needs a GPU to evaluate,"
-            " but Eval Hub's task adapter runs on CPU only. Train the head without use_peft"
-            " to evaluate it here."
-        ]
     provider_id, benchmark_id = settings.evalhub_task_provider, "task"
     try:
         async with client() as sdk:
@@ -165,8 +161,10 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
                 f"Eval Hub's provider {provider_id!r} has no pinned adapter image digest",
             )
     except Exception:
+        logger.warning("Could not read Eval Hub's task provider %r", provider_id, exc_info=True)
         return [
-            "Cannot verify the selected benchmark against the Eval Hub catalog; retry validation"
+            f"Cannot verify the task evaluation against Eval Hub's provider {provider_id!r};"
+            " retry validation"
         ]
     return []
 
@@ -176,16 +174,16 @@ async def benchmark_recipe(config: dict[str, Any]) -> tuple[dict[str, Any] | Non
     from amortized.integrations.evalhub import catalog
 
     definition = config.get("evaluation") or {}
+    declared = definition.get("declared_capabilities") or config.get("declared_capabilities")
     try:
-        capability = catalog.Capability.from_model(
-            {**config, "declared_capabilities": definition.get("declared_capabilities")}
-        )
+        capability = catalog.Capability.from_model({**config, "declared_capabilities": declared})
     except ValueError as exc:
         return None, [str(exc)]
     try:
         async with client() as sdk:
             entries = await catalog.load(sdk, [definition["provider_id"]])
     except Exception:
+        logger.warning("Could not read the Eval Hub catalog", exc_info=True)
         return None, [
             "Cannot verify the selected benchmark against the Eval Hub catalog; retry validation"
         ]

@@ -147,16 +147,6 @@ class Repository:
         rows = await self.conn.fetch(query, *params)
         return [_row_to_job(row) for row in rows]
 
-    async def scrub_eval_credentials(self, job_id: str) -> None:
-        """Keep semantic snapshots immutable while erasing transferred BYOK values."""
-        paths = " #- '{endpoint,api_key}' #- '{judge,api_key}'"
-        paths += " #- '{endpoint_base,api_key}' #- '{endpoint_tuned,api_key}'"
-        await self.conn.execute(
-            f"UPDATE jobs SET config = config{paths}, request_config = request_config{paths} "
-            "WHERE id = $1 AND execution_owner = 'evalhub'",
-            job_id,
-        )
-
     _UPDATABLE_COLUMNS: ClassVar[set[str]] = {
         "status",
         "config",

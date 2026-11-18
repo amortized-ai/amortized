@@ -25,6 +25,34 @@ describe("rehypeBreakIds", () => {
     expect(container.querySelector("th")?.innerHTML).toBe("ID")
   })
 
+  it("leaves numbers and dates whole", () => {
+    const container = renderMarkdown(
+      "| Metric | Score | Delta | Date |\n|---|---|---|---|\n| acc_norm | 0.967 | -0.25 | 2026-11-18 |\n| f1 | 1e-4 | 12.5% | 2026-11-18T09:30:00Z |",
+    )
+    const cells = Array.from(container.querySelectorAll("td"))
+
+    expect(cells[0]?.innerHTML).toBe("acc_<wbr>norm")
+    expect(cells.slice(1).map((cell) => cell.innerHTML)).toEqual([
+      "0.967",
+      "-0.25",
+      "2026-11-18",
+      "f1",
+      "1e-4",
+      "12.5%",
+      "2026-11-18T09:30:00Z",
+    ])
+  })
+
+  it("breaks each id in a cell that also holds words and numbers", () => {
+    const container = renderMarkdown(
+      "| Note |\n|---|\n| ran arc_easy on 2026-11-18, score 0.4 |\n| f03e4df5-91d7-4e1d |",
+    )
+    const cells = Array.from(container.querySelectorAll("td"))
+
+    expect(cells[0]?.innerHTML).toBe("ran arc_<wbr>easy on 2026-11-18, score 0.4")
+    expect(cells[1]?.innerHTML).toBe("f03e4df5-<wbr>91d7-<wbr>4e1d")
+  })
+
   it("leaves text outside tables alone", () => {
     const container = renderMarkdown("Pick arc_easy or `arc:easy`.")
 

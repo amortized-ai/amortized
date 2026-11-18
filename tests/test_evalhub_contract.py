@@ -6,6 +6,7 @@ import argparse
 import copy
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -322,6 +323,33 @@ def test_evidence_for_another_image_is_refused(files):
     (files / f"conformance/{LM}.json").write_text(json.dumps(evidence))
     with pytest.raises(contract.ContractError, match="not evidence for the described adapter"):
         contract.build(files)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_a_value_json_cannot_represent_stops_the_build_and_names_its_entry(
+    files, monkeypatch, value
+):
+    runs = copy.deepcopy(RUNS[LM])
+    runs["arc_easy"]["metrics"]["acc_stderr"] = value
+    write(files, LM, runs)
+    fixture = files / "fixture.json"
+    monkeypatch.setattr(sys, "argv", ["contract", "--files", str(files), "--fixture", str(fixture)])
+    with pytest.raises(SystemExit) as stopped:
+        contract.main()
+    entry = f"{LM} arc_easy"
+    assert f"/entries/{entry}/results/benchmarks/{entry}/metrics/acc_stderr is {value}" in str(
+        stopped.value
+    )
+    assert not fixture.exists() and not (files / "REPORT.md").exists()
+
+
+def test_evidence_json_cannot_represent_is_refused_and_the_last_save_kept(tmp_path):
+    path = tmp_path / "evidence.json"
+    conformance._save(path, {"benchmarks": {"gsm8k": {"metrics": {"acc": 0.5}}}})
+    saved = path.read_text()
+    with pytest.raises(contract.ContractError, match="/benchmarks/gsm8k/metrics/acc is nan"):
+        conformance._save(path, {"benchmarks": {"gsm8k": {"metrics": {"acc": float("nan")}}}})
+    assert path.read_text() == saved
 
 
 # --------------------------------------------------------------------------- #

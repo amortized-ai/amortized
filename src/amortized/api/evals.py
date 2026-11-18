@@ -36,19 +36,26 @@ CLASSIFICATION_METRICS = ("accuracy", "macro_f1")
 @router.get("/providers", operation_id="list_evaluation_providers")
 async def list_evaluation_providers() -> dict[str, Any]:
     """Read enabled task scoring and benchmark providers before assembling an eval."""
+    from amortized.integrations.evalhub import accepts_new_jobs
     from amortized.integrations.evalhub.client import client
 
     settings = config_mod.settings
-    if not settings.evalhub_url:
+    if not accepts_new_jobs():
         return {"enabled": False, "task_scoring": ["rubric", "embedding_anchor_query"]}
-    async with client() as sdk:
-        task = await sdk.providers.get(settings.evalhub_task_provider)
-        benchmark_providers = []
-        for name in settings.evalhub_providers:
-            provider = await sdk.providers.get(name)
-            benchmark_providers.append(
-                {"id": name, "name": provider.title, "benchmarks": len(provider.benchmarks)}
-            )
+    try:
+        async with client() as sdk:
+            task = await sdk.providers.get(settings.evalhub_task_provider)
+            benchmark_providers = []
+            for name in settings.evalhub_providers:
+                provider = await sdk.providers.get(name)
+                benchmark_providers.append(
+                    {"id": name, "name": provider.title, "benchmarks": len(provider.benchmarks)}
+                )
+    except Exception as exc:
+        logger.warning("Could not read the Eval Hub providers", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Cannot read the Eval Hub providers; retry"
+        ) from exc
     return {
         "enabled": True,
         "providers": [task.model_dump(mode="json", exclude_none=True)],
@@ -104,10 +111,10 @@ def _capability(model: BenchmarkModel) -> Any:
 
 
 async def _read_catalog(provider_ids: list[str] | None) -> list[Any]:
-    from amortized.integrations.evalhub import catalog
+    from amortized.integrations.evalhub import accepts_new_jobs, catalog
     from amortized.integrations.evalhub.client import client
 
-    if not config_mod.settings.evalhub_url:
+    if not accepts_new_jobs():
         raise HTTPException(
             status_code=422, detail="Benchmark evaluation is not enabled on this deployment"
         )
@@ -182,11 +189,14 @@ async def get_benchmark(request: GetBenchmarkRequest) -> dict[str, Any]:
         )
     result = catalog.detail(entry, capability, entries)
     if result["compatibility"] == "compatible":
+        declared = request.model.declared_capabilities
         result["next"] = (
             "Ask the user only about these settings (the defaults apply if they have no"
             " preference), then call validate_eval_job with evaluation = {kind: benchmark,"
             " provider_id, benchmark_id: this id, parameters: only the settings the user"
-            " changed} and the same model fields."
+            " changed"
+            + (f", declared_capabilities: {json.dumps(declared)}" if declared else "")
+            + "} and the same model fields."
         )
     else:
         result["next"] = (

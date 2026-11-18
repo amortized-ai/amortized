@@ -93,15 +93,15 @@ always `"eval"`.
 
 An eval job evaluates **one model** using one user-approved recipe. Call
 `list_evaluation_providers` to discover whether the Eval Hub engine is
-available. Never call Hub submission APIs directly.
+available. With `enabled: false` the job runs natively: benchmarks are not
+offered and `evaluation` stays unset. Never call Hub submission APIs directly.
 
 The model under evaluation decides the kind of eval (Step 0.5): a
 **classification eval** for classifier-head / embedding-router models trained on the
 platform, or a **generative eval** (a task dataset or a benchmark) for everything else:
 
 - **Task dataset:** generate each answer once, then the rubric judge scores it
-  on the criteria the user approved. Never generate scorer code from the
-  user's prose.
+  on the criteria the user approved.
 - **Classifier model** (classification eval): scores predicted labels directly
   (accuracy / macro-F1 / per-class F1 / confusion, plus calibrated ECE for a head
   classifier), with no serving, endpoint, or judge.
@@ -112,7 +112,8 @@ platform, or a **generative eval** (a task dataset or a benchmark) for everythin
 
 All requirement gathering, warning decisions, validation and confirmation
 remain here. Only after the user clicks Confirm does the accepted job run
-through Eval Hub. Existing native evaluations remain readable during migration.
+(through Eval Hub when `list_evaluation_providers` returned `enabled: true`,
+except a classifier head trained with use_peft, which runs natively on a GPU).
 
 One eval job evaluates one model. To compare models (e.g. tuned vs
 base), run a SEPARATE eval for each — ONE AT A TIME: finish one model's
@@ -453,7 +454,8 @@ that endpoint serves /v1/completions with echo and logprobs.
    Put only the values the user changed into `evaluation.parameters`.
 
 Then set `evaluation = {kind: "benchmark", provider_id, benchmark_id,
-parameters}`. Never submit a `provider_id` or `benchmark_id` that did not come
+parameters}`, plus the same `declared_capabilities` if you passed them in
+`model`. Never submit a `provider_id` or `benchmark_id` that did not come
 from a `find_benchmarks` or `get_benchmark` result in this conversation.
 
 **Choose the scoring mechanism before the rubric branch below.** A

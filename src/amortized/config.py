@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     evalhub_url: str = Field(
         "", description="Eval Hub service origin. Empty during native migration."
     )
+    evalhub_accept_new_jobs: bool = Field(
+        True,
+        description="Send new evaluations to Eval Hub. False runs them natively while "
+        "evaluations already on Hub are still followed to completion.",
+    )
     evalhub_tenant: str = Field(
         "", description="Server-owned Hub tenant; must match the job namespace"
     )
@@ -68,6 +73,7 @@ class Settings(BaseSettings):
     evalhub_poll_interval: float = Field(3.0, ge=0.1)
     evalhub_timeout: float = Field(30.0, gt=0)
     evalhub_preparation_timeout: float = Field(1800.0, gt=0)
+    evalhub_uncertain_timeout: float = Field(900.0, gt=0)
     # Default order: of two providers carrying the same questions, the first that can run
     # them is offered (integrations/evalhub/catalog.py).
     evalhub_providers: list[str] = Field(

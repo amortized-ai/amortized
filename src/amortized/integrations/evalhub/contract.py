@@ -464,8 +464,33 @@ def report(
     return "\n".join(lines) + "\n"
 
 
-def _dump(data: Any) -> str:
-    return json.dumps(data, indent=2, sort_keys=True) + "\n"
+def dump(data: Any, name: str) -> str:
+    """Strict JSON: Studio's JSON.parse rejects the NaN and Infinity Python writes by default."""
+    try:
+        return json.dumps(data, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    except ValueError as exc:
+        raise ContractError(f"{name}: {_non_finite(data) or exc}") from exc
+
+
+def _non_finite(data: Any, path: str = "") -> str:
+    if isinstance(data, float) and not math.isfinite(data):
+        return f"{path or '/'} is {data}, which JSON cannot represent"
+    children: Iterable[tuple[Any, Any]] = ()
+    if isinstance(data, dict):
+        children = data.items()
+    elif isinstance(data, list | tuple):
+        children = ((_name(index, item), item) for index, item in enumerate(data))
+    for key, value in children:
+        if found := _non_finite(value, f"{path}/{key}"):
+            return found
+    return ""
+
+
+def _name(index: int, item: Any) -> Any:
+    """A list record by its benchmark, which its index alone does not tell."""
+    if isinstance(item, dict) and item.get("id"):
+        return " ".join(str(item[k]) for k in ("provider_id", "id") if item.get(k))
+    return index
 
 
 def main() -> None:
@@ -475,13 +500,18 @@ def main() -> None:
     args = parser.parse_args()
     try:
         compat, text, fixture = build(args.files)
+        outputs = {
+            f"compat/{provider_id}.json": dump(data, f"compat/{provider_id}.json")
+            for provider_id, data in compat.items()
+        }
+        fixture_text = dump(fixture, str(args.fixture))
     except ContractError as exc:
         sys.exit(f"The contract cannot be built:\n{exc}")
-    for provider_id, data in compat.items():
-        (args.files / f"compat/{provider_id}.json").write_text(_dump(data))
+    for name, content in outputs.items():
+        (args.files / name).write_text(content)
     (args.files / "REPORT.md").write_text(text)
     args.fixture.parent.mkdir(parents=True, exist_ok=True)
-    args.fixture.write_text(_dump(fixture))
+    args.fixture.write_text(fixture_text)
     for provider_id, data in compat.items():
         records = data["benchmarks"].values()
         verified = sum(1 for r in records if r.get("verified"))

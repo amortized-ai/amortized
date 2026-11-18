@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 from evalhub.client import JobCanNotBeCancelledError
+from evalhub.models import JobSubmissionRequest
 
 import amortized.config as config_mod
 from amortized.db.evalhub import EvalHubRepository
@@ -41,6 +42,11 @@ _STUCK = {
     "CreateContainerError",
 }
 _UNWATCHED: set[str] = set()  # jobs whose Job watch failed, so the warning is logged once
+_DISCONNECTED = (
+    "Eval Hub is no longer configured on this server (evalhub.url is empty), so this"
+    " evaluation can't be followed to a result. Amortized released what it held for it;"
+    " retry the evaluation to run it again."
+)
 
 
 def projection(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -89,6 +95,34 @@ async def _record(
         )
         await store.repo.update_job(execution["job_id"], **fields)
     return terminal
+
+
+async def _finish(store: EvalHubRepository, job_id: str, status: str, error: str = "") -> None:
+    """End the job with a verdict Amortized reached itself, then release what it holds.
+
+    One transaction: the worker resumes a terminal job only in `cleanup`, so a job left
+    terminal in any other state would keep its model server forever.
+    """
+    fields: dict[str, Any] = {"status": status, "completed_at": datetime.now(UTC)}
+    if error:
+        fields["error"] = error
+    async with store.conn.transaction():
+        await store.repo.update_job(job_id, **fields)
+        await store.update(job_id, state="cleanup", sync_error="")
+
+
+async def _cancel_unadopted(execution: dict[str, Any]) -> None:
+    """Cancel any Hub job a submission created after Amortized stopped waiting for it."""
+    try:
+        for match in await client.reconcile(execution):
+            with suppress(JobCanNotBeCancelledError):
+                await client.cancel({**execution, "remote_id": match["resource"]["id"]})
+    except Exception:
+        logger.warning(
+            "Cannot check Eval Hub for an unconfirmed submission of %s",
+            execution["job_id"],
+            exc_info=True,
+        )
 
 
 def _label_value(value: str) -> str:
@@ -234,7 +268,7 @@ async def request_cancel(repo: Repository, job: dict[str, Any]) -> dict[str, Any
     await store.cancel(job["id"])
     # The worker persists/forwards this intent even if the service is down or
     # the submit response is lost. Never fabricate a cancelled terminal status.
-    if execution.get("remote_id"):
+    if execution.get("remote_id") and config_mod.settings.evalhub_url:
         try:
             await client.cancel(execution)
         except JobCanNotBeCancelledError:
@@ -257,16 +291,24 @@ async def tick(job: dict[str, Any], store: EvalHubRepository) -> bool:
     state = execution["state"]
     if state == "finished":
         return True
+    connected = bool(config_mod.settings.evalhub_url)
     if state == "cleanup":
+        if connected and execution.get("observed_at") and not execution.get("remote_id"):
+            await _cancel_unadopted(execution)
         await preparation.cleanup(execution)
         await store.update(job["id"], state="finished", sync_error="")
         return True
+    if not connected:
+        # Without the URL the chart also drops Hub's credentials, so no call could succeed;
+        # retrying would hold the model server forever.
+        if execution["cancel_requested"] and state in {"preparing", "ready"}:
+            await _finish(store, job["id"], "cancelled")  # nothing reached Hub
+        else:
+            await _finish(store, job["id"], "failed", _DISCONNECTED)
+        return False
     if state == "preparing":
         if execution["cancel_requested"]:
-            await store.repo.update_job(
-                job["id"], status="cancelled", completed_at=datetime.now(UTC)
-            )
-            await store.update(job["id"], state="cleanup")
+            await _finish(store, job["id"], "cancelled")
             return False
         try:
             created = execution.get("created_at")
@@ -278,37 +320,46 @@ async def tick(job: dict[str, Any], store: EvalHubRepository) -> bool:
                 raise JobBuildError("Eval Hub input/model preparation exceeded its deadline")
             payload = await preparation.prepare(job, store, execution)
         except JobBuildError as exc:
-            await store.repo.update_job(
-                job["id"], status="failed", error=str(exc), completed_at=datetime.now(UTC)
-            )
-            await store.update(job["id"], state="cleanup")
+            await _finish(store, job["id"], "failed", str(exc))
             return False
-        async with store.conn.transaction():
-            await store.update(job["id"], state="ready", request=payload, sync_error="")
-            await store.repo.scrub_eval_credentials(job["id"])
+        await store.update(job["id"], state="ready", request=payload, sync_error="")
         return False
     if state == "ready":
         if execution["cancel_requested"]:
-            await store.repo.update_job(
-                job["id"], status="cancelled", completed_at=datetime.now(UTC)
-            )
-            await store.update(job["id"], state="cleanup")
+            await _finish(store, job["id"], "cancelled")
+            return False
+        try:
+            # submit() raises ValueError for these as well, but also for a response it cannot
+            # parse after the POST; only a check before sending proves nothing reached Hub.
+            JobSubmissionRequest.model_validate(execution["request"])
+            async with client.client(execution["hub_url"], execution["tenant"]):
+                pass
+        except ValueError as exc:
+            await _finish(store, job["id"], "failed", f"Cannot submit to Eval Hub: {exc}"[:500])
             return False
         # Commit BEFORE sending. A crash anywhere after this write cannot cause
-        # a second POST, even if no response/mapping was saved.
-        await store.update(job["id"], state="submitting")
+        # a second POST, even if no response/mapping was saved. observed_at marks the
+        # attempt: it starts the uncertain deadline and tells cleanup Hub may hold a job.
+        await store.update(job["id"], state="submitting", observed_at=datetime.now(UTC))
         try:
             snapshot = await client.submit(execution["request"], execution)
             await _record(store, execution, snapshot)
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            # No connection means no request, so the next tick may POST again.
+            await store.update(
+                job["id"],
+                state="ready",
+                observed_at=None,
+                sync_error="Eval Hub is unreachable; the submission will be retried",
+            )
         except httpx.HTTPStatusError as exc:
             if 400 <= exc.response.status_code < 500 and exc.response.status_code not in {408, 409}:
-                await store.repo.update_job(
+                await _finish(
+                    store,
                     job["id"],
-                    status="failed",
-                    error=f"Hub rejected submission (HTTP {exc.response.status_code})",
-                    completed_at=datetime.now(UTC),
+                    "failed",
+                    f"Hub rejected submission (HTTP {exc.response.status_code})",
                 )
-                await store.update(job["id"], state="cleanup")
             else:
                 await store.update(
                     job["id"],
@@ -323,9 +374,28 @@ async def tick(job: dict[str, Any], store: EvalHubRepository) -> bool:
             )
         return False
     if state in {"submitting", "uncertain"}:
-        matches = await client.reconcile(execution)
+        timeout = config_mod.settings.evalhub_uncertain_timeout
+        since = execution.get("observed_at") or execution.get("created_at")
+        expired = _age(since, datetime.now(UTC)) > timeout
+        try:
+            matches = await client.reconcile(execution)
+        except Exception:
+            # Cancel and the deadline must end the job even while Hub stays unreachable.
+            if not (execution["cancel_requested"] or expired):
+                raise
+            logger.warning("Cannot reconcile the Hub submission of %s", job["id"], exc_info=True)
+            matches = []
         if len(matches) == 1:
             await _record(store, execution, matches[0])
+        elif execution["cancel_requested"]:
+            await _finish(store, job["id"], "cancelled")
+        elif expired:
+            await _finish(
+                store,
+                job["id"],
+                "failed",
+                f"Eval Hub did not confirm the submission within {timeout:.0f} seconds",
+            )
         else:
             await store.update(
                 job["id"],
@@ -362,10 +432,7 @@ async def tick(job: dict[str, Any], store: EvalHubRepository) -> bool:
             # Closes Hub's open record; there is no adapter left to stop.
             with suppress(Exception):
                 await client.cancel(execution)
-            await store.repo.update_job(
-                job["id"], status="failed", error=stopped, completed_at=datetime.now(UTC)
-            )
-            await store.update(job["id"], state="cleanup", sync_error="")
+            await _finish(store, job["id"], "failed", stopped)
         return False
     raise ValueError(f"Unknown handoff state: {state}")
 
@@ -373,12 +440,13 @@ async def tick(job: dict[str, Any], store: EvalHubRepository) -> bool:
 async def run_job(job: dict[str, Any]) -> None:
     from amortized.db.connection import get_pool
 
+    key = f"evalhub:{job['id']}"
     while True:
         try:
+            # Held for one tick only, so a long evaluation doesn't pin a pooled connection.
+            # A session lock, not a transaction lock: the `submitting` write must commit
+            # before the POST. A connection loss releases it; durable state decides the rest.
             async with get_pool().acquire() as conn:
-                # A session lock prevents concurrent POST. A connection loss
-                # releases it; reconnect and inspect durable state, never resend.
-                key = f"evalhub:{job['id']}"
                 locked = await conn.fetchval(
                     "SELECT pg_try_advisory_lock(hashtextextended($1, 0))", key
                 )
@@ -386,18 +454,15 @@ async def run_job(job: dict[str, Any]) -> None:
                     return
                 store = EvalHubRepository(Repository(conn))
                 try:
-                    while True:
-                        try:
-                            if await tick(job, store):
-                                return
-                        except Exception:
-                            logger.warning(
-                                "Hub synchronization deferred for job %s", job["id"], exc_info=True
-                            )
-                            await store.update(
-                                job["id"], sync_error="Execution synchronization pending; retrying"
-                            )
-                        await asyncio.sleep(config_mod.settings.evalhub_poll_interval)
+                    if await tick(job, store):
+                        return
+                except Exception:
+                    logger.warning(
+                        "Hub synchronization deferred for job %s", job["id"], exc_info=True
+                    )
+                    await store.update(
+                        job["id"], sync_error="Execution synchronization pending; retrying"
+                    )
                 finally:
                     with suppress(Exception):
                         await conn.execute(
@@ -406,4 +471,4 @@ async def run_job(job: dict[str, Any]) -> None:
         except Exception:
             # Keep this task (and its resource admission) alive during DB loss.
             logger.warning("Reconnecting Hub intent storage for %s", job["id"], exc_info=True)
-            await asyncio.sleep(config_mod.settings.evalhub_poll_interval)
+        await asyncio.sleep(config_mod.settings.evalhub_poll_interval)

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -18,6 +19,14 @@ from amortized.integrations.evalhub.results import present
 from amortized.models import EvalJobRequest
 
 REAL_VALIDATE = client.validate_definition
+
+
+@pytest.fixture(autouse=True)
+def _hub_connected(monkeypatch):
+    """Hub jobs are followed only while the server has a Hub URL (MemoryStore's hub)."""
+    import amortized.config as config_mod
+
+    monkeypatch.setattr(config_mod.settings, "evalhub_url", "http://hub")
 
 
 def snapshot(state="pending", remote_id="hub-123", metrics=None):
@@ -43,6 +52,13 @@ def snapshot(state="pending", remote_id="hub-123", metrics=None):
     return result
 
 
+REQUEST = {
+    "name": "amortized-product-123",
+    "model": {"url": "http://model/v1", "name": "test"},
+    "benchmarks": [{"id": "task", "provider_id": "amortized"}],
+}
+
+
 class MemoryStore:
     def __init__(self, state="ready", cancel=False):
         self.execution = {
@@ -51,11 +67,12 @@ class MemoryStore:
             "hub_url": "http://hub",
             "correlation": "amortized-product-123",
             "state": state,
-            "request": {},
+            "request": copy.deepcopy(REQUEST),
             "cancel_requested": cancel,
             "remote_id": "hub-123" if state == "accepted" else None,
             "snapshot": {},
             "sync_error": "",
+            "observed_at": None,
             "inputs": {},
         }
         self.job = {
@@ -66,12 +83,21 @@ class MemoryStore:
             "config": {},
         }
         self.conn = MagicMock()
-        self.conn.transaction.return_value.__aenter__ = AsyncMock()
-        self.conn.transaction.return_value.__aexit__ = AsyncMock()
+        self.conn.transaction = self.transaction
         self.repo = MagicMock()
         self.repo.update_job = AsyncMock(side_effect=self.update_job)
         self.repo.get_job = AsyncMock(side_effect=lambda _: self.job.copy())
-        self.repo.scrub_eval_credentials = AsyncMock()
+
+    @asynccontextmanager
+    async def transaction(self):
+        saved = copy.deepcopy((self.execution, self.job))
+        try:
+            yield
+        except BaseException:
+            for live, kept in zip((self.execution, self.job), saved, strict=True):
+                live.clear()
+                live.update(kept)
+            raise
 
     async def get(self, _):
         return copy.deepcopy(self.execution)
@@ -118,7 +144,7 @@ async def test_restart_during_post_reconciles_without_submission(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ambiguous_matches_are_never_adopted(monkeypatch):
-    store = MemoryStore("uncertain", cancel=True)
+    store = MemoryStore("uncertain")
     monkeypatch.setattr(
         client, "reconcile", AsyncMock(return_value=[snapshot(), snapshot(remote_id="other")])
     )
@@ -159,6 +185,182 @@ async def test_cancel_after_uncertain_submit_recovers_exact_remote_job(monkeypat
     monkeypatch.setattr(client, "observe", AsyncMock(return_value=snapshot("cancelled")))
     await lifecycle.tick(store.job, store)
     assert store.job["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_unsent_submit_can_be_cancelled(monkeypatch):
+    store = MemoryStore("ready")
+    monkeypatch.setattr(client, "submit", AsyncMock(side_effect=httpx.ConnectError("refused")))
+    monkeypatch.setattr(client, "reconcile", AsyncMock(return_value=[]))
+    cleanup = AsyncMock()
+    monkeypatch.setattr(lifecycle.preparation, "cleanup", cleanup)
+    await lifecycle.tick(store.job, store)
+    store.execution["cancel_requested"] = True
+    for _ in range(50):
+        await lifecycle.tick(store.job, store)
+    assert store.job["status"] == "cancelled"
+    cleanup.assert_awaited()
+
+
+@pytest.mark.parametrize("error", [httpx.ConnectError("refused"), httpx.ConnectTimeout("no route")])
+async def test_a_submission_that_never_connected_is_sent_again(monkeypatch, error):
+    store = MemoryStore()
+    submit = AsyncMock(side_effect=[error, snapshot("running")])
+    reconcile = AsyncMock()
+    monkeypatch.setattr(client, "submit", submit)
+    monkeypatch.setattr(client, "reconcile", reconcile)
+    await lifecycle.tick(store.job, store)
+    assert store.execution["state"] == "ready"
+    assert store.execution["observed_at"] is None
+    assert "unreachable" in store.execution["sync_error"]
+    await lifecycle.tick(store.job, store)
+    assert submit.await_count == 2
+    assert store.execution["state"] == "accepted"
+    assert store.job["status"] == "running"
+    reconcile.assert_not_awaited()
+
+
+@pytest.mark.parametrize("problem", ["invalid request", "insecure origin"])
+async def test_a_submission_that_cannot_be_sent_fails_without_posting(monkeypatch, problem):
+    import amortized.config as config_mod
+
+    store = MemoryStore()
+    if problem == "invalid request":
+        store.execution["request"] = {"name": "no model or benchmarks"}
+    else:
+        monkeypatch.setattr(config_mod.settings, "evalhub_token_file", "/var/run/hub/token")
+    submit = AsyncMock()
+    monkeypatch.setattr(client, "submit", submit)
+    await lifecycle.tick(store.job, store)
+    assert store.execution["state"] == "cleanup"
+    assert store.job["status"] == "failed"
+    assert store.job["error"].startswith("Cannot submit to Eval Hub")
+    submit.assert_not_awaited()
+
+
+async def test_an_unreadable_submit_response_is_reconciled_rather_than_failed(monkeypatch):
+    store = MemoryStore()
+    monkeypatch.setattr(
+        client, "submit", AsyncMock(side_effect=json.JSONDecodeError("not JSON", "", 0))
+    )
+    await lifecycle.tick(store.job, store)
+    assert store.execution["state"] == "uncertain"
+    assert store.job["status"] == "provisioning"
+
+
+async def test_an_unconfirmed_submission_fails_at_its_deadline_and_cancels_a_late_hub_job(
+    monkeypatch,
+):
+    import amortized.config as config_mod
+
+    monkeypatch.setattr(config_mod.settings, "evalhub_uncertain_timeout", 60.0)
+    store = MemoryStore("uncertain")
+    store.execution["observed_at"] = datetime.now(UTC) - timedelta(seconds=30)
+    reconcile = AsyncMock(return_value=[])
+    cancel, cleanup = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(client, "reconcile", reconcile)
+    monkeypatch.setattr(client, "cancel", cancel)
+    monkeypatch.setattr(lifecycle.preparation, "cleanup", cleanup)
+    await lifecycle.tick(store.job, store)
+    assert store.execution["state"] == "uncertain"
+    store.execution["observed_at"] = datetime.now(UTC) - timedelta(seconds=61)
+    reconcile.side_effect = httpx.ConnectError("offline")
+    await lifecycle.tick(store.job, store)
+    assert store.job["status"] == "failed"
+    assert store.job["error"] == "Eval Hub did not confirm the submission within 60 seconds"
+    assert store.execution["state"] == "cleanup"
+    reconcile.side_effect = None
+    reconcile.return_value = [snapshot("running", remote_id="late")]
+    assert await lifecycle.tick(store.job, store)
+    assert cancel.await_args.args[0]["remote_id"] == "late"
+    cleanup.assert_awaited_once()
+    assert store.execution["state"] == "finished"
+
+
+@pytest.mark.parametrize("hub", ["no match", "unreachable", "ambiguous"])
+async def test_cancel_while_the_submission_is_unconfirmed_ends_the_job(monkeypatch, hub):
+    store = MemoryStore("uncertain", cancel=True)
+    store.execution["observed_at"] = datetime.now(UTC)
+    found = {"no match": [], "ambiguous": [snapshot(), snapshot(remote_id="other")]}
+    reconcile = (
+        AsyncMock(side_effect=httpx.ConnectError("offline"))
+        if hub == "unreachable"
+        else AsyncMock(return_value=found[hub])
+    )
+    cancel, cleanup = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(client, "reconcile", reconcile)
+    monkeypatch.setattr(client, "cancel", cancel)
+    monkeypatch.setattr(lifecycle.preparation, "cleanup", cleanup)
+    await lifecycle.tick(store.job, store)
+    assert store.job["status"] == "cancelled"
+    assert store.execution["state"] == "cleanup"
+    assert store.execution["remote_id"] is None
+    assert await lifecycle.tick(store.job, store)
+    cleanup.assert_awaited_once()
+    cancelled = [call.args[0]["remote_id"] for call in cancel.await_args_list]
+    assert cancelled == (["hub-123", "other"] if hub == "ambiguous" else [])
+
+
+TERMINAL_BRANCHES = {
+    # branch: (state, cancel, execution fields, (state, status) a failed write leaves)
+    "preparing cancelled": ("preparing", True, {}, ("preparing", "provisioning")),
+    "preparing failed": ("preparing", False, {}, ("preparing", "provisioning")),
+    "ready cancelled": ("ready", True, {}, ("ready", "provisioning")),
+    "ready unsendable": ("ready", False, {"request": {}}, ("ready", "provisioning")),
+    "ready rejected": ("ready", False, {}, ("submitting", "provisioning")),
+    "uncertain cancelled": ("uncertain", True, {}, ("uncertain", "provisioning")),
+    "uncertain expired": (
+        "uncertain",
+        False,
+        {"observed_at": "2026-11-03T12:00:00Z"},
+        ("uncertain", "provisioning"),
+    ),
+    "adapter stopped": ("accepted", False, {}, ("accepted", "running")),
+}
+
+
+@pytest.mark.parametrize("failing", ["job", "execution"])
+@pytest.mark.parametrize("branch", TERMINAL_BRANCHES)
+async def test_a_verdict_commits_together_with_its_cleanup_or_not_at_all(
+    monkeypatch, branch, failing
+):
+    from amortized.jobs.base import JobBuildError
+
+    state, cancel, fields, left = TERMINAL_BRANCHES[branch]
+    rejected = httpx.Response(422, request=httpx.Request("POST", "http://hub"))
+    monkeypatch.setattr(
+        client,
+        "submit",
+        AsyncMock(
+            side_effect=httpx.HTTPStatusError("x", request=rejected.request, response=rejected)
+        ),
+    )
+    monkeypatch.setattr(client, "reconcile", AsyncMock(return_value=[]))
+    monkeypatch.setattr(client, "observe", AsyncMock(return_value=snapshot("running")))
+    monkeypatch.setattr(client, "cancel", AsyncMock())
+    monkeypatch.setattr(lifecycle, "adapter_stopped", AsyncMock(return_value="adapter gone"))
+    monkeypatch.setattr(
+        lifecycle.preparation, "prepare", AsyncMock(side_effect=JobBuildError("bad input"))
+    )
+    store = MemoryStore(state, cancel=cancel)
+    store.execution.update(fields)
+    write_execution, write_job = store.update, store.update_job
+
+    async def update(job_id, **fields):
+        if failing == "execution" and fields.get("state") == "cleanup":
+            raise ConnectionError("database connection lost")
+        await write_execution(job_id, **fields)
+
+    async def update_job(job_id, **fields):
+        if failing == "job" and "completed_at" in fields:
+            raise ConnectionError("database connection lost")
+        return await write_job(job_id, **fields)
+
+    store.update = update
+    store.repo.update_job = AsyncMock(side_effect=update_job)
+    with pytest.raises(ConnectionError):
+        await lifecycle.tick(store.job, store)
+    assert (store.execution["state"], store.job["status"]) == left
 
 
 @pytest.mark.asyncio
@@ -820,13 +1022,133 @@ async def test_server_limits_say_the_request_cannot_fix_them(monkeypatch, overri
     assert reason in error and SERVER_LIMIT in error
 
 
-async def test_hub_refuses_a_classifier_head_that_needs_a_gpu(monkeypatch):
+@pytest.mark.parametrize("url", ["", "http://hub"], ids=["no url", "url"])
+@pytest.mark.parametrize("accept", [True, False], ids=["accepting", "not accepting"])
+@pytest.mark.parametrize("gpu", [False, True], ids=["cpu", "eval_on_gpu"])
+def test_one_rule_decides_where_a_new_eval_runs(monkeypatch, url, accept, gpu):
+    import amortized.config as config_mod
+    from amortized.integrations.evalhub import accepts_new_jobs, runs_on_hub
+
+    settings = config_mod.Settings(evalhub_url=url, evalhub_accept_new_jobs=accept)
+    monkeypatch.setattr(config_mod, "settings", settings)
+    assert accepts_new_jobs() is (bool(url) and accept)
+    config = {"eval_mode": "classification", "eval_on_gpu": True} if gpu else {}
+    assert runs_on_hub(config) is (bool(url) and accept and not gpu)
+
+
+def test_helm_renders_the_new_jobs_flag_as_a_quoted_bool(monkeypatch):
     import amortized.config as config_mod
 
+    monkeypatch.setenv("AMORTIZED_EVALHUB_ACCEPT_NEW_JOBS", "false")
+    assert config_mod.Settings().evalhub_accept_new_jobs is False
+
+
+def _create_repo():
+    repo = MagicMock()
+    repo.create_job = AsyncMock(side_effect=lambda **row: row)
+    repo.conn.execute = AsyncMock()
+    return repo
+
+
+@pytest.mark.parametrize(
+    ("accept", "extra", "owner"),
+    [
+        (True, {}, "evalhub"),
+        (True, {"eval_mode": "classification", "eval_on_gpu": True}, "native"),
+        (False, {}, "native"),
+    ],
+    ids=["task eval", "use_peft head", "new jobs off"],
+)
+async def test_create_routes_a_new_eval_by_the_same_rule(monkeypatch, accept, extra, owner):
+    import amortized.config as config_mod
+    from amortized.core import jobs as core_jobs
+    from amortized.models import JobType
+
+    settings = config_mod.Settings(**HUB_SETTINGS, evalhub_accept_new_jobs=accept)
+    monkeypatch.setattr(config_mod, "settings", settings)
+    repo = _create_repo()
+    config = {"training_job_id": "train-1", "eval_data_run_id": "a" * 32, **extra}
+    row = await core_jobs.create_job(repo, job_type=JobType.eval, config=config)
+    assert row["execution_owner"] == owner
+    # Only a Hub-owned job gets a Hub execution record.
+    assert repo.conn.execute.await_count == (1 if owner == "evalhub" else 0)
+
+
+async def test_a_use_peft_head_is_validated_estimated_and_created_as_a_native_gpu_eval(
+    monkeypatch,
+):
+    import amortized.config as config_mod
+    from amortized.api import jobs as jobs_api
+    from amortized.core import jobs as core_jobs
+    from amortized.models import JobType
+
     monkeypatch.setattr(config_mod, "settings", config_mod.Settings(**HUB_SETTINGS))
-    config = {**TASK, "eval_mode": "classification", "eval_on_gpu": True}
-    [error] = await client.validate_definition(config)
-    assert "use_peft" in error and "CPU only" in error
+    parent = {"type": "training", "config": {"algorithm": "classifier_sft", "use_peft": True}}
+    monkeypatch.setattr(
+        jobs_api, "Repository", lambda _db: MagicMock(get_job=AsyncMock(return_value=parent))
+    )
+    monkeypatch.setattr(client, "client", MagicMock(side_effect=AssertionError("Hub was read")))
+    config = {"training_job_id": "train-1", "eval_data_run_id": "a" * 32}
+    assert await jobs_api._apply_classification_eval_mode(config, db=None) == []
+    assert config["eval_on_gpu"] is True
+    assert await client.validate_definition(config) == []
+    assert core_jobs.estimate_gpu_demand({"type": "eval", "config": config}) == 1
+    assert core_jobs.gpu_budget_error(JobType.eval, config) is None
+    row = await core_jobs.create_job(_create_repo(), job_type=JobType.eval, config=config)
+    assert row["execution_owner"] == "native"
+
+    # The stamp is the server's: a client sending it can't move an eval off Hub.
+    generative = {**TASK, "eval_on_gpu": True}
+    assert await jobs_api._apply_classification_eval_mode(generative, db=None) == []
+    assert "eval_on_gpu" not in generative
+
+
+@pytest.mark.parametrize("cancel", [False, True], ids=["running", "cancel requested"])
+@pytest.mark.parametrize("state", ["preparing", "ready", "uncertain", "accepted"])
+async def test_a_hub_job_left_without_a_hub_url_ends_and_frees_what_it_holds(
+    monkeypatch, state, cancel
+):
+    import amortized.config as config_mod
+
+    monkeypatch.setattr(config_mod.settings, "evalhub_url", "")
+    store = MemoryStore(state)
+    # A submission was attempted, so a connected cleanup would reconcile with Hub.
+    store.execution["observed_at"] = datetime.now(UTC) if state != "preparing" else None
+    hub = AsyncMock(side_effect=AssertionError("Eval Hub was called"))
+    for name in ("submit", "observe", "cancel", "reconcile"):
+        monkeypatch.setattr(client, name, hub)
+    monkeypatch.setattr(client, "client", MagicMock(side_effect=AssertionError("Hub client")))
+    monkeypatch.setattr(lifecycle.preparation, "prepare", AsyncMock(side_effect=AssertionError))
+    cleanup = AsyncMock()
+    monkeypatch.setattr(lifecycle.preparation, "cleanup", cleanup)
+    if cancel:
+        monkeypatch.setattr(lifecycle, "EvalHubRepository", lambda _repo: store)
+        await lifecycle.request_cancel(store.repo, store.job)
+        assert store.execution["cancel_requested"]
+    assert not await lifecycle.tick(store.job, store)
+    if cancel and state in {"preparing", "ready"}:
+        assert store.job["status"] == "cancelled"  # nothing reached Hub
+    else:
+        assert store.job["status"] == "failed"
+        assert store.job["error"].startswith("Eval Hub is no longer configured on this server")
+    assert store.execution["state"] == "cleanup"
+    assert await lifecycle.tick(store.job, store)
+    cleanup.assert_awaited_once()
+    assert store.execution["state"] == "finished"
+    hub.assert_not_awaited()
+
+
+async def test_hub_taking_no_new_jobs_still_follows_its_jobs_to_the_end(monkeypatch):
+    import amortized.config as config_mod
+
+    monkeypatch.setattr(config_mod.settings, "evalhub_accept_new_jobs", False)
+    store = MemoryStore("accepted", cancel=True)
+    cancel = AsyncMock()
+    monkeypatch.setattr(client, "cancel", cancel)
+    monkeypatch.setattr(client, "observe", AsyncMock(return_value=snapshot("cancelled")))
+    await lifecycle.tick(store.job, store)
+    cancel.assert_awaited_once()
+    assert store.job["status"] == "cancelled"
 
 
 async def test_tuned_classifier_scores_with_its_training_settings():
@@ -928,7 +1250,7 @@ async def test_comparisons_use_content_and_recipe_not_job_prefixes(monkeypatch):
         "inputs": {
             "dataset_identity": "sha256:dataset",
             "dataset_run_id": "run-a",
-            "catalog": {"runtime": {"image": "adapter@sha256:one"}},
+            "catalog": {"runtime": {"k8s": {"image": "adapter@sha256:one"}}},
         },
     }
     executions = {"a": copy.deepcopy(execution), "b": copy.deepcopy(execution)}
@@ -945,7 +1267,7 @@ async def test_comparisons_use_content_and_recipe_not_job_prefixes(monkeypatch):
     assert len(groups) == 1
     assert len(groups[0]["evals"]) == 2
     assert groups[0]["dataset"]["run_id"] == "run-a"
-    executions["b"]["inputs"]["catalog"]["runtime"]["image"] = "adapter@sha256:two"
+    executions["b"]["inputs"]["catalog"]["runtime"]["k8s"]["image"] = "adapter@sha256:two"
     assert len(await results.comparison_groups(MagicMock(), [job, other])) == 2
 
 
@@ -1242,6 +1564,48 @@ async def test_database_disconnect_reconnects_without_ending_the_admitted_task(m
     await lifecycle.run_job(MemoryStore().job)
     assert attempts == 2
     lifecycle.tick.assert_awaited_once()
+
+
+def lock_pool(monkeypatch, locked=True):
+    import amortized.db.connection as db_mod
+
+    connection = MagicMock()
+    connection.fetchval = AsyncMock(return_value=locked)
+    connection.execute = AsyncMock()
+    connection.held = 0
+
+    @asynccontextmanager
+    async def acquire():
+        connection.held += 1
+        try:
+            yield connection
+        finally:
+            connection.held -= 1
+
+    monkeypatch.setattr(db_mod, "get_pool", lambda: MagicMock(acquire=acquire))
+    return connection
+
+
+async def test_a_hub_job_holds_a_database_connection_only_while_it_ticks(monkeypatch):
+    connection = lock_pool(monkeypatch)
+
+    async def sleep(_):
+        assert connection.held == 0
+        assert "pg_advisory_unlock(" in connection.execute.await_args.args[0]
+
+    monkeypatch.setattr(lifecycle, "tick", AsyncMock(side_effect=[False, False, True]))
+    monkeypatch.setattr(lifecycle.asyncio, "sleep", AsyncMock(side_effect=sleep))
+    await lifecycle.run_job(MemoryStore().job)
+    assert lifecycle.asyncio.sleep.await_count == 2
+    assert connection.fetchval.await_count == 3
+    assert "pg_try_advisory_lock(" in connection.fetchval.await_args.args[0]
+
+
+async def test_a_hub_job_locked_by_another_worker_is_left_to_it(monkeypatch):
+    lock_pool(monkeypatch, locked=False)
+    monkeypatch.setattr(lifecycle, "tick", AsyncMock())
+    await lifecycle.run_job(MemoryStore().job)
+    lifecycle.tick.assert_not_awaited()
 
 
 def test_adapter_main_persists_exactly_one_primary_run_then_reports_results(monkeypatch):

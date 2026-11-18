@@ -57,8 +57,6 @@ _PROFILE_NEEDS = {
 # Categories spelled differently across Eval Hub providers. Used only for narrowing;
 # the catalog itself is never rewritten.
 KIND_ALIASES = {"coding": "code", "cybersecurity": "security"}
-# Recipe keys that decide compatibility but not what a score means.
-_CONTEXT_KEYS = ("model_serving", "declared_capabilities")
 _SETTING_HELP = {
     "num_few_shot": "Worked examples placed in front of each question",
     "max_samples": "Number of questions to evaluate (unset = all)",
@@ -187,6 +185,13 @@ def image_digest(image: str) -> str:
     return image.split("@", 1)[1] if "@sha256:" in image else ""
 
 
+def runtime_image(provider: dict[str, Any]) -> str:
+    """The adapter image in Hub's provider record."""
+    runtime = (provider.get("runtime") or {}).get("k8s") or {}
+    # Hub 1.0.3 serializes the Go field as "Image"; provider YAML uses "image".
+    return str(runtime.get("Image") or runtime.get("image") or "")
+
+
 def load_compat(provider_id: str) -> tuple[dict[str, Any] | None, str]:
     directory = config_mod.settings.evalhub_compat_dir
     if not directory:
@@ -216,9 +221,7 @@ async def load(
     entries = []
     for provider_id in provider_ids or config_mod.settings.evalhub_providers:
         data = (await sdk._request_get(f"/evaluations/providers/{provider_id}")).json()
-        runtime = (data.get("runtime") or {}).get("k8s") or {}
-        # Hub 1.0.3 serializes the Go field as "Image"; provider YAML uses "image".
-        image = str(runtime.get("Image") or runtime.get("image") or "")
+        image = runtime_image(data)
         compat: dict[str, Any] | None
         if described is not None and provider_id in described:
             compat, problem = described[provider_id], ""
@@ -755,7 +758,23 @@ def resolve_recipe(
 
 
 def fingerprint(recipe: dict[str, Any]) -> str:
-    """Hash of what decides a score; serving context is recorded but not hashed."""
-    scored = {k: v for k, v in recipe.items() if k not in _CONTEXT_KEYS}
+    """Hash of what decides a score: the entry, the adapter build, its settings, the
+    questions and which metric is the score.
+
+    The recipe also records catalog text, conformance evidence (date, Hub job) and how the
+    model was served; none is hashed, so a conformance re-run or a catalog edit neither
+    voids an open card nor splits a comparison group.
+    """
+    compat = recipe.get("compatibility") or {}
+    scored = {
+        "version": recipe.get("version"),
+        "provider_id": recipe.get("provider_id"),
+        "benchmark_id": recipe.get("benchmark_id"),
+        "adapter_digest": recipe.get("adapter_digest"),
+        "parameters": recipe.get("parameters"),
+        "datasets": recipe.get("datasets"),
+        "tasks": compat.get("tasks"),
+        "score": score(compat),
+    }
     payload = json.dumps(scored, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()[:12]

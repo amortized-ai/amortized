@@ -78,6 +78,10 @@ evalhub:
   # that MLflow has no login): Hub saves into the jobsNamespace workspace, and without
   # it validation refuses every Hub evaluation. The bundled MLflow has no workspaces.
   url: ""
+  # false sends new evaluations to the native engine while evaluations already on Hub are
+  # still followed to completion. To turn Hub off, set this first, wait until no Hub
+  # evaluation is running, then clear url (docs/evalhub.md).
+  acceptNewJobs: true
   tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
   caConfigMap: ""
   caKey: service-ca.crt
@@ -270,6 +274,7 @@ mlflow:
 # the app's S3 is unused (artifacts flow through MLflow), so these are OPTIONAL there.
 s3:
   bucket: amortized
+  region: us-east-1
   endpoint: ""      # e.g. https://s3.us-east-1.amazonaws.com
   accessKey: ""
   secretKey: ""

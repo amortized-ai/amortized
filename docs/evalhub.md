@@ -7,6 +7,11 @@ Python client SDK to submit it. The Hub Go service launches the evaluator,
 owns its outcome, and receives its authoritative results. There is no evaluator
 bridge pod and no user-facing engine selector.
 
+With Hub on, every new evaluation runs through Hub except a classifier head trained
+with `use_peft`: it needs a GPU and Hub's task adapter runs on CPU only, so it
+evaluates natively on a GPU. With `evalhub.acceptNewJobs: false` or no `evalhub.url`,
+new evaluations run natively and benchmarks are not offered.
+
 ## Request and execution flow
 
 ```mermaid
@@ -31,13 +36,17 @@ compatibility, warning, prompt-reference, or GPU-budget checks. Referenced train
 jobs must be succeeded even when the benchmark supplies its own dataset.
 
 The worker uses a database advisory lock per job. Submission state is committed
-before POST, with SDK retries disabled. If the response is lost or a worker dies,
-it lists Hub jobs by the exact Amortized correlation name and tag, with pagination
-and tenant matching. A single exact match is adopted. Zero matches leave the
-outcome uncertain; multiple matches require operator reconciliation. Neither case
-automatically resubmits. This chooses an explicit unresolved handoff over a second
-paid evaluation. Resolve an uncertain intent only after checking Hub and its
-persisted store; do not reset its state to `ready` based on an empty list.
+before POST, with SDK retries disabled. A connect error or connect timeout sent
+nothing, so the job returns to `ready` and is submitted again; a request that
+cannot be built or sent (validation, insecure saved origin) fails the job. If the
+response is lost or a worker dies, it lists Hub jobs by the exact Amortized
+correlation name and tag, with pagination and tenant matching. A single exact
+match is adopted. Zero or several matches leave the outcome uncertain and never
+resubmit, rather than risk a second paid evaluation. Cancel then ends the job as
+cancelled, even with no match, several matches or Hub unreachable. After
+`AMORTIZED_EVALHUB_UNCERTAIN_TIMEOUT` (default 900 s) the job fails ("Eval Hub did
+not confirm the submission within N seconds"). Either way, cleanup reconciles once
+more and cancels any Hub job that turned up under the correlation name.
 
 Cancel persists intent first, forwards it when a remote ID is known, and retries
 while synchronizing. Studio shows cancellation pending until Hub reports its
@@ -168,12 +177,19 @@ fingerprint for the card. `create_eval_job` resolves the recipe again and refuse
 card whose fingerprint changed (422, re-validate); otherwise it stores the recipe,
 ignoring any recipe a client sent. Before submitting to Hub, preparation builds the
 benchmark from that stored recipe and stops if the registered adapter image is no
-longer the approved digest. The fingerprint leaves out how the model was served, so
-a base endpoint and a tuned model share one comparison group.
+longer the approved digest. The fingerprint hashes only what decides a score: the
+recipe version, provider and benchmark ids, adapter digest, settings, datasets (with
+revisions), tasks, and the score metric and direction. Conformance evidence (date,
+Hub job, model), catalog text, the catalog commit and how the model was served are
+recorded but not hashed, so a conformance re-run or a catalog edit does not void an
+open card, and a base endpoint and a tuned model share one comparison group. Most
+benchmark datasets do not pin a Hugging Face revision (lm-eval 1 of 141, LightEval 6
+of 36; the recipe records `not pinned`), so the same fingerprint can run on changed
+upstream data.
 
 `GET /api/v1/evaluations/providers` (`list_evaluation_providers` in MCP) reports
-whether Hub is enabled, task scoring and benchmark provider counts; it no longer
-lists benchmarks.
+whether Hub is enabled, task scoring and benchmark provider counts (503 when Hub or
+a configured provider cannot be read); it no longer lists benchmarks.
 
 ## Rebuilding the benchmark contract
 
@@ -471,16 +487,29 @@ Keep the URL disabled until this passes in the target environment. No cluster
 deployment or live paid evaluation is performed by the unit tests.
 
 Historical jobs retain `execution_owner=native`; new jobs select their owner at
-creation. Unsetting the URL stops new Hub requests but does not rewrite accepted
-jobs or abandon their recovery: observation and cancellation use their saved Hub
-URL/tenant. Preserve the migration's outbox table and run this version's worker
-until in-flight Hub executions and cleanup finish before rolling the application
-back to a version that does not understand those mappings.
+creation. To turn Hub off, first set `evalhub.acceptNewJobs: false`. New evaluations
+then run natively and `list_evaluation_providers` reports `enabled: false`, so Morty
+offers no benchmarks, while evaluations already on Hub are still observed and
+cancelled to completion. Wait until no Hub evaluation is running
+(`SELECT count(*) FROM evalhub_executions WHERE state <> 'finished'` returns 0),
+then clear `evalhub.url`. Clearing it drops the `amortized-evalhub-user`
+Role/RoleBinding, the Hub CA mount, the tenant label and every `AMORTIZED_EVALHUB_*`
+setting, and switches `AMORTIZED_MLFLOW_WORKSPACE`, so Amortized can no longer reach
+Hub. A Hub evaluation still open at that point fails ("Eval Hub is no longer
+configured on this server…") instead of retrying forever: Amortized makes no Hub
+call, stops the model server it started, deletes the credential Secret and staged
+inputs, and does not cancel anything left on Hub. Likewise, preserve the migration's
+outbox table and run this version's worker until in-flight Hub executions and
+cleanup finish before rolling the application back to a version that does not
+understand those mappings.
 
 Hub metrics/outcomes and MLflow/OCI artifacts are authoritative execution outputs.
 Amortized's timestamped snapshot is a disposable UI projection; restoring it must
 not launch another evaluation. Task comparison groups include dataset content
-hash, rubric/mapping/settings and provider catalog/image identity, while
-excluding per-job object prefixes and model checkpoint paths. Benchmark groups key on
-the recipe fingerprint alone. Different recipes
-stay separate; raw units and direction remain attached to the metric.
+hash, rubric/mapping/settings, the provider id, the adapter digest and the selected
+benchmark's id, few-shot count and primary score; they exclude timestamps, resource
+limits, descriptions, per-job object prefixes and model checkpoint paths. An adapter
+image change still splits a group. Benchmark groups key on the recipe fingerprint
+alone, re-hashed from each job's stored approved recipe, so jobs approved before and
+after a fingerprint change group together. Different recipes stay separate; raw units
+and direction remain attached to the metric.

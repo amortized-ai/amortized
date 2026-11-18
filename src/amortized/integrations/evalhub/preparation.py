@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
@@ -21,6 +22,18 @@ from amortized.integrations.evalhub import client
 from amortized.integrations.evalhub.catalog import recipe_score
 from amortized.jobs.base import JobBuildError
 from amortized.jobs.eval import _ASSETS_DIR, _build_embedded_serving, _endpoint_spec
+
+logger = logging.getLogger(__name__)
+
+
+def _s3() -> Any:
+    import boto3
+
+    return boto3.client("s3", endpoint_url=os.getenv("MLFLOW_S3_ENDPOINT_URL") or None)
+
+
+def _staging_prefix(job_id: str) -> str:
+    return f"amortized/evaluations/{job_id}/"
 
 
 async def _artifact_paths(mlflow: MLflowClient, run_id: str, root: str) -> list[str]:
@@ -70,9 +83,7 @@ async def stage_inputs(job: dict[str, Any], repo: Any) -> tuple[dict[str, Any], 
         sources.extend((run_id, p, p) for p in models)
         model_path = "/test_data/model"
 
-    import boto3
-
-    s3 = boto3.client("s3", endpoint_url=os.getenv("MLFLOW_S3_ENDPOINT_URL") or None)
+    s3 = _s3()
     manifest = []
     # Stream one artifact at a time to a temporary file. In particular, never
     # buffer an embedding checkpoint's weights in the API process's RAM.
@@ -111,7 +122,7 @@ async def stage_inputs(job: dict[str, Any], repo: Any) -> tuple[dict[str, Any], 
                 sort_keys=True,
             ).encode()
         ).hexdigest()
-        key = f"amortized/evaluations/{job['id']}/inputs/{identity}/"
+        key = f"{_staging_prefix(job['id'])}inputs/{identity}/"
         for index, entry in enumerate(manifest):
             await asyncio.to_thread(
                 s3.upload_file, str(Path(directory) / str(index)), bucket, key + entry["path"]
@@ -291,16 +302,14 @@ async def _hf_tokenizer(config: dict[str, Any], repo: Any) -> str:
 
 def _approved_recipe(definition: dict[str, Any], provider: dict[str, Any]) -> dict[str, Any]:
     """The recipe stored at Confirm, if the registered adapter is still the approved one."""
-    from amortized.integrations.evalhub.catalog import image_digest
+    from amortized.integrations.evalhub.catalog import image_digest, runtime_image
 
     recipe = definition.get("recipe")
     if not isinstance(recipe, dict) or not recipe.get("adapter_digest"):
         raise JobBuildError(
             "This benchmark job has no approved recipe; validate and confirm it again"
         )
-    runtime = (provider.get("runtime") or {}).get("k8s") or {}
-    # Hub 1.0.3 serializes the image as "Image"; provider YAML uses "image".
-    if image_digest(runtime.get("Image") or runtime.get("image") or "") != recipe["adapter_digest"]:
+    if image_digest(runtime_image(provider)) != recipe["adapter_digest"]:
         raise JobBuildError(
             "The registered benchmark adapter image changed after approval;"
             " validate and confirm the benchmark again"
@@ -438,16 +447,19 @@ async def prepare(
 
 
 async def _classifier_parameters(config: dict[str, Any], repo: Any) -> dict[str, Any]:
-    """Settings a tuned classifier is scored with, from its training job (as in the native
-    eval): a head scores at the length it trained at, and loads a custom architecture the
-    way training did (its code ships with the saved model)."""
-    if config.get("eval_mode") != "classification" or not config.get("training_job_id"):
+    """Settings a classifier is scored with, as in the native eval: the eval's own
+    max_length, else a tuned head's training length; a tuned model loads a custom
+    architecture the way training did (its code ships with the saved model)."""
+    if config.get("eval_mode") != "classification":
         return {}
-    training = await repo.get_job(config["training_job_id"]) or {}
-    trained = training.get("config") or {}
-    if isinstance(trained, str):
-        trained = json.loads(trained)
-    parameters: dict[str, Any] = {"trust_remote_code": bool(trained.get("trust_remote_code"))}
+    parameters: dict[str, Any] = {}
+    trained: dict[str, Any] = {}
+    if config.get("training_job_id"):
+        training = await repo.get_job(config["training_job_id"]) or {}
+        trained = training.get("config") or {}
+        if isinstance(trained, str):
+            trained = json.loads(trained)
+        parameters["trust_remote_code"] = bool(trained.get("trust_remote_code"))
     if max_length := config.get("max_length") or trained.get("max_length"):
         parameters["max_length"] = max_length
     return parameters
@@ -476,3 +488,28 @@ async def cleanup(execution: dict[str, Any]) -> None:
         except ApiException as exc:
             if exc.status != 404:
                 raise
+    # Where the inputs went, which outlives a later settings change (evalhub.url cleared).
+    staged = ((execution.get("inputs") or {}).get("data_ref") or {}).get("s3") or {}
+    bucket = staged.get("bucket") or config_mod.settings.evalhub_staging_bucket
+    if bucket and execution.get("job_id"):
+        prefix = _staging_prefix(execution["job_id"])
+        try:
+            await asyncio.to_thread(_delete_prefix, bucket, prefix)
+        except Exception:
+            # Results live in Hub's snapshot and MLflow, never in the staged copy, so a
+            # leftover copy must not hold the job in cleanup.
+            logger.warning(
+                "Could not delete staged inputs s3://%s/%s", bucket, prefix, exc_info=True
+            )
+
+
+def _delete_prefix(bucket: str, prefix: str) -> None:
+    s3 = _s3()
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        objects = [{"Key": item["Key"]} for item in page.get("Contents") or []]
+        if objects:
+            errors = s3.delete_objects(
+                Bucket=bucket, Delete={"Objects": objects, "Quiet": True}
+            ).get("Errors")
+            if errors:
+                raise OSError(f"{len(errors)} staged inputs were not deleted: {errors[0]}")

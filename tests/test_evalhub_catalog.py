@@ -639,6 +639,33 @@ async def test_fingerprint_ignores_serving_but_not_settings(hub):
     assert catalog.fingerprint(zero_shot) != catalog.fingerprint(endpoint)
 
 
+async def test_fingerprint_survives_a_conformance_rerun_and_catalog_edits(hub):
+    recipe, _ = catalog.resolve_recipe(await entries(hub), ENDPOINT, definition(), {})
+    rerun = copy.deepcopy(recipe)
+    rerun["compatibility"]["verified"].update(date="2026-12-01T00:00:00+00:00", hub_job="next")
+    rerun["catalog_entry"]["description"] += " Edited upstream."
+    rerun["catalog"] = {**rerun["catalog"], "commit": "next"}
+    assert catalog.fingerprint(rerun) == catalog.fingerprint(recipe)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda r: r["datasets"][0].update(hf_revision="0123abc"),
+        lambda r: r["parameters"].update(num_few_shot=0),
+        lambda r: r["compatibility"]["score"].update(metric="other"),
+        lambda r: r["compatibility"].update(tasks=["other"]),
+        lambda r: r.update(adapter_digest="sha256:other"),
+    ],
+    ids=["dataset revision", "few-shot", "score metric", "tasks", "adapter digest"],
+)
+async def test_fingerprint_changes_with_what_decides_a_score(hub, change):
+    recipe, _ = catalog.resolve_recipe(await entries(hub), ENDPOINT, definition(), {})
+    changed = copy.deepcopy(recipe)
+    change(changed)
+    assert catalog.fingerprint(changed) != catalog.fingerprint(recipe)
+
+
 @pytest.mark.parametrize(
     ("benchmark_id", "parameters", "message"),
     [
@@ -749,6 +776,34 @@ async def test_benchmark_comparisons_key_on_the_recipe_fingerprint(monkeypatch):
     assert len(groups) == 1 and len(groups[0]["evals"]) == 2
     changed = job("c", {"training_job_id": "t1"}, "fp2")
     assert len(await results.comparison_groups(MagicMock(), [base, changed])) == 2
+
+
+async def test_benchmark_comparisons_rehash_the_approved_recipe(hub, monkeypatch):
+    from test_evalhub import snapshot
+
+    from amortized.integrations.evalhub import results
+
+    recipe, _ = catalog.resolve_recipe(await entries(hub), ENDPOINT, definition(), {})
+    rerun = copy.deepcopy(recipe)
+    rerun["compatibility"]["verified"]["hub_job"] = "next"
+    # Fingerprints stored under an older formula differ; the approved recipes do not.
+    jobs = [
+        {
+            "id": job_id,
+            "config": {
+                "endpoint": {"base_url": "http://m/v1", "model": job_id},
+                "evaluation": {**definition(), "recipe": r, "recipe_fingerprint": job_id},
+            },
+            "status": "succeeded",
+            "created_at": "now",
+        }
+        for job_id, r in (("a", recipe), ("b", rerun))
+    ]
+    execution = {"snapshot": snapshot("completed", metrics={"gsm8k.extractive_match": 0.5})}
+    store = MagicMock(get=AsyncMock(return_value=execution))
+    monkeypatch.setattr(results, "EvalHubRepository", lambda _: store)
+    [group] = await results.comparison_groups(MagicMock(), jobs)
+    assert len(group["evals"]) == 2
 
 
 # --------------------------------------------------------------------------- #

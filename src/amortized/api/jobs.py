@@ -592,8 +592,8 @@ async def _pin_benchmark(
     current = fingerprint(recipe)
     if approved and submitted != current:
         return None, [
-            "The benchmark setup changed since validation (catalog entry, adapter image,"
-            " compatibility or settings). Re-validate with validate_eval_job and confirm"
+            "The benchmark setup changed since validation (adapter image, datasets, tasks,"
+            " scoring or settings). Re-validate with validate_eval_job and confirm"
             " the new card."
         ]
     definition["parameters"] = recipe["parameters"]
@@ -701,6 +701,9 @@ async def _apply_classification_eval_mode(
     algorithm so users don't hit a confusing dispatch-time failure.
     Mutates ``config`` (may set eval_mode) and returns any errors.
     """
+    # Server-owned: it also decides where the eval runs (runs_on_hub), so a client value
+    # must not move an eval off Hub.
+    config.pop("eval_on_gpu", None)
     training_job_id = str(config.get("training_job_id", "") or "").strip()
     if not training_job_id:
         return []

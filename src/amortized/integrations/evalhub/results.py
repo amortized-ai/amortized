@@ -24,6 +24,23 @@ def primary_metric(execution: dict[str, Any], benchmark_id: str) -> str:
     return ""
 
 
+def _engine(execution: dict[str, Any]) -> dict[str, Any]:
+    """What in Hub's provider record decides a score: the provider, its adapter build and
+    the scoring of the selected benchmark. Not timestamps, resource limits or descriptions."""
+    provider = (execution.get("inputs") or {}).get("catalog") or {}
+    image = catalog.runtime_image(provider)
+    selected = {b.get("id") for b in (execution.get("request") or {}).get("benchmarks") or []}
+    return {
+        "provider_id": (provider.get("resource") or {}).get("id"),
+        "adapter": catalog.image_digest(image) or image,
+        "benchmarks": [
+            {key: benchmark.get(key) for key in ("id", "num_few_shot", "primary_score")}
+            for benchmark in provider.get("benchmarks") or []
+            if benchmark.get("id") in selected
+        ],
+    }
+
+
 def _recipe(job: dict[str, Any] | None) -> dict[str, Any] | None:
     config = (job or {}).get("config") or {}
     if isinstance(config, str):
@@ -173,10 +190,16 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
         definition = config.get("evaluation") or {}
         # The recipe fingerprint covers everything that decides a benchmark score
         # (entry, adapter digest, settings) and leaves out how the model was served,
-        # so a base endpoint and a tuned model share a group.
-        pinned = definition.get("kind") == "benchmark" and definition.get("recipe_fingerprint")
+        # so a base endpoint and a tuned model share a group. Hashing the approved recipe
+        # again keeps jobs approved under an older fingerprint in the same group.
+        recipe = definition.get("recipe")
+        pinned = definition.get("kind") == "benchmark" and (
+            catalog.fingerprint(recipe)
+            if isinstance(recipe, dict)
+            else definition.get("recipe_fingerprint")
+        )
         if pinned:
-            dataset = "benchmark:" + str(definition["recipe_fingerprint"])
+            dataset = "benchmark:" + str(pinned)
         elif definition.get("kind") == "benchmark":
             dataset = "benchmark:" + json.dumps(definition, sort_keys=True)
         else:
@@ -203,7 +226,7 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
         }
         judge = config.get("judge") or {}
         semantics["judge"] = {key: judge.get(key) for key in ("base_url", "model")}
-        semantics["catalog"] = (execution.get("inputs") or {}).get("catalog")
+        semantics["catalog"] = _engine(execution)
         if pinned:
             semantics = {key: None for key in semantics}
         semantics["metric_metadata"] = {

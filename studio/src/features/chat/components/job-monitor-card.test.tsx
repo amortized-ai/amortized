@@ -56,9 +56,24 @@ describe("JobMonitorCard — engine handoff", () => {
     getJob.mockResolvedValue({ ...job("provisioning"), execution_phase: "uncertain", execution_sync_error: "No exact submission match visible yet" })
     const complete = vi.fn()
     render(<JobMonitorCard jobId="engine-job" jobType="EVAL" onComplete={complete} />)
-    await waitFor(() => expect(screen.getByText("Verifying evaluation submission")).toBeInTheDocument())
-    expect(screen.getByText("No exact submission match visible yet")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText("Confirming the submission to Eval Hub…")).toBeInTheDocument())
+    expect(screen.queryByText("No exact submission match visible yet")).not.toBeInTheDocument()
     expect(complete).not.toHaveBeenCalled()
+  })
+
+  it("says a cancelled unconfirmed submission is still being confirmed", async () => {
+    getJob.mockResolvedValue({ ...job("provisioning"), execution_phase: "uncertain", cancel_requested: true })
+    render(<JobMonitorCard jobId="engine-job" jobType="EVAL" />)
+    await waitFor(() =>
+      expect(screen.getByText("Cancellation requested — confirming the submission to Eval Hub…")).toBeInTheDocument(),
+    )
+  })
+
+  it("shows the terminal outcome over a leftover phase or cancellation", async () => {
+    getJob.mockResolvedValue({ ...job("failed"), execution_phase: "uncertain", cancel_requested: true })
+    render(<JobMonitorCard jobId="engine-job" jobType="EVAL" />)
+    await waitFor(() => expect(screen.getByText("Failed")).toBeInTheDocument())
+    expect(screen.queryByText(/Confirming the submission|Cancellation requested/)).not.toBeInTheDocument()
   })
 })
 
