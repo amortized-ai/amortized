@@ -318,6 +318,20 @@ def test_signal_only_reply_is_reprompted_as_empty(router: _Router) -> None:
     assert "EMPTY RESPONSE" in router.system_to(sub)
 
 
+def test_signal_only_reply_keeps_its_step_when_the_retry_does_not_signal(router: _Router) -> None:
+    # The caller records the step from the returned (retry) parts only; without this, the bare
+    # `metrics` signal is lost and the cursor stays on `eval-dataset`.
+    sub = router.add([[_text_part("Which area should the benchmark cover?")]])
+    state = _state(router, sub, "eval-dataset")
+
+    _run(
+        agent._maybe_nudge_subagent_stall(state, "s", _body(), [*_STEP_MARKERS, _signal("metrics")])
+    )
+
+    assert "EMPTY RESPONSE" in router.system_to(sub)
+    assert state.last_signal_step == "metrics"
+
+
 def test_empty_reply_on_a_resume_turn_is_reprompted(router: _Router) -> None:
     sub = router.add([[_text_part("Welcome back — here is where we are.")]])
     state = _state(router, sub, "metrics")

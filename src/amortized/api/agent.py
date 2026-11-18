@@ -1088,8 +1088,9 @@ async def _maybe_nudge_subagent_stall(
     # The cursor is this turn's OWN signal, falling back to the prior step only when it skipped.
     step = obs.signalled_step or state.last_signal_step
 
-    # Empty reply: re-prompt on every turn kind, signalled or not. `latest_parts` is [] only when
-    # the fetch failed (a real reply always carries step markers), which must not re-prompt.
+    # Empty reply: re-prompt on every turn kind past the job_complete return, signalled or not.
+    # `latest_parts` is [] only when the fetch failed (a real reply always carries step markers),
+    # which must not re-prompt.
     if (
         latest_parts
         and not obs.has_text
@@ -1097,6 +1098,10 @@ async def _maybe_nudge_subagent_stall(
         and not obs.hands_off
     ):
         logger.info("Empty-reply nudge: session=%s target=%s", session_id, target)
+        # The caller reads the step only from the parts returned here, so a bare signal_phase
+        # would be lost if the retry doesn't signal again.
+        if obs.signalled_step:
+            state.last_signal_step = obs.signalled_step
         return await _redrive_subagent(state, session_id, body, _EMPTY_REPLY_NUDGE, latest_parts)
 
     # Missing signal: a turn that skipped `signal_phase` (or sent an off-vocab slug,
