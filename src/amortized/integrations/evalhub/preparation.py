@@ -48,18 +48,23 @@ async def _artifact_paths(mlflow: MLflowClient, run_id: str, root: str) -> list[
     return sorted(paths)
 
 
-async def stage_inputs(job: dict[str, Any], repo: Any) -> tuple[dict[str, Any], str, str]:
+async def stage_inputs(
+    job: dict[str, Any], repo: Any, bucket: str
+) -> tuple[dict[str, Any], str, str, str]:
+    """Copy the inputs to `bucket`. Returns the data ref, the model path, the dataset
+    identity and the MLflow run the dataset came from."""
     settings = config_mod.settings
-    bucket = settings.evalhub_staging_bucket
     if not bucket or not settings.mlflow_tracking_uri:
         raise JobBuildError("Hub task evaluation requires staging bucket and MLflow configuration")
     config = job["config"]
+    # As in the native eval: an explicit eval_data_run_id (e.g. a held-out split) is what
+    # gets scored; the parent's output only when there is none.
     data_run = config.get("eval_data_run_id")
-    if job.get("parent_job_id"):
+    if not data_run and job.get("parent_job_id"):
         parent = await repo.get_job(job["parent_job_id"])
         if not parent or parent["status"] != "succeeded":
             raise JobBuildError("Evaluation data producer must still be succeeded")
-        data_run = parent.get("mlflow_run_id") or data_run
+        data_run = parent.get("mlflow_run_id")
     if not data_run:
         raise JobBuildError("No dataset artifact run is available")
     mlflow = MLflowClient(settings.mlflow_tracking_uri)
@@ -136,15 +141,18 @@ async def stage_inputs(job: dict[str, Any], repo: Any) -> tuple[dict[str, Any], 
         {"s3": {"bucket": bucket, "key": key, "secret_ref": settings.evalhub_s3_secret}},
         model_path,
         dataset_identity,
+        str(data_run),
     )
 
 
 async def _credential_secret(
     job: dict[str, Any],
     store: EvalHubRepository,
-    endpoint: dict[str, Any],
+    model: dict[str, str],
     judge: dict[str, Any] | None,
 ) -> str:
+    """`model` is the endpoint as `_endpoint_spec` resolved it, so a provider name has
+    already selected its key."""
     from kubernetes_asyncio.client import ApiException, CoreV1Api, V1ObjectMeta, V1Secret
 
     backend = get_backend("kubernetes")
@@ -158,7 +166,6 @@ async def _credential_secret(
     from amortized.core.model_catalog import inject_enabled_provider_keys
 
     inject_enabled_provider_keys(env)
-    model = _endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
     data = {
         "api-key": env.get(model["api_key_env"], "")
         or os.getenv(model["api_key_env"], "")
@@ -299,26 +306,31 @@ async def prepare(
         inputs["catalog"] = provider.model_dump(mode="json", exclude_none=True)
         await store.update(job["id"], inputs=inputs)
     if "data_ref" not in inputs:
-        data_ref, model_path, identity = await stage_inputs(job, store.repo)
+        # Recorded before the first upload, so cleanup can find a partial copy even if the
+        # setting changes, and a retry writes to the same bucket.
+        if not inputs.get("staging_bucket"):
+            inputs["staging_bucket"] = settings.evalhub_staging_bucket
+            await store.update(job["id"], inputs=inputs)
+        data_ref, model_path, identity, data_run = await stage_inputs(
+            job, store.repo, inputs["staging_bucket"]
+        )
         inputs.update(
             data_ref=data_ref,
             model_path=model_path,
             dataset_identity=identity,
-            dataset_run_id=config.get("eval_data_run_id") or "",
+            dataset_run_id=data_run,
         )
-        if job.get("parent_job_id"):
-            parent = await store.repo.get_job(job["parent_job_id"])
-            inputs["dataset_run_id"] = (parent or {}).get("mlflow_run_id") or ""
         await store.update(job["id"], inputs=inputs)
     data_ref, model_path = inputs["data_ref"], inputs["model_path"]
     if config.get("eval_mode") == "classification":
         endpoint = {"base_url": "http://unused.invalid", "model": model_path}
     elif config.get("endpoint"):
-        resolved = _endpoint_spec(config, "endpoint", "EVAL_MODEL_API_KEY")
-        endpoint = {**config["endpoint"], "base_url": resolved["base_url"]}
+        endpoint = config["endpoint"]
     else:
         endpoint = await prepare_serving(job, store, execution)
-    secret = await _credential_secret(job, store, endpoint, config.get("judge"))
+    # Resolved once: a provider name gives both the real URL and that provider's key.
+    model = _endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+    secret = await _credential_secret(job, store, model, config.get("judge"))
     # Only accepted semantic configuration crosses the engine boundary.
     keys = (
         "rubric",
@@ -350,8 +362,8 @@ async def prepare(
         "name": execution["correlation"],
         "tags": [execution["correlation"]],
         "model": {
-            "url": endpoint["base_url"],
-            "name": endpoint["model"],
+            "url": model["base_url"],
+            "name": model["model"],
             "auth": {"secret_ref": secret},
         },
         "benchmarks": [selected],
@@ -405,8 +417,13 @@ async def cleanup(execution: dict[str, Any]) -> None:
             if exc.status != 404:
                 raise
     # Where the inputs went, which outlives a later settings change (evalhub.url cleared).
-    staged = ((execution.get("inputs") or {}).get("data_ref") or {}).get("s3") or {}
-    bucket = staged.get("bucket") or config_mod.settings.evalhub_staging_bucket
+    inputs = execution.get("inputs") or {}
+    staged = (inputs.get("data_ref") or {}).get("s3") or {}
+    bucket = (
+        staged.get("bucket")
+        or inputs.get("staging_bucket")
+        or config_mod.settings.evalhub_staging_bucket
+    )
     if bucket and execution.get("job_id"):
         prefix = _staging_prefix(execution["job_id"])
         try:

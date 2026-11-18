@@ -794,13 +794,12 @@ class EvalJobConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_evaluation_definition(self) -> "EvalJobConfig":
-        from amortized.evaluation.spec import TaskEvaluation
-
-        if isinstance(self.evaluation, TaskEvaluation):
-            names = [r.name for r in self.rubric]
-            if len(names) != len(set(names)):
-                raise ValueError("rubric criterion names must be unique")
+    def check_rubric_names_unique(self) -> "EvalJobConfig":
+        """The judge's scores are keyed by criterion name, so two criteria with one name
+        would share a single score."""
+        names = [r.name for r in self.rubric]
+        if len(names) != len(set(names)):
+            raise ValueError("rubric criterion names must be unique")
         return self
 
     @model_validator(mode="after")

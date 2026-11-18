@@ -278,7 +278,8 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
       {/* Stage */}
       <p className="text-xs text-muted-foreground mb-2">{stageLabel}</p>
-      {syncError && !confirmingSubmission && (
+      {/* Polling stops at a terminal status, so a cleanup retry message would never clear. */}
+      {syncError && !isTerminal && !confirmingSubmission && (
         <p className="text-xs text-muted-foreground mb-2">{syncError}</p>
       )}
 

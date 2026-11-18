@@ -6,8 +6,11 @@ import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 import amortized.config as config_mod
 from amortized.integrations.evalhub import preparation, results
+from amortized.jobs.base import JobBuildError
 
 TASK = {
     "endpoint": {"base_url": "http://model/v1", "model": "test"},
@@ -64,23 +67,52 @@ async def test_tuned_classifier_prefers_the_evals_max_length_over_its_training()
 
 
 # --------------------------------------------------------------------------- #
+# Which dataset is staged
+# --------------------------------------------------------------------------- #
+
+
+async def test_an_explicit_dataset_run_is_staged_over_the_parents_output(monkeypatch):
+    settings = config_mod.Settings(mlflow_tracking_uri="https://mlflow")
+    monkeypatch.setattr(config_mod, "settings", settings)
+    monkeypatch.setattr(preparation, "MLflowClient", MagicMock())
+    listed = AsyncMock(return_value=[])  # stops staging right after the run is chosen
+    monkeypatch.setattr(preparation, "_artifact_paths", listed)
+    parent = {"status": "succeeded", "mlflow_run_id": "parent-run"}
+    repo = MagicMock(get_job=AsyncMock(return_value=parent))
+    job = {"id": "job-1", "parent_job_id": "sdg-1", "config": {"eval_data_run_id": "split-run"}}
+    with pytest.raises(JobBuildError, match="no JSONL"):
+        await preparation.stage_inputs(job, repo, "snapshots")
+    assert listed.await_args.args[1] == "split-run"
+    repo.get_job.assert_not_awaited()  # the parent is lineage only, as in the native eval
+    job["config"] = {}
+    with pytest.raises(JobBuildError, match="no JSONL"):
+        await preparation.stage_inputs(job, repo, "snapshots")
+    assert listed.await_args.args[1] == "parent-run"
+
+
+# --------------------------------------------------------------------------- #
 # Staged inputs are deleted at cleanup
 # --------------------------------------------------------------------------- #
 
 
 class FakeS3:
+    """One bucket's keys; `buckets` records which buckets were listed or deleted from."""
+
     def __init__(self, keys: set[str]) -> None:
         self.keys = set(keys)
+        self.buckets: set[str] = set()
 
     def get_paginator(self, _: str) -> "FakeS3":
         return self
 
     def paginate(self, **request: str) -> Any:
+        self.buckets.add(request["Bucket"])
         matching = sorted(k for k in self.keys if k.startswith(request["Prefix"]))
         for start in range(0, len(matching), 2):
             yield {"Contents": [{"Key": k} for k in matching[start : start + 2]]}
 
     def delete_objects(self, **request: Any) -> dict[str, Any]:
+        self.buckets.add(request["Bucket"])
         self.keys -= {item["Key"] for item in request["Delete"]["Objects"]}
         return {}
 
@@ -113,10 +145,22 @@ async def test_cleanup_finds_staged_inputs_after_the_hub_settings_are_gone(monke
     staged = "amortized/evaluations/job-1/inputs/abc/"
     s3 = FakeS3({staged + "data/test.jsonl", staged + "manifest.json"})
     staging(monkeypatch, s3)
-    monkeypatch.setattr(config_mod, "settings", config_mod.Settings())
+    monkeypatch.setattr(config_mod, "settings", config_mod.Settings(evalhub_staging_bucket="new"))
     inputs = {"data_ref": {"s3": {"bucket": "snapshots", "key": staged}}}
     await preparation.cleanup({"job_id": "job-1", "inputs": inputs})
     assert s3.keys == set()
+    assert s3.buckets == {"snapshots"}
+
+
+async def test_cleanup_finds_a_partial_upload_in_the_bucket_recorded_before_staging(monkeypatch):
+    staged = "amortized/evaluations/job-1/inputs/abc/"
+    s3 = FakeS3({staged + "data/test.jsonl"})
+    staging(monkeypatch, s3)
+    monkeypatch.setattr(config_mod, "settings", config_mod.Settings(evalhub_staging_bucket="new"))
+    # The upload failed before data_ref was saved; only the bucket was recorded.
+    await preparation.cleanup({"job_id": "job-1", "inputs": {"staging_bucket": "snapshots"}})
+    assert s3.keys == set()
+    assert s3.buckets == {"snapshots"}
 
 
 async def test_cleanup_logs_but_does_not_wait_on_storage(monkeypatch, caplog):

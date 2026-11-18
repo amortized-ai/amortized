@@ -392,6 +392,14 @@ def structural_metrics(
     }
 
 
+def mostly_failed(stats: dict[str, Any] | None) -> bool:
+    """More than half the calls failed. Decided from the counts, since the rounded
+    rate reads 0.5 at 5001 failures out of 10001."""
+    if not stats:
+        return False
+    return bool(stats["error_rate"] > 0.5 or 2 * stats["num_succeeded"] < stats["num_samples"])
+
+
 async def run(config: dict[str, Any]) -> dict[str, Any]:
     endpoints = config["endpoints"]
     # 0 = evaluate every record in the dataset (the default); a positive
@@ -550,12 +558,12 @@ def main() -> None:
     summary = asyncio.run(run(config))
 
     # Hard-fail if the model or the judge mostly errored — metrics would be meaningless
-    if summary["results"]["model"]["error_rate"] > 0.5:
+    if mostly_failed(summary["results"]["model"]):
         raise SystemExit(
             f"model errored on {summary['results']['model']['error_rate']:.0%} of samples"
         )
     judge = summary["results"].get("judge")
-    if judge and judge["error_rate"] > 0.5:
+    if mostly_failed(judge):
         raise SystemExit(f"judge gave no score for {judge['error_rate']:.0%} of judged samples")
 
 

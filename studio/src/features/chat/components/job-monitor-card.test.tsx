@@ -75,6 +75,17 @@ describe("JobMonitorCard — engine handoff", () => {
     await waitFor(() => expect(screen.getByText("Failed")).toBeInTheDocument())
     expect(screen.queryByText(/Confirming the submission|Cancellation requested/)).not.toBeInTheDocument()
   })
+
+  it("hides a cleanup retry message on a terminal card, which no longer polls", async () => {
+    getJob.mockResolvedValue({
+      ...job("succeeded"),
+      execution_phase: "cleanup",
+      execution_sync_error: "Execution synchronization pending; retrying",
+    })
+    render(<JobMonitorCard jobId="engine-job" jobType="EVAL" />)
+    await waitFor(() => expect(screen.getByText("Job completed")).toBeInTheDocument())
+    expect(screen.queryByText(/synchronization pending/)).not.toBeInTheDocument()
+  })
 })
 
 describe("JobMonitorCard — eval jobs with embedded serving", () => {

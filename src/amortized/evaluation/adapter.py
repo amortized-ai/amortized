@@ -17,7 +17,7 @@ from evalhub.adapter.models import JobCallbacks, JobResults, JobSpec, JobStatusU
 from evalhub.adapter.models.job import MessageInfo
 from evalhub.models import EvaluationResult, JobPhase, JobStatus
 
-from amortized.evaluation.generation import run
+from amortized.evaluation.generation import mostly_failed, run
 
 TASK_DATA_PATH = "/test_data/data"
 
@@ -88,9 +88,9 @@ class AmortizedTaskAdapter(FrameworkAdapter):
                 JobStatusUpdate(status=JobStatus.RUNNING, phase=JobPhase.RUNNING_EVALUATION)
             )
             summary = asyncio.run(run(parameters))["results"]
-            if summary["model"]["error_rate"] > 0.5:
+            if mostly_failed(summary["model"]):
                 raise RuntimeError("Model errored on more than half of evaluation samples")
-            if summary.get("judge", {}).get("error_rate", 0) > 0.5:
+            if mostly_failed(summary.get("judge")):
                 raise RuntimeError("Judge gave no score for more than half of judged samples")
         # Re-emit classification metadata too, keeping detailed output in the same run.
         (output / "metrics.json").write_text(json.dumps({"results": summary}))
