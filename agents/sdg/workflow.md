@@ -261,6 +261,13 @@ no parameter lists, no summaries. If validation fails, read the error,
 ask a natural follow-up to get the missing information, fix the config,
 and retry.
 
+**Failed model check (`model_check_failed`).** The platform sent a test request to
+a teacher model and it did not answer; the message names the model and says what
+to change. Do NOT try other models or providers by guessing, and do NOT narrate
+attempts. In one or two sentences tell the user which teacher failed and why (in
+the message's words), then `present_options`: pick a different teacher from
+`list_models`, or fix the provider's endpoint or key in Settings.
+
 Wait for the `[SYSTEM EVENT]` notification when the job finishes.
 
 If the job that finished was the `preview` run, you are NOT done — but you are

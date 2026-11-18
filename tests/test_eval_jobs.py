@@ -116,9 +116,7 @@ class TestCreateEvalJob:
 
     @pytest.mark.asyncio
     async def test_create_eval_job_with_model_name(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(
-            client, endpoint=None, model_name_or_path="Qwen/Qwen3.5-4B"
-        )
+        response = await _create_eval(client, endpoint=None, model_name_or_path="Qwen/Qwen3.5-4B")
         assert response.status_code == 201
         data = response.json()
         assert data["config"]["model_name_or_path"] == "Qwen/Qwen3.5-4B"
@@ -188,8 +186,6 @@ class TestCreateEvalJob:
         assert "endpoint_tuned.api_key" in response.json()["message"]
 
 
-
-
 class TestClassificationEvalBuilder:
     @pytest.mark.asyncio
     async def test_eval_scores_eval_data_run_even_with_parent(self) -> None:
@@ -229,7 +225,10 @@ class TestClassificationEvalBuilder:
         # Runs the self-contained classifier eval in the training image (has
         # sentence-transformers), not the vLLM serve/judge path.
         assert result.command == [
-            "python3", "/amortized/classify_eval.py", "--config", "/amortized/config.json",
+            "python3",
+            "/amortized/classify_eval.py",
+            "--config",
+            "/amortized/config.json",
         ]
         assert result.image == "ghcr.io/amortized-ai/training:latest"
         assert result.resources.gpus == 0
@@ -277,11 +276,20 @@ class TestClassificationEvalFromTrainingJob:
 
         self._patch_parent(
             monkeypatch,
-            {"algorithm": "classifier_sft", "max_length": 128, "trust_remote_code": True,
-             "revision": "abc", "use_peft": True},
+            {
+                "algorithm": "classifier_sft",
+                "max_length": 128,
+                "trust_remote_code": True,
+                "revision": "abc",
+                "use_peft": True,
+            },
         )
-        config = {"eval_mode": "classification", "training_job_id": "t1",
-                  "eval_data_run_id": "r1", "eval_on_gpu": True}
+        config = {
+            "eval_mode": "classification",
+            "training_job_id": "t1",
+            "eval_data_run_id": "r1",
+            "eval_on_gpu": True,
+        }
         result = await eval_builder.build({"id": "e1", "type": "eval"}, config, {})
         runner = json.loads(result.config_files["config.json"])
         assert runner["max_length"] == 128
@@ -619,8 +627,7 @@ class TestEvalBuilder:
                 "mdl-lora",
                 "/amortized/work/served_model/merged",
                 [
-                    "mlflow artifacts download -r run -a model"
-                    " -d /amortized/work/served_model",
+                    "mlflow artifacts download -r run -a model -d /amortized/work/served_model",
                     "python3 /amortized/merge_lora.py"
                     " /amortized/work/served_model/model"
                     " /amortized/work/served_model/merged",
@@ -812,8 +819,6 @@ class TestScoreParsing:
         assert scores == {"a": 10.0, "b": 0.0}
 
 
-
-
 class TestRubricDriftWarning:
     @pytest.mark.asyncio
     async def test_validate_warns_on_paraphrased_rubric(self, client: httpx.AsyncClient) -> None:
@@ -881,9 +886,7 @@ class TestRubricDriftWarning:
         assert response.json()["warnings"] == []
 
     @pytest.mark.asyncio
-    async def test_validate_silent_on_other_dataset(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_validate_silent_on_other_dataset(self, client: httpx.AsyncClient) -> None:
         await _create_eval(
             client,
             rubric=[{"name": "verdict_accuracy", "description": "original text"}],
@@ -893,9 +896,7 @@ class TestRubricDriftWarning:
             json={
                 **EVAL_BODY,
                 "eval_data_run_id": "b" * 32,  # different dataset
-                "rubric": [
-                    {"name": "verdict_accuracy", "description": "paraphrased text"}
-                ],
+                "rubric": [{"name": "verdict_accuracy", "description": "paraphrased text"}],
             },
         )
         assert response.status_code == 200
@@ -922,9 +923,7 @@ class TestRetryEvalJob:
         return job_id
 
     @pytest.mark.asyncio
-    async def test_retry_clones_request_config_verbatim(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_retry_clones_request_config_verbatim(self, client: httpx.AsyncClient) -> None:
         job_id = await self._seed_failed_eval(client)
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
         assert response.status_code == 201, response.text
@@ -961,9 +960,7 @@ class TestRetryEvalJob:
         assert "judge.base_url 'gateway' is neither" in response.text
 
     @pytest.mark.asyncio
-    async def test_retry_legacy_row_strips_runtime_keys(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_retry_legacy_row_strips_runtime_keys(self, client: httpx.AsyncClient) -> None:
         """Rows whose snapshot was taken from a resolved config (the
         migration's best-effort backfill) still lose the runtime keys —
         the builder recomputes them."""
@@ -973,9 +970,7 @@ class TestRetryEvalJob:
         async with _db_conn._pool.acquire() as conn:
             # Simulate the migration backfill: snapshot = resolved config
             # (rubric present, runtime keys present).
-            await conn.execute(
-                "UPDATE jobs SET request_config = config WHERE id = $1", job_id
-            )
+            await conn.execute("UPDATE jobs SET request_config = config WHERE id = $1", job_id)
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
         assert response.status_code == 201, response.text
         config = response.json()["config"]
@@ -1039,16 +1034,12 @@ class TestRetryEvalJob:
                            '{"topic": "rfe"}'::jsonb,
                            '{"topic": "rfe"}'::jsonb, now())"""
             )
-        response = await client.post(
-            "/api/v1/jobs/sdg-retry-2/retry", json={"num_records": 2000}
-        )
+        response = await client.post("/api/v1/jobs/sdg-retry-2/retry", json={"num_records": 2000})
         assert response.status_code == 201, response.text
         assert response.json()["config"]["num_records"] == 2000
 
     @pytest.mark.asyncio
-    async def test_retry_validates_overridden_parent(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_retry_validates_overridden_parent(self, client: httpx.AsyncClient) -> None:
         # A parent_job_id override must be validated: core_create_job pulls the parent
         # from config when the arg is empty, so an unvalidated override would link the
         # retry to a missing parent. The original job has no parent and a standalone
@@ -1071,9 +1062,7 @@ class TestRetryEvalJob:
         assert "ghost-parent" in response.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_retry_rejects_unsupported_type(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_retry_rejects_unsupported_type(self, client: httpx.AsyncClient) -> None:
         import amortized.db.connection as _db_conn
 
         async with _db_conn._pool.acquire() as conn:
@@ -1145,6 +1134,8 @@ class TestEvalEndpointSuggestions:
         assert data["model"] == "mdl-rfe-scorer"
         assert data["known_endpoints"][0]["model_name"] == "openai/gpt-oss-120b"
         assert data["known_endpoints"][0]["base_url"] == "http://gw:5000/v1"
+        # The gateway routes by endpoint name; model_name would 404 there.
+        assert data["known_endpoints"][0]["model"] == "gpt-oss"
 
     @pytest.mark.asyncio
     async def test_suggestions_unknown_training_job(self, client: httpx.AsyncClient) -> None:
@@ -1167,14 +1158,16 @@ class TestJudgeProviderResolution:
         monkeypatch.setattr(
             eval_builder,
             "resolve_provider",
-            lambda name: {
-                "name": "openai",
-                "endpoint": "https://api.openai.com/v1",
-                "provider_type": "openai",
-                "api_key": "OPENAI_API_KEY",
-            }
-            if name == "openai"
-            else None,
+            lambda name: (
+                {
+                    "name": "openai",
+                    "endpoint": "https://api.openai.com/v1",
+                    "provider_type": "openai",
+                    "api_key": "OPENAI_API_KEY",
+                }
+                if name == "openai"
+                else None
+            ),
         )
         spec = eval_builder._endpoint_spec(
             {"judge": {"base_url": "openai", "model": "gpt-5"}},
@@ -1478,11 +1471,15 @@ class TestClassificationEvalOnSuccess:
                 pass
 
             async def get_artifact_text(self, _run, _path):
-                return json.dumps({"results": {
-                    "classifier_kind": "head",
-                    "scores": {"accuracy": 0.9, "macro_f1": 0.9},
-                    "model": {"num_samples": 10},
-                }})
+                return json.dumps(
+                    {
+                        "results": {
+                            "classifier_kind": "head",
+                            "scores": {"accuracy": 0.9, "macro_f1": 0.9},
+                            "model": {"num_samples": 10},
+                        }
+                    }
+                )
 
         monkeypatch.setattr(eval_builder, "set_mlflow_run_tag", _tag)
         monkeypatch.setattr(mlflow_client, "MLflowClient", _Client)

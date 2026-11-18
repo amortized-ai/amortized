@@ -107,8 +107,16 @@ class TestDefiniteFailuresBlock:
         )
         resp = await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)
         assert resp.status_code == 422
-        assert resp.json()["code"] == "model_check_failed"
-        assert "not_found" in resp.json()["message"]
+        body = resp.json()
+        assert body["code"] == "model_check_failed"
+        # The message says what's wrong in words (it is relayed by the agent and shown on the
+        # "Not submitted" card); the raw HTTP error stays in the per-endpoint details.
+        message = body["message"]
+        assert message.startswith("judge model 'gpt-judge' at http://judge:8000/v1 isn't served")
+        assert "Check the model name" in message
+        assert "Client error" not in message and "/chat/completions" not in message
+        assert "not_found" in body["details"][0]["error"]
+        assert "404 Not Found" in body["details"][0]["error"]
 
     @pytest.mark.asyncio
     async def test_forwarded_key_is_used_and_never_echoed(

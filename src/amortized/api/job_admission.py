@@ -46,12 +46,28 @@ class ModelCheckFailedError(Exception):
         self.details = details
 
 
+# What each definite failure means and what to change, in words. The message is relayed by the
+# agent and shown on the "Not submitted" card, so it says what's wrong — not the raw HTTP error,
+# which reads as a broken endpoint when the usual cause is a wrong model name (a 404 from a
+# gateway that serves no such model). The raw detail stays in the per-endpoint `details`.
+_FAILURE_HINTS = {
+    "not_found": "isn't served there (HTTP 404). Check the model name; for a gateway endpoint,"
+    " use the endpoint name",
+    "auth_required": "requires an API key (HTTP 401/403). Add the endpoint's key in Settings",
+    "auth_failed": "rejected the API key (HTTP 401/403). Check the key in Settings",
+    "unreachable": "couldn't be reached. Check the URL",
+    "deadline": "didn't answer before the check's deadline. The endpoint may be overloaded or"
+    " the URL wrong",
+    "bad_request": "rejected a test request. Check the model name and endpoint",
+    "server_error": "returned a server error. The endpoint may be down",
+    "bad_response": "didn't answer like a chat model. Check that the URL is its chat API",
+    "internal_error": "couldn't be checked because of an internal error",
+}
+
+
 def _failure_line(result: CheckResult) -> str:
-    detail = f": {result.detail}" if result.detail else ""
-    return (
-        f"{result.label} model {result.model!r} at {result.base_url!r} did not answer a test"
-        f" request ({result.reason}{detail})"
-    )
+    hint = _FAILURE_HINTS.get(result.reason, f"failed a test request ({result.reason})")
+    return f"{result.label} model {result.model!r} at {result.base_url} {hint}."
 
 
 async def check_models_or_raise(job_type: str, config: dict[str, Any]) -> list[CheckResult]:
@@ -69,7 +85,8 @@ async def check_models_or_raise(job_type: str, config: dict[str, Any]) -> list[C
             }
             for r in failed
         ]
-        raise ModelCheckFailedError("; ".join(lines), details)
+        # One problem per line (each is a sentence; the card renders line breaks).
+        raise ModelCheckFailedError("\n".join(lines), details)
     for r in report.results:
         if r.outcome == UNVERIFIED:
             logger.warning(

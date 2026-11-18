@@ -365,10 +365,13 @@ source is resolved: set `training_job_id` (or `model_name_or_path` for a
 named HF model) and go straight to Step 3. If they named a model from one
 of their providers (no endpoint URL), resolve it WITHOUT re-asking which
 model and set the eval's `endpoint` — then go to Step 3. If the model is in
-`known_endpoints` (from `get_eval_endpoint_suggestions`), use the
-`base_url` it gives; otherwise find it with `list_models` and set
-`base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` =
-its id. If validation rejects that name, ask the user how the model is
+`known_endpoints` (from `get_eval_endpoint_suggestions`), set `base_url` and
+`model` to the entry's `base_url` and `model` exactly (`model` is the endpoint
+name, e.g. `gpt-oss` — never its `model_name`, which the gateway rejects). A
+`list_models` model whose provider is `gateway` is always in `known_endpoints`:
+use that entry, never `base_url: "gateway"`. Otherwise find it with
+`list_models` and set `base_url` = its provider name (e.g. `openai`,
+`anthropic`) and `model` = its id. If validation rejects that name, ask the user how the model is
 reached rather than guessing a URL (option 4 below). Only
 present the options below when the subject is still open — the user said
 "evaluate a model" without naming one, or wants a non-trained endpoint.
@@ -384,7 +387,7 @@ Present the model-source options as clickable choices:
 3. **A provider model** — a model from the user's configured providers
    (`list_models`), e.g. "gpt-4o-mini (openai)". For a model listed in
    `known_endpoints` (from `get_eval_endpoint_suggestions`), set the eval's
-   `endpoint` to the `base_url` it gives; for any other model, set
+   `endpoint` to the entry's `base_url` and `model` (the endpoint name); for any other model, set
    `base_url` = its provider name and `model` = its id — the platform
    resolves the URL and key. These evals need no GPU.
 4. "My own endpoint" — an OpenAI-compatible endpoint the user runs: they
@@ -466,7 +469,8 @@ Ask the user which model to judge with — offer a soft suggestion, e.g.
 "reuse the model we used for the SDG step as the judge, or a different
 one?" — then set the judge from their choice. Get its endpoint (base_url
 + model) from `get_eval_endpoint_suggestions` / `list_models`, the same
-way you build the model-under-eval endpoint. Never submit a rubric eval
+way you build the model-under-eval endpoint — for a `known_endpoints` entry,
+its `base_url` and `model` exactly (the endpoint name, not `model_name`). Never submit a rubric eval
 without `config.judge`.
 
 Use sensible defaults: `temperature` 0. Leave `max_samples` and
@@ -504,12 +508,21 @@ Call `validate_eval_job` with the assembled config. Pass it as a SINGLE
 string (every field — rubric, judge, endpoints, eval_mode, parent_job_id —
 inside that one string): a large multi-argument call (especially a rubric with
 multi-line criteria) can be corrupted in transit, one `config_json` string
-round-trips reliably. A **422** is one of two
+round-trips reliably. A **422** is one of three
 things: a **config error** (e.g. a missing judge) — read it, fix the config, and
-re-validate; or a **decision-warning** (leakage / rubric drift / recipe mismatch,
+re-validate; a **decision-warning** (leakage / rubric drift / recipe mismatch,
 see below) — do NOT silently 'fix' it, relay it to the user and only re-validate
-with the `acknowledge_warnings` token from the 422 if they accept. Never present a text summary of a
+with the `acknowledge_warnings` token from the 422 if they accept; or a **failed
+model check** (code `model_check_failed`) — see below. Never present a text summary of a
 config that failed validation.
+
+**Failed model check (`model_check_failed`).** The platform sent a test request to
+an endpoint the eval would call (the judge, or an external model under eval) and
+it did not answer; the message names the model and says what to change. Do NOT
+try other URLs, model names, or providers by guessing, and do NOT narrate
+attempts. In one or two sentences tell the user which model failed and why (in
+the message's words), then `present_options`: pick a different judge from
+`known_endpoints` / `list_models`, or fix the endpoint or its key in Settings.
 
 `validate_eval_job` returns a **422 tool error** when there is a decision-requiring
 warning (input leakage/overlap with the training data, a rubric that would fork an
