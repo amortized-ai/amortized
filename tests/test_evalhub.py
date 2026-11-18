@@ -524,6 +524,21 @@ async def test_adapter_that_stops_without_reporting_fails_and_frees_the_model(mo
 
 
 @pytest.mark.asyncio
+async def test_a_result_hub_stores_during_the_job_watch_wins(monkeypatch):
+    store = MemoryStore("accepted")
+    done = snapshot("completed", metrics={"match": 0.9})
+    monkeypatch.setattr(client, "observe", AsyncMock(side_effect=[snapshot("running"), done]))
+    cancel = AsyncMock()
+    monkeypatch.setattr(client, "cancel", cancel)
+    stopped = "The benchmark adapter exited without reporting a result to Eval Hub"
+    monkeypatch.setattr(lifecycle, "adapter_stopped", AsyncMock(return_value=stopped))
+    await lifecycle.tick(store.job, store)
+    assert (store.job["status"], store.execution["state"]) == ("succeeded", "cleanup")
+    assert "error" not in store.job
+    cancel.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_job_watch_errors_leave_hub_authoritative(monkeypatch):
     store = MemoryStore("accepted")
     monkeypatch.setattr(client, "observe", AsyncMock(return_value=snapshot("running")))
@@ -571,12 +586,13 @@ def test_partial_results_keep_raw_units_and_artifact_references():
 def test_fixed_scorers_are_gone_and_duplicate_criteria_are_rejected():
     with pytest.raises(ValidationError):
         TaskEvaluation(scorers=[{"id": "exact_match", "name": "match"}])
-    with pytest.raises(ValidationError, match="rubric criterion names must be unique"):
-        EvalJobRequest(
-            endpoint={"base_url": "http://model/v1", "model": "m"},
-            evaluation={"kind": "task"},
-            rubric=[{"name": "same", "description": "a"}, {"name": "same", "description": "b"}],
-        )
+    for definition in ({"evaluation": {"kind": "task"}}, {}):
+        with pytest.raises(ValidationError, match="rubric criterion names must be unique"):
+            EvalJobRequest(
+                endpoint={"base_url": "http://model/v1", "model": "m"},
+                rubric=[{"name": "same", "description": "a"}, {"name": "same", "description": "b"}],
+                **definition,
+            )
 
 
 @pytest.mark.asyncio
@@ -648,7 +664,7 @@ def test_native_eval_fails_when_the_judge_mostly_gave_no_score(tmp_path, monkeyp
     config.write_text("{}")
     summary = {
         "results": {
-            "model": {"error_rate": 0.0},
+            "model": {"num_samples": 3, "num_succeeded": 3, "error_rate": 0.0},
             "judge": {"num_samples": 3, "num_succeeded": 1, "error_rate": 0.6667},
         }
     }
@@ -983,6 +999,13 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
             )
         )[0]
     )
+    # A malformed endpoint is a validation error, not a server error.
+    assert await client.validate_definition(
+        {**TASK, "endpoint": {"base_url": "https://model.test/v1"}}
+    ) == ["endpoint: base_url and model are required"]
+    assert await client.validate_definition(
+        {**TASK, "endpoint_base": {"base_url": "https://model.test/v1"}}
+    ) == ["Submit one model per evaluation using endpoint, rather than legacy endpoint pairs"]
     sdk.providers.get.side_effect = httpx.ConnectError("unavailable")
     assert "Cannot verify" in (await client.validate_definition(TASK))[0]
     # Benchmark catalog membership/compatibility is checked when the recipe is pinned
@@ -1064,8 +1087,9 @@ async def test_create_routes_a_new_eval_by_the_same_rule(monkeypatch, accept, ex
     from amortized.core import jobs as core_jobs
     from amortized.models import JobType
 
-    settings = config_mod.Settings(**HUB_SETTINGS, evalhub_accept_new_jobs=accept)
+    settings = config_mod.Settings(**HUB_SETTINGS, evalhub_accept_new_jobs=accept, gpu_budget=1)
     monkeypatch.setattr(config_mod, "settings", settings)
+    monkeypatch.setattr(core_jobs, "_settings", settings)  # read by the GPU budget check
     repo = _create_repo()
     config = {"training_job_id": "train-1", "eval_data_run_id": "a" * 32, **extra}
     row = await core_jobs.create_job(repo, job_type=JobType.eval, config=config)
@@ -1082,7 +1106,9 @@ async def test_a_use_peft_head_is_validated_estimated_and_created_as_a_native_gp
     from amortized.core import jobs as core_jobs
     from amortized.models import JobType
 
-    monkeypatch.setattr(config_mod, "settings", config_mod.Settings(**HUB_SETTINGS))
+    settings = config_mod.Settings(**HUB_SETTINGS, gpu_budget=1)
+    monkeypatch.setattr(config_mod, "settings", settings)
+    monkeypatch.setattr(core_jobs, "_settings", settings)  # read by the GPU budget check
     parent = {"type": "training", "config": {"algorithm": "classifier_sft", "use_peft": True}}
     monkeypatch.setattr(
         jobs_api, "Repository", lambda _db: MagicMock(get_job=AsyncMock(return_value=parent))
@@ -1329,6 +1355,17 @@ def test_task_adapter_generates_scores_and_artifacts_using_sdk_contract(tmp_path
     assert json.loads((instance.output_dir / "results.jsonl").read_text())["reference"] == "5"
 
 
+def test_more_than_half_failed_is_decided_from_the_counts():
+    from amortized.evaluation.generation import mostly_failed
+
+    # 5001 of 10001 failed: the rounded rate reads 0.5, the counts say more than half.
+    assert mostly_failed({"num_samples": 10001, "num_succeeded": 5000, "error_rate": 0.5})
+    assert not mostly_failed({"num_samples": 10000, "num_succeeded": 5000, "error_rate": 0.5})
+    assert mostly_failed({"num_samples": 0, "num_succeeded": 0, "error_rate": 1.0})
+    assert not mostly_failed({"num_samples": 0, "num_succeeded": 0, "error_rate": 0.0})
+    assert not mostly_failed(None)
+
+
 def test_task_adapter_fails_when_every_judge_call_fails(tmp_path, monkeypatch):
     from evalhub.adapter.models import JobSpec
 
@@ -1391,14 +1428,65 @@ async def test_embedding_download_secret_obeys_forward_env_policy(monkeypatch):
     settings = preparation.config_mod.settings
     monkeypatch.setattr(settings, "forward_env", [])
     endpoint = {"base_url": "http://model/v1", "model": "private-embedding"}
-    await preparation._credential_secret(store.job, store, endpoint, None)
+    model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+    await preparation._credential_secret(store.job, store, model, None)
     assert "hf-token" not in api.create_namespaced_secret.call_args.args[1].string_data
     monkeypatch.setattr(settings, "forward_env", ["HF_TOKEN"])
-    await preparation._credential_secret(store.job, store, endpoint, None)
+    await preparation._credential_secret(store.job, store, model, None)
     assert (
         api.create_namespaced_secret.call_args.args[1].string_data["hf-token"]
         == "test-private-model-token"
     )
+
+
+async def test_prepare_sends_a_provider_endpoint_with_its_own_key_and_the_chosen_dataset(
+    monkeypatch,
+):
+    import kubernetes_asyncio.client as kube
+
+    import amortized.config as config_mod
+    import amortized.jobs.eval as eval_job
+    from amortized.backends.kubernetes import KubernetesBackend
+    from amortized.integrations.evalhub import preparation
+
+    monkeypatch.setattr(config_mod, "settings", config_mod.Settings(**HUB_SETTINGS))
+    provider = {"endpoint": "https://api.provider.test/v1", "api_key": "PROVIDER_API_KEY"}
+    monkeypatch.setattr(
+        eval_job, "resolve_provider", lambda name: provider if name == "openai" else None
+    )
+    monkeypatch.setenv("PROVIDER_API_KEY", "provider-key")
+    backend = MagicMock(spec=KubernetesBackend)
+    backend._get_client = AsyncMock()
+    api = MagicMock()
+    api.create_namespaced_secret = AsyncMock()
+    monkeypatch.setattr(preparation, "get_backend", lambda _: backend)
+    monkeypatch.setattr(kube, "CoreV1Api", lambda _: api)
+    store = MemoryStore("preparing")
+    store.job.update(
+        parent_job_id="sdg-1",
+        config={
+            "endpoint": {"base_url": "openai", "model": "frontier"},
+            "eval_data_run_id": "split-run",
+            "rubric": [{"name": "match", "description": "Matches the reference"}],
+        },
+    )
+    recorded_before_upload = []
+
+    async def stage(job, repo, bucket):
+        recorded_before_upload.append(store.execution["inputs"].get("staging_bucket"))
+        assert bucket == "snapshots"
+        return {"s3": {"bucket": bucket, "key": "k/"}}, "", "sha256:dataset", "split-run"
+
+    monkeypatch.setattr(preparation, "stage_inputs", stage)
+    execution = await store.get("product-123")
+    execution["inputs"] = {"catalog": {}}
+    payload = await preparation.prepare(store.job, store, execution)
+    assert recorded_before_upload == ["snapshots"]
+    assert store.execution["inputs"]["dataset_run_id"] == "split-run"
+    assert payload["model"]["url"] == "https://api.provider.test/v1"
+    assert payload["model"]["name"] == "frontier"
+    secret = api.create_namespaced_secret.call_args.args[1].string_data
+    assert secret["api-key"] == "provider-key"
 
 
 async def test_https_model_secret_carries_cluster_ca(monkeypatch, tmp_path):
@@ -1421,8 +1509,9 @@ async def test_https_model_secret_carries_cluster_ca(monkeypatch, tmp_path):
 
     async def secret_for(url: str, judge_url: str = "") -> dict[str, str]:
         endpoint = {"base_url": url, "model": "granite"}
+        model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
         judge = {"base_url": judge_url, "model": "judge"} if judge_url else None
-        await preparation._credential_secret(store.job, store, endpoint, judge)
+        await preparation._credential_secret(store.job, store, model, judge)
         return api.create_namespaced_secret.call_args.args[1].string_data
 
     assert (await secret_for("https://granite.models.svc:8000/v1"))["ca_cert"] == (

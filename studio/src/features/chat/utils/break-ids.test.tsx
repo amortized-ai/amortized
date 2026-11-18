@@ -53,6 +53,14 @@ describe("rehypeBreakIds", () => {
     expect(cells[1]?.innerHTML).toBe("f03e4df5-<wbr>91d7-<wbr>4e1d")
   })
 
+  it("breaks a UUID that has no two letters in a row", () => {
+    const container = renderMarkdown("| Job |\n|---|\n| 123e4567-e89b-12d3-a456-426614174000 |")
+
+    expect(container.querySelector("td")?.innerHTML).toBe(
+      "123e4567-<wbr>e89b-<wbr>12d3-<wbr>a456-<wbr>426614174000",
+    )
+  })
+
   it("leaves text outside tables alone", () => {
     const container = renderMarkdown("Pick arc_easy or `arc:easy`.")
 

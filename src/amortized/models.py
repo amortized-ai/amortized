@@ -809,7 +809,7 @@ class EvalJobConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_evaluation_definition(self) -> "EvalJobConfig":
-        from amortized.evaluation.spec import BenchmarkEvaluation, TaskEvaluation
+        from amortized.evaluation.spec import BenchmarkEvaluation
 
         if isinstance(self.evaluation, BenchmarkEvaluation):
             if self.eval_mode == "classification":
@@ -823,10 +823,15 @@ class EvalJobConfig(BaseModel):
             selected_limit = benchmark_limit(self.evaluation.parameters)
             if self.max_samples and selected_limit and self.max_samples != selected_limit:
                 raise ValueError("Conflicting task and benchmark sample limits")
-        if isinstance(self.evaluation, TaskEvaluation):
-            names = [r.name for r in self.rubric]
-            if len(names) != len(set(names)):
-                raise ValueError("rubric criterion names must be unique")
+        return self
+
+    @model_validator(mode="after")
+    def check_rubric_names_unique(self) -> "EvalJobConfig":
+        """The judge's scores are keyed by criterion name, so two criteria with one name
+        would share a single score."""
+        names = [r.name for r in self.rubric]
+        if len(names) != len(set(names)):
+            raise ValueError("rubric criterion names must be unique")
         return self
 
     @model_validator(mode="after")

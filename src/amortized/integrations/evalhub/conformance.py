@@ -38,6 +38,7 @@ import amortized.config as config_mod
 from amortized.core.mlflow_client import MLflowClient
 from amortized.integrations.evalhub import catalog, client, contract, lifecycle, preparation
 from amortized.jobs.base import JobBuildError
+from amortized.jobs.eval import _endpoint_spec
 
 MODEL = "Qwen/Qwen3-0.6B"
 EXPERIMENT = "amortized/conformance"
@@ -120,7 +121,8 @@ class Runner:
                     raise JobBuildError(f"the model server did not start: {exc}") from exc
                 _log(f"waiting for the model server: {exc}")
                 await asyncio.sleep(15)
-        secret = await preparation._credential_secret(self.job, store, endpoint, None)  # type: ignore[arg-type]
+        model = _endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+        secret = await preparation._credential_secret(self.job, store, model, None)  # type: ignore[arg-type]
         return endpoint, secret
 
     async def cleanup(self) -> None:

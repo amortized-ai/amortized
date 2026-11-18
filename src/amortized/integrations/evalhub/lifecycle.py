@@ -429,6 +429,9 @@ async def tick(job: dict[str, Any], store: EvalHubRepository) -> bool:
                 logger.warning("Cannot watch the Hub adapter Job for %s", job["id"], exc_info=True)
             stopped = ""
         if stopped:
+            # Hub may have stored the result while the Jobs were read; its verdict wins.
+            if await _record(store, execution, await client.observe(execution)):
+                return False
             # Closes Hub's open record; there is no adapter left to stop.
             with suppress(Exception):
                 await client.cancel(execution)

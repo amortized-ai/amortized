@@ -116,12 +116,18 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         return server_limit("task evaluations", "no input staging bucket is configured")
     from urllib.parse import urlparse
 
+    from amortized.jobs.base import JobBuildError
     from amortized.jobs.eval import _endpoint_spec
 
-    for key in ("endpoint", "endpoint_base", "endpoint_tuned", "judge"):
+    if any(config.get(key) for key in ("endpoint_base", "endpoint_tuned")):
+        return ["Submit one model per evaluation using endpoint, rather than legacy endpoint pairs"]
+    for key in ("endpoint", "judge"):
         if not config.get(key):
             continue
-        spec = _endpoint_spec(config, key, "UNUSED")
+        try:
+            spec = _endpoint_spec(config, key, "UNUSED")
+        except JobBuildError as exc:
+            return [str(exc)]
         if spec["provider_type"] != "openai":
             return [
                 f"{key}: use an OpenAI-compatible gateway for this provider; "
@@ -134,8 +140,6 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             return [f"{key}: an endpoint URL can't carry credentials, a query or a fragment"]
         if parsed.hostname in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
             return [f"{key}: loopback endpoints cannot be reached from Eval Hub workloads"]
-    if any(config.get(key) for key in ("endpoint_base", "endpoint_tuned")):
-        return ["Submit one model per evaluation using endpoint, rather than legacy endpoint pairs"]
     if benchmark:
         if definition["provider_id"] not in settings.evalhub_providers:
             return [f"benchmark provider {definition['provider_id']!r} is not enabled"]
