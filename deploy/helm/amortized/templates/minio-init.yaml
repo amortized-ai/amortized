@@ -37,7 +37,7 @@ spec:
               if aws --endpoint-url "$EP" s3api head-bucket --bucket {{ .Values.s3.bucket }} 2>/dev/null; then
                 echo "Bucket {{ .Values.s3.bucket }} already exists"
               else
-                aws --endpoint-url "$EP" s3 mb s3://{{ .Values.s3.bucket }} --region us-east-1
+                aws --endpoint-url "$EP" s3 mb s3://{{ .Values.s3.bucket }} --region {{ .Values.s3.region }}
               fi
               aws --endpoint-url "$EP" s3api head-bucket --bucket {{ .Values.s3.bucket }}
           env:

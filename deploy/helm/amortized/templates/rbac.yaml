@@ -20,7 +20,7 @@ rules:
       verbs: ["get", "list", "watch"]
     - apiGroups: [""]
       resources: ["secrets", "configmaps"]
-      verbs: ["create", "get", "patch", "delete"]
+      verbs: ["create", "get", "patch", "update", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -37,11 +37,63 @@ subjects:
   - kind: ServiceAccount
     name: amortized-server
     namespace: {{ .Values.namespace }}
+{{- if .Values.evalhub.url }}
+---
+{{- /*
+Hub authorizes each call against its tenant, the jobs namespace. Operator releases differ in
+which user Role they create there (RHOAI 3.5.3 creates none for a multi-tenant Hub), so the
+chart owns one. The rules are the operator's own tenantUserRules. The binding is new, not
+amortized-evalhub-client, because a RoleBinding's roleRef can't change on upgrade.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: amortized-evalhub-user
+  namespace: {{ .Values.jobsNamespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["evalhubs"]
+    verbs: ["get", "list"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["evaluations"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["collections", "providers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["evalhubs/proxy"]
+    resourceNames: [{{ .Values.evalhub.operator.name | quote }}]
+    verbs: ["get", "create"]
+  - apiGroups: ["trustyai.opendatahub.io"]
+    resources: ["status-events"]
+    verbs: ["create"]
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["experiments"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-evalhub-user
+  namespace: {{ .Values.jobsNamespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: amortized-evalhub-user
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server
+    namespace: {{ .Values.namespace }}
+{{- end }}
 {{- if .Values.mlflow.enterprise.enabled }}
 ---
 {{- /*
 RHOAI enterprise MLflow workspace access. The bindings live in the MLflow workspace namespace
-(mlflow.enterprise.workspace, defaulting to .Values.namespace) so they match the
+(mlflow.enterprise.workspace; default jobsNamespace with Eval Hub on, else .Values.namespace) so they match the
 X-MLFLOW-WORKSPACE header. The operator SSAR splits read (view) / write (edit), so bind both
 ClusterRoles. Subjects: the server SA and the dispatched-job SA (`default` in the jobs
 namespace) — cross-namespace SA subjects are valid and let the job's bearer token +
@@ -65,6 +117,11 @@ subjects:
   - kind: ServiceAccount
     name: default
     namespace: {{ .Values.jobsNamespace }}
+  {{- with .Values.evalhub.operator.jobServiceAccount }}
+  - kind: ServiceAccount
+    name: {{ . }}
+    namespace: {{ $.Values.jobsNamespace }}
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -84,4 +141,9 @@ subjects:
   - kind: ServiceAccount
     name: default
     namespace: {{ .Values.jobsNamespace }}
+  {{- with .Values.evalhub.operator.jobServiceAccount }}
+  - kind: ServiceAccount
+    name: {{ . }}
+    namespace: {{ $.Values.jobsNamespace }}
+  {{- end }}
 {{- end }}

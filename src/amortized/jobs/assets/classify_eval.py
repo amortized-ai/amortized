@@ -50,10 +50,17 @@ MIN_QUERIES_PER_CLASS = 5
 
 def _load_rows(path: str, text_column: str, label_column: str) -> list[dict]:
     """Load a labeled dataset (jsonl/json/parquet/csv file, dir, or HF id)."""
-    from training_hub.utils import load_training_dataset
+    try:
+        from training_hub.utils import load_training_dataset
+    except ImportError:
+        # The task-adapter image needs the scorer, not the training stack.
+        from amortized.evaluation.generation import load_records
 
-    ds = load_training_dataset(path)
-    cols = ds.column_names
+        ds = load_records(path)
+        cols = list(ds[0]) if ds else []
+    else:
+        ds = load_training_dataset(path)
+        cols = ds.column_names
     if text_column not in cols:
         raise ValueError(
             f"text column {text_column!r} not found in dataset columns {cols}"
@@ -199,7 +206,7 @@ def _fit_temperature(logits, y, seed: int) -> dict:
     }
 
 
-def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) -> None:
+def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) -> dict:
     """Evaluate a classifier_sft head model: argmax predictions on the held-out set, with
     accuracy / macro-F1 / per-class F1 / confusion + temperature-scaled calibration (ECE).
 
@@ -333,6 +340,13 @@ def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str, name) ->
         f"classification eval (head): accuracy={accuracy:.2%} macro_f1={macro_f1:.4f} "
         f"over {len(rows)} examples in {len(labels_sorted)} classes; {cal_msg}"
     )
+    return metrics
+
+
+def run(cfg: dict) -> dict:
+    """Shared classification eval (head argmax or anchor/query); callable by the native CLI
+    and the Hub adapter."""
+    return _run(cfg)
 
 
 def main() -> None:
@@ -340,6 +354,11 @@ def main() -> None:
     ap.add_argument("--config", required=True)
     with open(ap.parse_args().config) as _cfg_f:
         cfg = json.load(_cfg_f)
+
+    run(cfg)
+
+
+def _run(cfg: dict) -> dict:
 
     text_col = cfg.get("text_column", "text")
     label_col = cfg.get("label_column", "label")
@@ -370,8 +389,7 @@ def main() -> None:
             " eval scores sequence-classification heads only (one text -> one label)"
         )
     if kind == "sequence":
-        _head_classifier_eval(cfg, rows, output_dir, name)
-        return
+        return _head_classifier_eval(cfg, rows, output_dir, name)
 
     by_label: dict[int, list[str]] = {}
     for r in rows:
@@ -535,6 +553,8 @@ def main() -> None:
             f"NOTE: {len(skipped_classes)} single-example class(es) had no queries "
             f"and were excluded from macro-F1: {[name(i) for i in skipped_classes]}"
         )
+
+    return metrics
 
 
 if __name__ == "__main__":

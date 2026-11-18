@@ -54,9 +54,19 @@ Enterprise MLflow always implies external MLflow. Helpers return the string "tru
 {{- if .Values.mlflow.enterprise.enabled -}}false{{- else if hasKey .Values.mlflow "bundled" -}}{{ .Values.mlflow.bundled }}{{- else -}}{{ .Values.dataStores.bundled }}{{- end -}}
 {{- end -}}
 
-{{/* MLflow workspace (X-MLFLOW-WORKSPACE) for the enterprise RHOAI MLflow == the namespace. */}}
+{{/* MLflow workspace (X-MLFLOW-WORKSPACE) for the enterprise RHOAI MLflow == a namespace.
+Eval Hub always logs into its job namespace (jobsNamespace) and the server refuses to start
+when its workspace differs, so with Eval Hub on the default is jobsNamespace. */}}
 {{- define "amortized.mlflowWorkspace" -}}
+{{- if .Values.evalhub.url -}}
+{{- $workspace := .Values.mlflow.enterprise.workspace | default .Values.jobsNamespace -}}
+{{- if ne $workspace .Values.jobsNamespace -}}
+{{- fail (printf "mlflow.enterprise.workspace (%s) must equal jobsNamespace (%s) when evalhub.url is set: Eval Hub logs runs into its job namespace" $workspace .Values.jobsNamespace) -}}
+{{- end -}}
+{{- $workspace -}}
+{{- else -}}
 {{- .Values.mlflow.enterprise.workspace | default .Values.namespace -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

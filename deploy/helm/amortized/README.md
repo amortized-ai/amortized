@@ -85,6 +85,8 @@ helm install amortized deploy/helm/amortized \
 | `security.runAsNonRoot` | `true` | app pods runAsNonRoot; set `false` on vanilla/kind (see `values-kind.yaml`) |
 | `mlflow.trackingUri` / `mlflow.gatewayUrl` | `""` | external MLflow (when not bundled) |
 | `s3.bucket` / `s3.endpoint` / `s3.accessKey` / `s3.secretKey` | see values | object storage |
+| `s3.region` | `us-east-1` | `AWS_DEFAULT_REGION` in the `amortized-s3` Secrets; region of the bundled MinIO bucket |
+| `evalhub.acceptNewJobs` | `true` | with `evalhub.url` set, send new evaluations to Eval Hub; `false` runs them natively and keeps following evaluations already on Hub (set it before clearing `evalhub.url`, see `docs/evalhub.md`) |
 | `database.url` | `""` | external PostgreSQL (when not bundled) |
 
 See `values.yaml` for the full list.
