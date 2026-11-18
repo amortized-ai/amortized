@@ -95,6 +95,11 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         )
     if settings.resolved_default_backend != "kubernetes":
         return server_limit("Eval Hub evaluations", "they need the Kubernetes backend")
+    benchmark = definition.get("kind") == "benchmark"
+    from amortized.evaluation.spec import PROVIDER_PARAMETERS
+
+    if benchmark and definition["provider_id"] not in PROVIDER_PARAMETERS:
+        return ["This benchmark provider needs an implemented parameter/capability contract"]
     if not settings.mlflow_tracking_uri:
         return server_limit("Eval Hub evaluations", "no MLflow artifact storage is configured")
     # Hub saves every evaluation into the MLflow workspace named after its job namespace.
@@ -107,7 +112,7 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             f"{settings.compute_namespace!r}; set AMORTIZED_MLFLOW_TRACKING_TOKEN_FILE and "
             "AMORTIZED_MLFLOW_WORKSPACE)",
         )
-    if not settings.evalhub_staging_bucket:
+    if not benchmark and not settings.evalhub_staging_bucket:
         return server_limit("task evaluations", "no input staging bucket is configured")
     from urllib.parse import urlparse
 
@@ -135,6 +140,12 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             return [f"{key}: an endpoint URL can't carry credentials, a query or a fragment"]
         if parsed.hostname in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
             return [f"{key}: loopback endpoints cannot be reached from Eval Hub workloads"]
+    if benchmark:
+        if definition["provider_id"] not in settings.evalhub_providers:
+            return [f"benchmark provider {definition['provider_id']!r} is not enabled"]
+        # Catalog membership, compatibility and settings are checked when the
+        # recipe is pinned (benchmark_recipe), from the same catalog read.
+        return []
     provider_id, benchmark_id = settings.evalhub_task_provider, "task"
     try:
         async with client() as sdk:
@@ -160,3 +171,24 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
             " retry validation"
         ]
     return []
+
+
+async def benchmark_recipe(config: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+    """Resolve the exact recipe a benchmark job would run, or the reasons it cannot."""
+    from amortized.integrations.evalhub import catalog
+
+    definition = config.get("evaluation") or {}
+    declared = definition.get("declared_capabilities") or config.get("declared_capabilities")
+    try:
+        capability = catalog.Capability.from_model({**config, "declared_capabilities": declared})
+    except ValueError as exc:
+        return None, [str(exc)]
+    try:
+        async with client() as sdk:
+            entries = await catalog.load(sdk, [definition["provider_id"]])
+    except Exception:
+        logger.warning("Could not read the Eval Hub catalog", exc_info=True)
+        return None, [
+            "Cannot verify the selected benchmark against the Eval Hub catalog; retry validation"
+        ]
+    return catalog.resolve_recipe(entries, capability, definition, config)

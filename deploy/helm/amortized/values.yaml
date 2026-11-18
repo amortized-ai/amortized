@@ -89,6 +89,12 @@ evalhub:
   s3Secret: amortized-s3
   pollInterval: 3
   preparationTimeout: 1800
+  # Benchmark providers Morty may browse, in default order: when two providers carry the
+  # same questions (same Hugging Face dataset, subset and split) and score them the same
+  # way, the first that can run them is the default. Catalogs are Eval Hub's own
+  # (files/evalhub/<provider>.yaml); each benchmark's needs and score come from the
+  # contract in files/evalhub/compat/ (make evalhub-contract).
+  providers: [amortized-lm-eval, amortized-lighteval]
   taskProvider: amortized
   experiment: amortized/evaluation
   # Installed operator owns the Go server, TLS/auth proxy, and runtime helpers.
@@ -105,6 +111,10 @@ evalhub:
     createProviders: false
     namespaceForProviders: "" # installed TrustyAI operator namespace
     taskAdapterImage: "" # required immutable ghcr.io/amortized-ai/evalhub-adapter@sha256:...
+    lightEvalImage: quay.io/evalhub/community-lighteval@sha256:67f66520dd2cf34ace886ee5c68aba903b5477c7c53527b95a5bacb80a837cdc
+    # TrustyAI lm-eval adapter quay.io/opendatahub/ta-lmes-job:odh-3.6.0, pinned. The catalog's
+    # odh-3.4-ea2 ships eval-hub-sdk 0.1.1, which can't read Hub 1.0.3's job spec.
+    lmEvalImage: quay.io/opendatahub/ta-lmes-job@sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0
     jobServiceAccount: "" # actual operator-created adapter/sidecar SA for MLflow
 
 studio:

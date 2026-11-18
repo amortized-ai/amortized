@@ -552,6 +552,26 @@ async def test_job_watch_errors_leave_hub_authoritative(monkeypatch):
     watch.assert_awaited_once()
 
 
+def test_the_catalog_metric_is_the_score_and_listed_first():
+    metrics = {"acc": 0.6, "acc_norm": 0.4, "acc_stderr": 0.11}
+    execution = {
+        "snapshot": snapshot("completed", metrics=metrics),
+        "request": {"benchmarks": [{"id": "task", "primary_score": {"metric": "acc_norm"}}]},
+    }
+    result = present(execution)
+    assert list(result["scores"]) == ["acc_norm", "acc", "acc_stderr"]
+    assert (result["primary_metric"], result["primary_score"]) == ("acc_norm", 0.4)
+    # Submitted before Amortized sent primary_score: the catalog Hub took it from.
+    catalog = {"benchmarks": [{"id": "task", "primary_score": {"metric": "acc_norm"}}]}
+    legacy = {**execution, "request": {}, "inputs": {"catalog": catalog}}
+    assert present(legacy)["primary_score"] == 0.4
+    # LightEval's arc:easy names acc_norm but reports only acc: no stand-in score.
+    only_acc = snapshot("completed", metrics={"all.acc": 0.5, "arc:easy.acc": 0.5})
+    result = present({**execution, "snapshot": only_acc})
+    assert (result["primary_metric"], result["primary_score"]) == ("acc_norm", None)
+    assert list(result["scores"]) == ["all.acc", "arc:easy.acc"]
+
+
 def test_partial_results_keep_raw_units_and_artifact_references():
     execution = {
         "remote_id": "hub-123",
@@ -729,6 +749,57 @@ async def test_validate_is_read_only_then_confirm_creates_durable_intent(
     submit.assert_not_awaited()
 
 
+BENCHMARK_RECIPE = {
+    "version": 1,
+    "provider_id": "amortized-lighteval",
+    "benchmark_id": "gsm8k",
+    "catalog_entry": {"id": "gsm8k", "name": "GSM8K", "primary_score": {"metric": "m"}},
+    "adapter_digest": "sha256:pinned",
+    "parameters": {"provider": "endpoint", "num_few_shot": 8, "save_sample_results": False},
+    "model_serving": "endpoint",
+    "declared_capabilities": [],
+}
+
+
+@pytest.mark.asyncio
+async def test_benchmark_requires_neither_task_dataset_nor_judge(hub_http_client, monkeypatch):
+    from amortized.integrations.evalhub.catalog import fingerprint
+
+    recipe = copy.deepcopy(BENCHMARK_RECIPE)
+    monkeypatch.setattr(client, "benchmark_recipe", AsyncMock(return_value=(recipe, [])))
+    request = {
+        "endpoint": TASK["endpoint"],
+        "evaluation": {
+            "kind": "benchmark",
+            "provider_id": "amortized-lighteval",
+            "benchmark_id": "gsm8k",
+        },
+    }
+    validated = await hub_http_client.post("/api/v1/jobs/eval/validate", json=request)
+    assert validated.status_code == 200, validated.text
+    card = validated.json()
+    evaluation = card["config"]["evaluation"]
+    assert evaluation["recipe_fingerprint"] == fingerprint(recipe)
+    assert evaluation["parameters"]["num_few_shot"] == 8
+    assert "recipe" not in evaluation or evaluation["recipe"] is None
+    assert card["benchmark"]["name"] == "GSM8K"
+    assert card["benchmark"]["recipe_fingerprint"] == fingerprint(recipe)
+
+    # Confirm posts the card's config verbatim; a client-sent recipe is never trusted.
+    forged = {**evaluation, "recipe": {"parameters": {"num_few_shot": 0}}}
+    response = await hub_http_client.post(
+        "/api/v1/jobs/eval", json={**card["config"], "evaluation": forged}
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["config"]["evaluation"]["recipe"] == recipe
+
+    # The setup changed between the card and Confirm: refuse, ask for a new card.
+    recipe["adapter_digest"] = "sha256:changed"
+    stale = await hub_http_client.post("/api/v1/jobs/eval", json=card["config"])
+    assert stale.status_code == 422
+    assert "changed since validation" in stale.text
+
+
 @pytest.mark.asyncio
 async def test_warning_blocks_card_without_submitting(hub_http_client, monkeypatch):
     from amortized.api import jobs
@@ -862,11 +933,22 @@ async def test_reconciliation_pages_and_rejects_other_tenants_and_nonexact_match
     assert all(r.headers["X-Tenant"] == "user-namespace" for r in requests)
 
 
-def test_only_task_definitions_are_accepted():
-    with pytest.raises(ValidationError, match="kind"):
-        EvalJobRequest(
-            **{**TASK, "evaluation": {"kind": "benchmark", "provider_id": "p", "benchmark_id": "b"}}
-        )
+def test_benchmark_parameters_reject_code_loading_and_secrets():
+    from amortized.evaluation.spec import BenchmarkEvaluation
+
+    for parameters in (
+        {"provider": "transformers"},
+        {"trust_remote_code": True},
+        {"api_key": "secret"},
+        {"random_seed": 12},
+    ):
+        with pytest.raises(ValidationError):
+            BenchmarkEvaluation(
+                kind="benchmark",
+                provider_id="lighteval",
+                benchmark_id="gsm8k",
+                parameters=parameters,
+            )
 
 
 HUB_SETTINGS = {
@@ -926,6 +1008,22 @@ async def test_preconfirmation_checks_catalog_and_routability_without_creating_r
     ) == ["Submit one model per evaluation using endpoint, rather than legacy endpoint pairs"]
     sdk.providers.get.side_effect = httpx.ConnectError("unavailable")
     assert "Cannot verify" in (await client.validate_definition(TASK))[0]
+    # Benchmark catalog membership/compatibility is checked when the recipe is pinned
+    # (tests/test_evalhub_catalog.py); here only the provider must be enabled.
+    benchmark = {
+        "endpoint": TASK["endpoint"],
+        "evaluation": {
+            "kind": "benchmark",
+            "provider_id": "amortized-lighteval",
+            "benchmark_id": "gsm8k",
+        },
+    }
+    assert await client.validate_definition(benchmark) == []
+    disabled = {**benchmark["evaluation"], "provider_id": "lighteval"}
+    assert (
+        "not enabled"
+        in (await client.validate_definition({**benchmark, "evaluation": disabled}))[0]
+    )
 
 
 @pytest.mark.parametrize(
@@ -1615,3 +1713,64 @@ def test_adapter_main_persists_exactly_one_primary_run_then_reports_results(monk
     )
     assert results.mlflow_run_id == "one-primary-run"
     callbacks.report_results.assert_called_once_with(results)
+
+
+ADAPTER_MAIN = """
+import json
+import sys
+from datetime import UTC, datetime
+
+from evalhub.adapter import EvaluationResult, FrameworkAdapter, JobResults
+
+
+class Adapter(FrameworkAdapter):
+    def run_benchmark_job(self, config, callbacks):
+        # As the TrustyAI lm-eval adapter: the first metric, and lm-eval's own first metric.
+        self._run_info = {"primary_metric": "acc", "zero_shot": 0.6, "alt_prompting": None,
+                          "alt_prompting_description": None}
+        results = [EvaluationResult(metric_name="acc", metric_value=0.6),
+                   EvaluationResult(metric_name="acc_norm", metric_value=0.4)]
+        return JobResults(id="j", benchmark_id="arc_easy", benchmark_index=0, model_name="m",
+                          results=results, overall_score=0.6, num_examples_evaluated=20,
+                          duration_seconds=1.0, completed_at=datetime.now(UTC),
+                          additional_info={"alt_prompting": 0.6,
+                                           "alt_prompting_description": "5-Shot"})
+
+
+def main():
+    adapter = Adapter.__new__(Adapter)
+    results = adapter.run_benchmark_job(None, None)
+    print(json.dumps({"score": results.overall_score, "run_info": adapter._run_info,
+                      "info": results.additional_info, "file": __file__, "argv": sys.argv}))
+    return 3
+
+
+if __name__ == "__main__":
+    raise SystemExit("main.py must be run through main(), not as __main__")
+"""
+
+
+@pytest.mark.parametrize("metric,score", [("acc_norm", 0.4), ("mc1", None), (None, None)])
+def test_adapter_launcher_scores_by_the_job_specs_primary_metric(tmp_path, metric, score):
+    import sys
+    from pathlib import Path
+
+    launcher = Path(__file__).parents[1] / "deploy/helm/amortized/files/evalhub/adapter_launcher.py"
+    (tmp_path / "main.py").write_text(ADAPTER_MAIN)
+    spec = {"id": "j", "primary_score": {"metric": metric} if metric else None}
+    (tmp_path / "job.json").write_text(json.dumps(spec))
+    done = subprocess.run(
+        [sys.executable, "-c", launcher.read_text(), str(tmp_path / "main.py")],
+        env={**os.environ, "EVALHUB_JOB_SPEC_PATH": str(tmp_path / "job.json")},
+        cwd=tmp_path.parent,
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 3, done.stderr  # main()'s own exit code
+    out = json.loads(done.stdout)
+    assert out["score"] == score
+    assert out["run_info"]["primary_metric"] == metric
+    assert (out["run_info"]["zero_shot"], out["run_info"]["alt_prompting"]) == (score, None)
+    assert out["info"]["alt_prompting"] == score  # few-shot runs carry it as alt_prompting
+    assert out["file"] == str(tmp_path / "main.py")  # main.py's output/ stays beside it
+    assert out["argv"] == [str(tmp_path / "main.py")]
