@@ -7,30 +7,47 @@ from typing import Any
 
 from amortized.db.evalhub import EvalHubRepository
 from amortized.db.repository import Repository
+from amortized.integrations.evalhub import catalog
 
 
-def _runtime_image(provider: dict[str, Any]) -> str:
-    """The adapter image in Hub's provider record."""
-    runtime = (provider.get("runtime") or {}).get("k8s") or {}
-    # Hub 1.0.3 serializes the Go field as "Image"; provider YAML uses "image".
-    return str(runtime.get("Image") or runtime.get("image") or "")
+def primary_metric(execution: dict[str, Any], benchmark_id: str) -> str:
+    """A task evaluation's score metric, as submitted to Hub or in Hub's task catalog."""
+    sources = [
+        (execution.get("request") or {}).get("benchmarks") or [],
+        ((execution.get("inputs") or {}).get("catalog") or {}).get("benchmarks") or [],
+    ]
+    for benchmarks in sources:
+        for benchmark in benchmarks:
+            metric = (benchmark.get("primary_score") or {}).get("metric")
+            if benchmark.get("id") == benchmark_id and metric:
+                return str(metric)
+    return ""
 
 
 def _engine(execution: dict[str, Any]) -> dict[str, Any]:
     """What in Hub's provider record decides a score: the provider, its adapter build and
-    the selected entry. Not timestamps, resource limits or descriptions."""
+    the scoring of the selected benchmark. Not timestamps, resource limits or descriptions."""
     provider = (execution.get("inputs") or {}).get("catalog") or {}
-    image = _runtime_image(provider)
+    image = catalog.runtime_image(provider)
     selected = {b.get("id") for b in (execution.get("request") or {}).get("benchmarks") or []}
     return {
         "provider_id": (provider.get("resource") or {}).get("id"),
-        "adapter": image.split("@", 1)[1] if "@sha256:" in image else image,
+        "adapter": catalog.image_digest(image) or image,
         "benchmarks": [
-            {"id": benchmark.get("id")}
+            {key: benchmark.get(key) for key in ("id", "num_few_shot", "primary_score")}
             for benchmark in provider.get("benchmarks") or []
             if benchmark.get("id") in selected
         ],
     }
+
+
+def _recipe(job: dict[str, Any] | None) -> dict[str, Any] | None:
+    config = (job or {}).get("config") or {}
+    if isinstance(config, str):
+        config = json.loads(config)
+    definition = config.get("evaluation") or {}
+    recipe = definition.get("recipe")
+    return recipe if definition.get("kind") == "benchmark" and isinstance(recipe, dict) else None
 
 
 def _numeric(raw: Any) -> float | int | None:
@@ -40,11 +57,71 @@ def _numeric(raw: Any) -> float | int | None:
     return value
 
 
-def present(execution: dict[str, Any]) -> dict[str, Any] | None:
+def _benchmark(execution: dict[str, Any], recipe: dict[str, Any]) -> dict[str, Any] | None:
+    """A benchmark job's results, display-ready: the score the contract names (pinned in the
+    approved recipe), each metric's direction, and stderr beside its metric."""
     snapshot = execution.get("snapshot") or {}
     benchmarks = (snapshot.get("results") or {}).get("benchmarks") or []
     if not benchmarks:
         return None
+    reported: dict[str, float | int] = {}
+    for benchmark in benchmarks:
+        for name, raw in (benchmark.get("metrics") or {}).items():
+            value = _numeric(raw)
+            if value is not None:
+                reported[name] = value
+    stderr = {
+        name.removesuffix("_stderr"): value
+        for name, value in reported.items()
+        if name.endswith("_stderr") and name.removesuffix("_stderr") in reported
+    }
+    paired = {f"{name}_stderr" for name in stderr}
+    scores = {name: value for name, value in reported.items() if name not in paired}
+    compat = recipe.get("compatibility") or {}
+    primary = catalog.score(compat)
+    metric = primary["metric"] if primary else None
+    reason = catalog.no_score_reason(compat) if primary is None else ""
+    if metric and metric not in scores:
+        listed = ", ".join(sorted(scores)) or "nothing"
+        reason, metric = f"the adapter did not report {metric}; it reported {listed}", None
+    elif primary is None and not reason:
+        reason = "this benchmark's contract names no score"
+    directions = dict(compat.get("directions") or {})
+    if metric and primary:
+        directions[metric] = "lower" if primary["lower_is_better"] else "higher"
+    scores = ({metric: scores[metric]} if metric else {}) | scores
+    return {
+        "kind": "benchmark",
+        "num_records": None,
+        "num_skipped": None,
+        "model": {},
+        "scores": scores,
+        "stderr": stderr,
+        "primary_metric": metric,
+        "primary_score": scores[metric] if metric else None,
+        "primary_lower_is_better": bool(primary["lower_is_better"]) if metric and primary else None,
+        "no_score_reason": reason or None,
+        "scores_n": {},
+        "metric_metadata": {
+            name: {"unit": "value", "direction": directions.get(name), "range": None}
+            for name in scores
+        },
+        "benchmarks": benchmarks,
+        "remote_id": execution.get("remote_id"),
+        "remote_state": (snapshot.get("status") or {}).get("state"),
+        "observed_at": str(execution.get("observed_at") or ""),
+    }
+
+
+def present(execution: dict[str, Any], job: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    recipe = _recipe(job)
+    if recipe is not None:
+        return _benchmark(execution, recipe)
+    snapshot = execution.get("snapshot") or {}
+    benchmarks = (snapshot.get("results") or {}).get("benchmarks") or []
+    if not benchmarks:
+        return None
+    primary: list[str] = []
     scores: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
     counts: dict[str, int] = {}
@@ -55,6 +132,9 @@ def present(execution: dict[str, Any]) -> dict[str, Any] | None:
         if summary:
             task_summary.update(summary)
         prefix = f"{benchmark['id']}/" if len(benchmarks) > 1 else ""
+        metric = primary_metric(execution, benchmark["id"])
+        if metric:
+            primary.append(prefix + metric)
         for name, raw in (benchmark.get("metrics") or {}).items():
             value = _numeric(raw)
             if value is None:
@@ -71,12 +151,18 @@ def present(execution: dict[str, Any]) -> dict[str, Any] | None:
             )
             if name in (summary.get("scores_n") or {}):
                 counts[key] = summary["scores_n"][name]
+    # Exact name only, as Hub scores it: a metric the evaluator did not report gives no
+    # score rather than a stand-in. Scores list the primary metric first.
+    reported = [key for key in primary if key in scores]
+    scores = {key: scores[key] for key in reported} | scores
     return {
         "num_records": task_summary.get("num_records"),
         "num_skipped": task_summary.get("num_skipped"),
         "model": task_summary.get("model") or {},
         **task_summary,
         "scores": scores,
+        "primary_metric": primary[0] if len(primary) == 1 else None,
+        "primary_score": scores.get(primary[0]) if len(primary) == 1 else None,
         "scores_n": counts,
         "metric_metadata": metadata,
         "benchmarks": benchmarks,
@@ -95,13 +181,29 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
         execution = await store.get(job["id"])
         if execution is None:
             continue
-        results = present(execution)
+        results = present(execution, job)
         if not results or not results["scores"]:
             continue
         from amortized.models import EvalJobConfig
 
         config = EvalJobConfig(**(job.get("config") or {})).model_dump(exclude_none=True)
-        dataset = str((execution.get("inputs") or {}).get("dataset_identity") or "")
+        definition = config.get("evaluation") or {}
+        # The recipe fingerprint covers everything that decides a benchmark score
+        # (entry, adapter digest, settings) and leaves out how the model was served,
+        # so a base endpoint and a tuned model share a group. Hashing the approved recipe
+        # again keeps jobs approved under an older fingerprint in the same group.
+        recipe = definition.get("recipe")
+        pinned = definition.get("kind") == "benchmark" and (
+            catalog.fingerprint(recipe)
+            if isinstance(recipe, dict)
+            else definition.get("recipe_fingerprint")
+        )
+        if pinned:
+            dataset = "benchmark:" + str(pinned)
+        elif definition.get("kind") == "benchmark":
+            dataset = "benchmark:" + json.dumps(definition, sort_keys=True)
+        else:
+            dataset = str((execution.get("inputs") or {}).get("dataset_identity") or "")
         if not dataset:
             continue
         semantics = {
@@ -125,6 +227,8 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
         judge = config.get("judge") or {}
         semantics["judge"] = {key: judge.get(key) for key in ("base_url", "model")}
         semantics["catalog"] = _engine(execution)
+        if pinned:
+            semantics = {key: None for key in semantics}
         semantics["metric_metadata"] = {
             name: {
                 k: v
@@ -141,10 +245,11 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
                 "dataset": {
                     "run_id": str((execution.get("inputs") or {}).get("dataset_run_id") or ""),
                     "identity": dataset,
-                    "name": config.get("topic") or "Task dataset",
+                    "name": definition.get("benchmark_id") or config.get("topic") or "Task dataset",
                 },
                 "metric_names": list(results["scores"]),
                 "metric_metadata": results["metric_metadata"],
+                "primary_metric": results.get("primary_metric"),
                 "evals": [],
                 "latest_created_at": job.get("completed_at") or job.get("created_at"),
             },

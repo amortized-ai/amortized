@@ -1,4 +1,4 @@
-import type { PromptView } from "../types"
+import type { BenchmarkView, PromptView } from "../types"
 
 interface McpContentBlock {
   type: string
@@ -73,6 +73,21 @@ export function extractJobInfo(result: string): { jobId: string | null; jobType:
   return { jobId: null, jobType: "SDG" }
 }
 
+export function extractBenchmarkView(value: unknown): BenchmarkView | null {
+  if (!value || typeof value !== "object") return null
+  const obj = value as Record<string, unknown>
+  if (typeof obj.id !== "string") return null
+  return {
+    id: obj.id,
+    name: typeof obj.name === "string" ? obj.name : obj.id,
+    metric: typeof obj.metric === "string" ? obj.metric : "",
+    noScore: typeof obj.no_score === "string" ? obj.no_score : "",
+    numFewShot: typeof obj.num_few_shot === "number" ? obj.num_few_shot : null,
+    maxSamples: typeof obj.max_samples === "number" ? obj.max_samples : null,
+    recipeFingerprint: typeof obj.recipe_fingerprint === "string" ? obj.recipe_fingerprint : "",
+  }
+}
+
 export interface ValidatedJobConfig {
   valid: boolean
   jobType: string
@@ -83,6 +98,7 @@ export interface ValidatedJobConfig {
   dataRecordCount: number | null
   outputPrompt: string | null
   prompts: PromptView[]
+  benchmark: BenchmarkView | null
 }
 
 export function extractValidatedJobConfig(result: string): ValidatedJobConfig | null {
@@ -102,6 +118,7 @@ export function extractValidatedJobConfig(result: string): ValidatedJobConfig | 
       outputPrompt:
         typeof obj.output_prompt === "string" ? obj.output_prompt : null,
       prompts: extractPromptViews(obj.prompts),
+      benchmark: extractBenchmarkView(obj.benchmark),
     }
   }
   return null

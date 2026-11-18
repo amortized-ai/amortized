@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     evalhub_timeout: float = Field(30.0, gt=0)
     evalhub_preparation_timeout: float = Field(1800.0, gt=0)
     evalhub_uncertain_timeout: float = Field(900.0, gt=0)
+    # Default order: of two providers carrying the same questions, the first that can run
+    # them is offered (integrations/evalhub/catalog.py).
+    evalhub_providers: list[str] = Field(
+        default_factory=lambda: ["amortized-lm-eval", "amortized-lighteval"]
+    )
+    evalhub_compat_dir: str = Field(
+        "", description="Directory of <provider_id>.json files from scripts/evalhub"
+    )
     evalhub_task_provider: str = "amortized"
     evalhub_staging_bucket: str = ""
     evalhub_s3_secret: str = "amortized-s3"

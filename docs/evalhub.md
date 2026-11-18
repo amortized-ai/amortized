@@ -10,7 +10,7 @@ bridge pod and no user-facing engine selector.
 With Hub on, every new evaluation runs through Hub except a classifier head trained
 with `use_peft`: it needs a GPU and Hub's task adapter runs on CPU only, so it
 evaluates natively on a GPU. With `evalhub.acceptNewJobs: false` or no `evalhub.url`,
-new evaluations run natively.
+new evaluations run natively and benchmarks are not offered.
 
 ## Request and execution flow
 
@@ -22,7 +22,7 @@ flowchart LR
   D --> E[Worker: snapshot inputs / optional model server]
   E --> F[Python client SDK: one submit attempt]
   F --> G[Eval Hub Go service]
-  G --> H[Task adapter]
+  G --> H[Task adapter OR LightEval adapter]
   H --> I[One primary MLflow run + detailed artifacts]
   G --> J[Status / results observation]
   J --> K[Amortized job projection / existing monitor]
@@ -33,7 +33,7 @@ flowchart LR
 Validation never creates a Hub job or staging/serving resources. Task definitions
 extend existing validation; they do not bypass readiness, embedding/model
 compatibility, warning, prompt-reference, or GPU-budget checks. Referenced training
-jobs must be succeeded.
+jobs must be succeeded even when the benchmark supplies its own dataset.
 
 The worker uses a database advisory lock per job. Submission state is committed
 before POST, with SDK retries disabled. A connect error or connect timeout sent
@@ -81,9 +81,276 @@ user-supplied Python. The embedding adapter calls the existing anchor/query
 implementation, retaining its splits, seeds, parameters, confusion matrix, and
 separability-proxy interpretation.
 
+Benchmarks come from **Eval Hub's own lm-eval and LightEval catalogs**, vendored
+verbatim at a pinned commit in `deploy/helm/amortized/files/evalhub/`
+(`lm_evaluation_harness.yaml`, `lighteval.yaml`; `make evalhub-catalog`). The chart
+registers them as `amortized-lm-eval` (offered first) and `amortized-lighteval`,
+replacing only the id and runtime so the pinned adapter images run. One benchmark
+per job; suites are not supported yet.
+
+Each benchmark's contract (what it needs, what it reports, which metric is its
+score) is built per pinned adapter image, for lm-eval and LightEval alike, in three
+release steps. Re-run them whenever an image pin or a catalog commit changes:
+
+1. `make evalhub-describe` runs `scripts/evalhub/{lm_eval,lighteval}_compat.py`
+   **inside the pinned adapter image** (no GPU) and writes `files/evalhub/described/`:
+   resolved tasks, scoring (`generative`, or `likelihood` when any metric needs
+   log-probabilities), datasets, settings profile, each metric's direction and, when a
+   task config lists its own worked examples, how many (`max_few_shot`; BBH's
+   chain-of-thought tasks have 3, so their few-shot default is 3, not the catalog's 5).
+   For LightEval it also counts each benchmark's questions with LightEval's own loader
+   (`question_count`; this downloads the datasets), because its results never report
+   the total. Anything it cannot establish is `unknown` with a reason.
+2. `make evalhub-conform` runs every entry a served model can take through Eval Hub
+   on a running deployment (KIND or OpenShift), the way a user's job runs (`amortized.integrations.evalhub.conformance`,
+   in the server pod, ~10 questions each), and records in
+   `files/evalhub/conformance/` what each adapter really reported: metric names and
+   values, `additional_info`, MLflow `overall_score`, or why the run failed.
+3. `make evalhub-contract` picks each score from the reported names (the catalog's
+   metric, then the adapter's prefixed name, a known alias, the only metric
+   reported, else no score with the reason), takes lm-eval's question count from its
+   run (`num_samples_original`), and writes `files/evalhub/compat/`,
+   `files/evalhub/REPORT.md` (one row per entry) and Studio's test fixture. It
+   stops if the card, Hub, MLflow and the results API disagree on any score.
+
+Only entries verified on the pinned digest are offered; the rest are `unknown` with
+the reason. Morty shows only this question count, never the catalog's `dataset_size`:
+lm-eval's catalog gives 14042 for every ArabicMMLU subject, and LightEval's
+openbookqa asks 1000 questions (test and validation), not the catalog's 500. Two entries are offered as one benchmark only when they ask the same
+questions *and* score them the same way (confirmed in `contract.SAME_SCORING`).
+The chart mounts the compat files into the server and refuses to render if they
+describe a different image than the pinned one; at runtime a digest mismatch makes
+every entry `unknown`. CI checks that the files are what the evidence builds. How
+to run the steps: [Rebuilding the benchmark contract](#rebuilding-the-benchmark-contract).
+
+Compatibility is decided from the model before anything is shown. A model
+Amortized serves (`training_job_id`, `model_name_or_path`) supports chat and
+`/v1/completions` with logprobs. An outside `endpoint` supports chat, plus
+`completions_logprobs` only when the user declares it
+(`evaluation.declared_capabilities`). Likelihood benchmarks are hidden for a
+chat-only endpoint. Browsing reports why benchmarks are hidden (`hidden`, a count
+per reason) only when none can run for the model, and only reasons about the model;
+entries not verified and suites are left out silently.
+
+Morty uses two read-only tools, never a provider list:
+
+- `find_benchmarks` (`POST /api/v1/evaluations/benchmarks/find`) looks a benchmark
+  up by exact normalized name, or browses. Browsing asks one question at a time in
+  the fixed order area → kind, picking the first that splits the list, then lists
+  the benchmarks. It never asks for the framework: each benchmark carries its
+  provider. Four or fewer choices come back as a card (`present_options`); more
+  come back as a typed question. The user's reply goes back as `answer` with the
+  returned `picks`; an off-list reply is a 422 listing the allowed values. A
+  benchmark is chosen by its exact id first (lm-eval `arc_easy` and LightEval
+  `arc:easy` are both listed under Reasoning); a reply that still matches two is a
+  422 naming each id with its score.
+- `get_benchmark` (`POST /api/v1/evaluations/benchmarks/get`) returns one entry's
+  details, compatibility and the only settings the user may change, with bounds and
+  defaults.
+
+```json
+{
+  "endpoint": {"base_url": "https://model.example/v1", "model": "candidate"},
+  "evaluation": {
+    "kind": "benchmark",
+    "provider_id": "amortized-lighteval",
+    "benchmark_id": "gsm8k",
+    "parameters": {"max_samples": 200}
+  }
+}
+```
+
+Allowed LightEval settings are sample count, few-shot count (0–50) and batch size
+(1–64). Few-shot defaults to the catalog's value (GSM8K 8, otherwise 0) and is
+sent explicitly, because Hub copies only request parameters to the adapter.
+`save_sample_results` is fixed to `false` and no `exports` are sent: the pinned
+adapter requires an OCI export for per-question results, and no registry is
+configured yet, so benchmarks store aggregate scores only. Code-loading flags,
+in-adapter GPU backends, secrets, dataset-revision overrides, custom data and a
+random seed are rejected.
+
+**Recipe pinning.** `validate_eval_job` resolves the exact recipe (catalog entry,
+adapter image digest, compatibility record, settings, dataset revisions), writes the
+resolved settings and a 12-character `recipe_fingerprint` into the card's config,
+and returns the server's name, metric, few-shot count, question count and
+fingerprint for the card. `create_eval_job` resolves the recipe again and refuses a
+card whose fingerprint changed (422, re-validate); otherwise it stores the recipe,
+ignoring any recipe a client sent. Before submitting to Hub, preparation builds the
+benchmark from that stored recipe and stops if the registered adapter image is no
+longer the approved digest. The fingerprint hashes only what decides a score: the
+recipe version, provider and benchmark ids, adapter digest, settings, datasets (with
+revisions), tasks, and the score metric and direction. Conformance evidence (date,
+Hub job, model), catalog text, the catalog commit and how the model was served are
+recorded but not hashed, so a conformance re-run or a catalog edit does not void an
+open card, and a base endpoint and a tuned model share one comparison group. Most
+benchmark datasets do not pin a Hugging Face revision (lm-eval 1 of 141, LightEval 6
+of 36; the recipe records `not pinned`), so the same fingerprint can run on changed
+upstream data.
+
 `GET /api/v1/evaluations/providers` (`list_evaluation_providers` in MCP) reports
-whether Hub is enabled and task scoring (503 when Hub or the task provider cannot
-be read).
+whether Hub is enabled, task scoring and benchmark provider counts (503 when Hub or
+a configured provider cannot be read); it no longer lists benchmarks.
+
+## Rebuilding the benchmark contract
+
+What the three steps do is explained above. This section says what to run. Paths
+`described/`, `conformance/`, `compat/` and `REPORT.md` are under
+`deploy/helm/amortized/files/evalhub/`.
+
+### When something changes
+
+Find what changed, then run the steps listed. The steps are numbered in
+[The steps](#the-steps) below.
+
+| What changed | Example | Run |
+|---|---|---|
+| An adapter image pin (`lmEvalImage` or `lightEvalImage` in `values.yaml`) | lm-eval moves from `odh-3.6.0` to a newer image | steps 1–6. Conform re-runs every entry of that provider by itself, because the digest changed |
+| The catalog commit (`EVALHUB_CATALOG_COMMIT` in the Makefile) | upstream adds 20 benchmarks | `make evalhub-catalog`, then steps 1–6 |
+| The Hub version | Hub 1.0.3 → a newer Hub | steps 2–6, with `EVALHUB_CONFORM_ARGS="--rerun"` in step 3. CI won't remind you: the record doesn't keep the Hub version |
+| How Amortized shows results (`results.present()`, the card) | a new field in the results view | steps 4–6 only, no GPU. The run records are still valid; only `REPORT.md` and the Studio fixture change |
+| One entry failed only because 10 questions were too few | `tinyTruthfulQA` ("index 10 is out of bounds") | step 3 for that entry with all its questions (example below), then steps 4–6 |
+| A new provider | a third framework next to lm-eval and LightEval | [Adding a provider](#adding-a-provider) |
+| Anything else: other server or Studio code, users running benchmarks | | nothing |
+
+Not sure? Run `pytest tests/test_evalhub_contract.py`. It fails when the files no longer
+match the pins, the catalog or the code.
+
+### The steps
+
+Run them from the repository root, with the dev environment active.
+
+1. **Describe** (no GPU; needs docker and network):
+
+   ```bash
+   make evalhub-describe              # both providers
+   make evalhub-describe-lm-eval      # or just one
+   ```
+
+2. **Deploy what you want to check.** Conform drives a running deployment, so it must have:
+   - a server image built from this checkout (the runner runs inside the server pod);
+   - Hub registering the adapter images you pinned (step 4 of
+     [Deployment and activation](#deployment-and-activation)). Hub reads providers
+     only when it starts, so recreate its pod after changing them;
+   - one free GPU in the jobs namespace. The model is served there for the whole run,
+     so users' GPU jobs wait meanwhile.
+
+3. **Conform** (one GPU; both providers took 26 minutes on a KIND test cluster):
+
+   ```bash
+   setsid nohup make evalhub-conform \
+     EVALHUB_KUBECTL="kubectl --context kind-amortized -n amortized-<user>" \
+     > conform.log 2>&1 < /dev/null &
+   ```
+
+   - On OpenShift, use `EVALHUB_KUBECTL="oc -n <namespace>"`.
+   - `setsid nohup` keeps it running if your SSH session drops.
+   - `conform.log` gets one line per entry, for example
+     `[4] pile_arxiv: failed, 0 metrics, 200 s Evaluation failed: The repository for EleutherAI/pile contains custom code ...`.
+   - If it stops, run the same command again. It skips entries already on record.
+   - Only one run per provider at a time.
+
+4. **Contract** (no GPU): `make evalhub-contract`. It stops with a list of problems if
+   the card, Hub, MLflow and the results API disagree on any score.
+
+5. **Test:**
+
+   ```bash
+   pytest tests/test_evalhub_contract.py tests/test_evalhub_catalog.py
+   (cd studio && npm test)
+   ```
+
+6. **Review, commit, deploy.**
+   - Read `git diff deploy/helm/amortized/files/evalhub/REPORT.md`. Each entry has one
+     row: whether it runs (or why not), its score and why, its copies, the suites that
+     contain it.
+   - Commit together: `described/`, `conformance/`, `compat/`, `REPORT.md` and
+     `studio/src/test/fixtures/evalhub-results.json`, exactly as the make targets wrote
+     them. Never edit or merge them by hand; to change one entry, re-run its step.
+   - Redeploy the chart, so the server gets the new ConfigMap `amortized-evalhub-compat`.
+
+**Re-running chosen entries.** Example: run `tinyTruthfulQA` again with all its
+questions, leaving the rest alone:
+
+```bash
+make evalhub-conform EVALHUB_KUBECTL="..." EVALHUB_PROVIDERS=amortized-lm-eval \
+  EVALHUB_CONFORM_ARGS="--only tinyTruthfulQA --rerun --questions 0"
+```
+
+Each entry keeps the question count it ran with, so `REPORT.md` then shows it as
+`yes (all questions)`.
+
+**Conform options**, passed as `EVALHUB_CONFORM_ARGS="..."`:
+
+| Option | Default | Use |
+|---|---|---|
+| `--only a,b` | all | run only these entry ids |
+| `--rerun` | off | run entries already on record too (with `--only`, just those) |
+| `--questions N` | 10 | questions per entry; 0 = all of them |
+| `--limit N` | 0 = all | run at most N entries |
+| `--chunk N` | 8 | entries per Hub job; Hub starts one adapter pod per entry at once |
+| `--model ID` | `Qwen/Qwen3-0.6B` | the model to serve. Changing it re-runs every entry |
+| `--timeout S` | 2400 | seconds before a Hub job is cancelled; its open entries are recorded as `timed_out` |
+
+**Where the run records live.** In the server pod (`/data/conformance/<provider>.json`),
+saved after every Hub job, and copied back to `conformance/` when the command ends.
+
+**How long it takes** (2026-11-09, KIND test cluster, Qwen/Qwen3-0.6B, 10 questions per entry):
+
+- starting the model server: 2.5 minutes per provider (5 the first time, pulling the image);
+- a Hub job of 8 entries: 30 to 45 seconds once the adapter image is on the node, 2.5
+  minutes more on first use. A job lasts as long as its slowest entry: LightEval's
+  `aime24`, `aime25` and `lcb:codegeneration_v6` generate long answers and take about
+  5 minutes.
+
+### Adding a provider
+
+Example: a framework `<x>`, registered as provider `amortized-<x>`. First teach
+Amortized the framework (code changes, once). Then build its contract.
+
+**Part 1: code changes, once**
+
+1. **Its catalog.** Add its Eval Hub catalog file to the `for name in ...` list of
+   `make evalhub-catalog` and to `contract.CATALOGS`. Then run `make evalhub-catalog`.
+2. **A describe helper**, `scripts/evalhub/<x>_compat.py`. Start from
+   `lm_eval_compat.py`. It runs inside the adapter image, so it can't import Amortized.
+   For each entry it writes its tasks, dataset (name, subset, split), scoring type,
+   settings profile and metric directions, or `unknown` with a reason (schema
+   `amortized.evalhub.described/v1`). In the Makefile, add an image variable and an
+   `evalhub-describe-<x>` target, and add that target to `evalhub-describe`.
+3. **Its settings**: what users may change, and what the model must support.
+   - its parameter model goes in `spec.PROVIDER_PARAMETERS` and `catalog.SETTINGS_PROFILES`;
+   - what it needs from the model (for example completions with logprobs) goes in
+     `catalog._PROFILE_NEEDS`;
+   - if its adapter needs the model's tokenizer, add it to `preparation.needs_tokenizer`.
+4. **Register it.**
+   - `EVALHUB_PROVIDERS` in the Makefile;
+   - `config.evalhub_providers`. The order decides which copy Morty offers first;
+   - the chart: a provider entry in `templates/evalhub.yaml`, plus `providers` and its
+     image value in `values.yaml`. The entry's `entrypoint` must run the adapter's main
+     script through `files/evalhub/adapter_launcher.py`, as the two existing entries do.
+     Where the script and its Python live differs per image.
+5. **Its metric names**, only if the adapter renames them. If it puts the task in front
+   (LightEval reports `arc:easy.acc` for `acc`), add its settings profile to
+   `contract.PREFIXED`. If it uses another name for the same metric (LightEval's `mcc`
+   for `matthews_correlation`), add it to `contract.ALIASES`. Not sure? Skip this, run
+   Part 2, and read `REPORT.md`: it lists each entry whose score wasn't found, with the
+   names the adapter reported instead. Then add the names, and re-run those entries with
+   `--only <ids> --rerun`.
+6. **Copies**, optional. If one of its entries asks the same questions as another
+   provider's entry and scores them the same way, add the pair to
+   `contract.SAME_SCORING`. Otherwise Morty offers both separately.
+
+**Part 2: build its contract.** Do steps 1–6 of [The steps](#the-steps) for the new
+provider only:
+
+```bash
+make evalhub-describe-<x>
+make evalhub-conform EVALHUB_PROVIDERS=amortized-<x> EVALHUB_KUBECTL="..."
+make evalhub-contract
+```
+
+The launcher needs no change: it reads the score metric from the Hub job, whatever
+the framework.
 
 ## Components and images
 
@@ -93,6 +360,7 @@ be read).
 | Hub API/orchestrator | `quay.io/evalhub/evalhub:1.0.3`, pinned by deployment digest | Persistent operator-managed service |
 | Runtime sidecar and input initializer | Matching Hub image, helper commands | Per evaluation |
 | Task adapter | `ghcr.io/amortized-ai/evalhub-adapter@sha256:...` built from this source | Per task evaluation |
+| Benchmark adapter | Pinned `quay.io/evalhub/community-lighteval@sha256:...` | Per benchmark evaluation |
 | Local model preparation/server | Existing eval image; evaluator command removed | Owned lease per locally served model |
 
 The adapter SDK is a library inside adapter images. The task image installs CPU
@@ -116,9 +384,9 @@ chart does not install a cluster-wide operator.
 3. Provision a separate persistent PostgreSQL database for Hub (existing PostgreSQL
    infrastructure may host it). Put its URL in a `db-url` Secret in the Hub instance
    namespace. Amortized's migration never creates or mutates the Hub schema.
-4. Register the task provider with an immutable image reference. The chart's
-   `evalhub.operator.createProviders` writes a system provider ConfigMap to the
-   explicitly configured operator namespace.
+4. Register the task and benchmark providers with immutable image references. The
+   chart's `evalhub.operator.createProviders` writes system provider ConfigMaps to
+   the explicitly configured operator namespace using distinct provider names.
    This requires deployment privileges there. Keep provider IDs/configuration
    immutable while evaluations are active; create a new provider ID/release for
    a changed protocol rather than mutating a running request's implementation.
@@ -181,6 +449,7 @@ evalhub:
   url: https://evalhub.amortized-evalhub.svc:8443
   caConfigMap: openshift-service-ca.crt
   stagingBucket: amortized
+  providers: [amortized-lighteval]
   operator:
     createInstance: true
     name: evalhub
@@ -191,7 +460,6 @@ evalhub:
     taskAdapterImage: ghcr.io/amortized-ai/evalhub-adapter@sha256:<published digest>
     jobServiceAccount: evalhub-amortized-evalhub-job   # <name>-<namespace>-job
 ```
-
 
 Native Anthropic authentication is currently rejected on the Hub path: the
 reviewed credential proxy injects Authorization bearer/basic auth, not Anthropic's
@@ -209,7 +477,8 @@ math, adapter artifacts, raw units and comparison identity.
 They do **not** establish Kubernetes/operator/image/endpoint compatibility.
 
 The cluster release check must run the exact pinned images against a small real
-rubric task and an embedding task through the normal Amortized
+rubric task, an embedding task, GSM8K (generative) and one
+likelihood benchmark on a served model (e.g. ARC challenge) through the normal Amortized
 validate → user Confirm path. Verify outputs/sample artifacts and the single
 primary MLflow run, cancel a genuinely running evaluation, restart Amortized
 between POST and observation, and check that serving/credential resources are
@@ -237,7 +506,10 @@ understand those mappings.
 Hub metrics/outcomes and MLflow/OCI artifacts are authoritative execution outputs.
 Amortized's timestamped snapshot is a disposable UI projection; restoring it must
 not launch another evaluation. Task comparison groups include dataset content
-hash, rubric/mapping/settings, the provider id, the adapter digest and the provider's
-task entry; they exclude timestamps, resource limits, descriptions, per-job object
-prefixes and model checkpoint paths. An adapter image change still splits a group.
-Raw units and direction remain attached to the metric.
+hash, rubric/mapping/settings, the provider id, the adapter digest and the selected
+benchmark's id, few-shot count and primary score; they exclude timestamps, resource
+limits, descriptions, per-job object prefixes and model checkpoint paths. An adapter
+image change still splits a group. Benchmark groups key on the recipe fingerprint
+alone, re-hashed from each job's stored approved recipe, so jobs approved before and
+after a fingerprint change group together. Different recipes stay separate; raw units
+and direction remain attached to the metric.

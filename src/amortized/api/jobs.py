@@ -51,6 +51,7 @@ from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.jobs.training import ALGO_ALIASES
 from amortized.models import (
+    BenchmarkView,
     EvalJobRequest,
     Job,
     JobStatus,
@@ -528,7 +529,8 @@ async def _validate_eval_data(
     data_run_id = config.get("eval_data_run_id", "")
     training_job_id = str(config.get("training_job_id", "") or "")
 
-    if not parent_job_id and not data_run_id:
+    is_benchmark = (config.get("evaluation") or {}).get("kind") == "benchmark"
+    if not parent_job_id and not data_run_id and not is_benchmark:
         errors.append(
             "eval jobs require either parent_job_id (a completed SDG or upload"
             " job holding the dataset) or eval_data_run_id (an MLflow run ID,"
@@ -552,11 +554,73 @@ async def _validate_eval_definition(config: dict[str, Any]) -> list[str]:
     from amortized.integrations.evalhub.client import validate_definition
 
     errors = await validate_definition(config)
-    if config.get("eval_mode") != "classification" and not [
-        c for c in config.get("rubric", []) if isinstance(c, dict) and c.get("name")
-    ]:
+    definition = config.get("evaluation") or {}
+    if config.get("eval_mode") == "classification" and definition.get("kind") == "benchmark":
+        errors.append(
+            "classifier and embedding models need a classification evaluation, not a benchmark"
+        )
+    if (
+        config.get("eval_mode") != "classification"
+        and definition.get("kind") != "benchmark"
+        and not [c for c in config.get("rubric", []) if isinstance(c, dict) and c.get("name")]
+    ):
         errors.append("eval jobs require at least one rubric criterion")
     return errors
+
+
+async def _pin_benchmark(
+    config: dict[str, Any], *, approved: bool
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Pin the exact recipe a benchmark job runs (no-op for task evaluations).
+
+    At validation it fills the resolved settings and the recipe fingerprint into the
+    card's config. At create (approved=True) it re-resolves the recipe, refuses a card
+    whose setup changed since validation, and stores the approved recipe, which the
+    worker later builds the Hub job from.
+    """
+    definition = config.get("evaluation")
+    if not isinstance(definition, dict) or definition.get("kind") != "benchmark":
+        return None, []
+    from amortized.integrations.evalhub.catalog import fingerprint
+    from amortized.integrations.evalhub.client import benchmark_recipe
+
+    definition.pop("recipe", None)  # server-owned; never trusted from a client
+    submitted = str(definition.pop("recipe_fingerprint", "") or "")
+    recipe, errors = await benchmark_recipe(config)
+    if errors or recipe is None:
+        return None, errors
+    current = fingerprint(recipe)
+    if approved and submitted != current:
+        return None, [
+            "The benchmark setup changed since validation (adapter image, datasets, tasks,"
+            " scoring or settings). Re-validate with validate_eval_job and confirm"
+            " the new card."
+        ]
+    definition["parameters"] = recipe["parameters"]
+    definition["recipe_fingerprint"] = current
+    if approved:
+        definition["recipe"] = recipe
+    return recipe, []
+
+
+def _benchmark_view(recipe: dict[str, Any] | None, config: dict[str, Any]) -> BenchmarkView | None:
+    """The confirmation card's benchmark facts, taken from the server's catalog entry."""
+    if recipe is None:
+        return None
+    from amortized.evaluation.spec import benchmark_limit
+    from amortized.integrations.evalhub.catalog import no_score_reason, recipe_score
+
+    entry = recipe.get("catalog_entry") or {}
+    parameters = recipe.get("parameters") or {}
+    return BenchmarkView(
+        id=str(recipe["benchmark_id"]),
+        name=str(entry.get("name") or recipe["benchmark_id"]),
+        metric=str((recipe_score(recipe) or {}).get("metric") or ""),
+        no_score=no_score_reason(recipe.get("compatibility")),
+        num_few_shot=parameters.get("num_few_shot"),
+        max_samples=benchmark_limit(parameters),
+        recipe_fingerprint=str((config.get("evaluation") or {}).get("recipe_fingerprint") or ""),
+    )
 
 
 # Tunable training hyperparameters that fall back to the trainer's own default when unset
@@ -785,6 +849,8 @@ async def _persist_metric_set(
     evaluate on" — the eval agent reads it in later sessions instead of
     re-designing metrics, keeping comparisons across models consistent.
     """
+    if (config.get("evaluation") or {}).get("kind") == "benchmark":
+        return
     dataset_run_id = str(config.get("eval_data_run_id") or "")
     if not dataset_run_id and parent_job_id:
         repo = Repository(db)
@@ -859,6 +925,8 @@ async def create_eval_job(
     errors.extend(_validate_eval_rubric_judge(config))
     errors.extend(_validate_eval_endpoints(config))
     errors.extend(await _validate_eval_definition(config))
+    if not errors:
+        errors.extend((await _pin_benchmark(config, approved=True))[1])
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -980,6 +1048,8 @@ async def retry_job(
         errors += _validate_eval_rubric_judge(config)
         errors += _validate_eval_endpoints(config)
         errors += await _validate_eval_definition(config)
+        if not errors:
+            errors += (await _pin_benchmark(config, approved=True))[1]
         if errors:
             raise HTTPException(status_code=422, detail=errors)
         await _persist_metric_set(config, parent_job_id, db)
@@ -1449,6 +1519,10 @@ async def validate_eval_job(
     if budget_error:
         errors.append(budget_error)
     errors.extend(await _validate_eval_definition(config))
+    recipe = None
+    if not errors:
+        recipe, pin_errors = await _pin_benchmark(config, approved=False)
+        errors.extend(pin_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -1495,6 +1569,7 @@ async def validate_eval_job(
         parent_job_id=parent_job_id,
         data_record_count=record_count,
         warnings=warnings,
+        benchmark=_benchmark_view(recipe, config),
     )
 
 
@@ -2025,7 +2100,7 @@ async def get_eval_results(
         return {
             "job_id": job_id,
             "mlflow_run_id": row.get("mlflow_run_id", ""),
-            "results": present(execution) if execution else None,
+            "results": present(execution, row) if execution else None,
         }
 
     mlflow_run_id = row.get("mlflow_run_id", "")

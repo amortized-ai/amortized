@@ -328,6 +328,18 @@ class PromptView(BaseModel):
     text: str
 
 
+class BenchmarkView(BaseModel):
+    """Benchmark facts the eval confirmation card shows, from the server's catalog."""
+
+    id: str
+    name: str
+    metric: str = ""
+    no_score: str = ""  # why the benchmark has no score, when metric is empty
+    num_few_shot: int | None = None
+    max_samples: int | None = None
+    recipe_fingerprint: str = ""
+
+
 class ValidatedJobConfig(BaseModel):
     valid: bool = True
     job_type: JobType
@@ -353,6 +365,8 @@ class ValidatedJobConfig(BaseModel):
     # rendered as "trainer default" on the confirmation card. Kept out of `config` (never
     # re-submitted to the create endpoint). Empty for non-training validate paths.
     trainer_default_fields: list[str] = Field(default_factory=list)
+    # The pinned benchmark (eval benchmark jobs only); None otherwise.
+    benchmark: BenchmarkView | None = None
 
 
 class RecipeSummary(BaseModel):
@@ -795,8 +809,20 @@ class EvalJobConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_evaluation_definition(self) -> "EvalJobConfig":
-        from amortized.evaluation.spec import TaskEvaluation
+        from amortized.evaluation.spec import BenchmarkEvaluation, TaskEvaluation
 
+        if isinstance(self.evaluation, BenchmarkEvaluation):
+            if self.eval_mode == "classification":
+                raise ValueError("benchmark and anchor/query classification modes are distinct")
+            if self.rubric:
+                raise ValueError("benchmark scoring is defined by its provider, not a task rubric")
+            if self.temperature != 0.0 or self.judge_max_samples or self.judge:
+                raise ValueError("benchmark generation/scoring settings belong to its provider")
+            from amortized.evaluation.spec import benchmark_limit
+
+            selected_limit = benchmark_limit(self.evaluation.parameters)
+            if self.max_samples and selected_limit and self.max_samples != selected_limit:
+                raise ValueError("Conflicting task and benchmark sample limits")
         if isinstance(self.evaluation, TaskEvaluation):
             names = [r.name for r in self.rubric]
             if len(names) != len(set(names)):
