@@ -437,7 +437,13 @@ function MetricsTab({ runId }: { runId: string }) {
     }
   }
 
-  return <TrainingMetricsChart data={metricsData} isLoading={isLoading} />
+  return (
+    <TrainingMetricsChart
+      data={metricsData}
+      isLoading={isLoading}
+      algorithm={jobsData?.trainingJob?.config?.algorithm}
+    />
+  )
 }
 
 // ---------------------------------------------------------------------------

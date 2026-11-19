@@ -580,7 +580,11 @@ function MetricsTab({ job }: { job: Job }) {
 
   return (
     <div className="pt-2">
-      <TrainingMetricsChart data={metricsData} isLoading={isLoading} />
+      <TrainingMetricsChart
+        data={metricsData}
+        isLoading={isLoading}
+        algorithm={job.config?.algorithm}
+      />
     </div>
   )
 }

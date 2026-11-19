@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "name": "GRPO LoRA (math demo)",
+    "description": "Quick end-to-end test of LoRA GRPO (training-hub, verl backend): Qwen3.5-2B on MATH-500 with the built-in math reward (answer in \\boxed{}, exact or math-equivalent match). No SDG job or upload needed.",
+    "required": [
+      "model_name_or_path"
+    ]
+  },
+  "algorithm": "lora_grpo",
+  "model_name_or_path": "Qwen/Qwen3.5-2B",
+  "data_path": "HuggingFaceH4/MATH-500",
+  "reward_type": "math",
+  "n_train": 512,
+  "num_train_epochs": 1,
+  "prompt_batch_size": 64,
+  "group_size": 8,
+  "max_prompt_length": 512,
+  "max_tokens": 1024,
+  "temperature": 1.0,
+  "learning_rate": 5e-06,
+  "lora_r": 32,
+  "lora_alpha": 64,
+  "gpu_memory_utilization": 0.4,
+  "language_model_only": true,
+  "nproc_per_node": 1,
+  "topic": "math reasoning grpo demo"
+}

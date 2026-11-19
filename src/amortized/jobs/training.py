@@ -1,4 +1,4 @@
-"""Training job builder — LoRA SFT, OSFT, DPO, GKD via Training Hub."""
+"""Training job builder — LoRA SFT, OSFT, LoRA GRPO, DPO, GKD via Training Hub."""
 
 from __future__ import annotations
 
@@ -122,6 +122,30 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
             thub_config.setdefault("batch_size", batch)
         for irrelevant in ("max_seq_len", "data_output_dir"):
             thub_config.pop(irrelevant, None)
+    elif algorithm == "lora_grpo":
+        # `thub lora-grpo` (verl backend) has its own knob set: no sequence packing, epochs
+        # are num_iterations, and the GPU count is n_gpus (one Ray/verl launcher process).
+        epochs = thub_config.pop("num_epochs", None)
+        if epochs is not None:
+            thub_config.setdefault("num_iterations", epochs)
+        thub_config["n_gpus"] = int(thub_config.pop("nproc_per_node", None) or 1)
+        for irrelevant in (
+            "micro_batch_size",
+            "max_seq_len",
+            "data_output_dir",
+            "gradient_accumulation_steps",
+            "text_column",
+            "label_column",
+        ):
+            thub_config.pop(irrelevant, None)
+        thub_config["reward_type"] = config.get("reward_type") or "math"
+        thub_config.setdefault("backend", "verl")
+        thub_config.setdefault("max_prompt_length", 2048)
+        # training-hub's math prep takes validation rows from rows[n_train:n_train + n_val], so a
+        # dataset with <= n_train rows yields an empty val.parquet, which verl always loads and
+        # cannot read ("BatchSize must be greater than 0"). n_val=0 makes it reuse up to 50
+        # training rows instead; validation never runs (test_freq=-1), so training keeps all rows.
+        thub_config.setdefault("n_val", 0)
     elif algorithm == "classifier_sft":
         # Classification-head fine-tuning (`thub classifier-sft`): uses ``batch_size`` (not
         # micro_batch_size) and has no sequence-packing knobs. ``use_peft`` is globally skipped
@@ -204,7 +228,34 @@ async def build(
             with open(os.path.join(assets_dir, asset)) as f:
                 config_files[asset] = f.read()
 
-    config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
+    thub_input = config
+    grpo_source = str(config.get("data_path") or "")
+    reward_type = str(config.get("reward_type") or "math")
+    # Local datasets always need flattening into one JSONL. A HuggingFace dataset ID does too
+    # for math (training-hub's math prep only opens local files); tool_call keeps training-hub's
+    # own HF tool-call loader.
+    is_hf_id = bool(grpo_source) and "://" not in grpo_source and not grpo_source.startswith("/")
+    if algorithm == "lora_grpo" and (
+        grpo_source.startswith("/") or (is_hf_id and reward_type == "math")
+    ):
+        assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+        with open(os.path.join(assets_dir, "prepare_grpo_data.py")) as f:
+            config_files["prepare_grpo_data.py"] = f.read()
+        grpo_jsonl = "/amortized/work/grpo_data.jsonl"
+        model_pre_commands.append(
+            shlex.join([
+                "python3",
+                "/amortized/prepare_grpo_data.py",
+                reward_type,
+                grpo_source,
+                grpo_jsonl,
+                str(config.get("text_column") or ""),
+                str(config.get("label_column") or ""),
+            ])
+        )
+        thub_input = {**config, "data_path": grpo_jsonl}
+
+    config_files["config.yaml"] = _training_hub_config_yaml(algorithm, thub_input)
 
     # Raw SDG parquet uses large_string columns, which leave embedding_sft's encoded
     # labels as strings (training crashes with "too many dimensions 'str'"). Only the
@@ -234,6 +285,15 @@ async def build(
     post_cmd = (
         f"mlflow artifacts log-artifacts -l {shlex.quote(output_dir)} -r $MLFLOW_RUN_ID -a model"
     )
+    if algorithm == "lora_grpo":
+        # Export like lora_sft: only the final PEFT adapter at the top of model/, so
+        # is_lora_export() + merge_lora.py serve/eval it. verl's checkpoints/ also holds FSDP
+        # model/optimizer shards per save, which must not be uploaded.
+        adapters = shlex.quote(output_dir) + "/checkpoints/global_step_*/actor/lora_adapter"
+        post_cmd = (
+            f'ADAPTER=$(ls -d {adapters} | sort -V | tail -1) && test -n "$ADAPTER"'
+            ' && mlflow artifacts log-artifacts -l "$ADAPTER" -r $MLFLOW_RUN_ID -a model'
+        )
 
     # embedding_sft trains in-process via SentenceTransformerTrainer (single device, no torchrun;
     # CUDA only if available), so it's CPU by DEFAULT (0 GPUs → no nvidia nodeSelector/runtimeclass,

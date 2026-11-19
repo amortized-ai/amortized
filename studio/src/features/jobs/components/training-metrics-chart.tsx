@@ -14,7 +14,12 @@ import {
 } from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { AllMetricsData, MetricHistory } from "../api/use-jobs"
-import { resolveMetric, resolveHistory } from "../lib/metric-aliases"
+import {
+  resolveMetric,
+  resolveHistory,
+  isGrpoAlgorithm,
+  GRPO_METRICS,
+} from "../lib/metric-aliases"
 
 /* ------------------------------------------------------------------ */
 /*  Chart configs using rh-* color tokens                              */
@@ -31,6 +36,15 @@ const gradNormConfig = {
 const lrConfig = {
   value: { label: "Learning Rate", color: "var(--color-rh-teal)" },
 } satisfies ChartConfig
+
+const rewardConfig = {
+  value: { label: "Reward", color: "var(--color-rh-red)" },
+} satisfies ChartConfig
+
+const entropyConfig = {
+  value: { label: "Entropy", color: "var(--color-rh-purple)" },
+} satisfies ChartConfig
+
 
 /* ------------------------------------------------------------------ */
 /*  Value formatters                                                   */
@@ -187,12 +201,81 @@ function MetricsSkeleton() {
 /*  Main exported component                                            */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/*  GRPO (verl) metrics                                                */
+/* ------------------------------------------------------------------ */
+
+function fmtSteps(v: number | undefined): string {
+  if (v == null) return "--"
+  return Math.round(v).toString()
+}
+
+function GrpoMetrics({ data }: { data: AllMetricsData }) {
+  const { histories, finalValues, params } = data
+
+  const lastReward = finalValues[GRPO_METRICS.reward]
+  const lastLr =
+    finalValues[GRPO_METRICS.learning_rate] ??
+    (params["learning_rate"] ? Number(params["learning_rate"]) : undefined)
+  const trainRuntime = finalValues["train_runtime"]
+  const lastStep = finalValues[GRPO_METRICS.global_step]
+
+  const charts = [
+    { title: "Mean Reward", data: histories[GRPO_METRICS.reward], config: rewardConfig, yLabel: "Reward" },
+    { title: "Policy Entropy", data: histories[GRPO_METRICS.entropy], config: entropyConfig, yLabel: "Entropy" },
+    { title: "Gradient Norm", data: histories[GRPO_METRICS.grad_norm], config: gradNormConfig, yLabel: "Grad Norm" },
+    { title: "Learning Rate Schedule", data: histories[GRPO_METRICS.learning_rate], config: lrConfig, yLabel: "LR", formatValue: (v: number) => v.toExponential(1) },
+  ].filter(c => c.data && c.data.length > 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-4 gap-3">
+        <SummaryCard
+          label="Final Reward"
+          value={fmtLoss(lastReward)}
+          color="var(--color-rh-red)"
+        />
+        <SummaryCard
+          label="Learning Rate"
+          value={fmtLr(lastLr)}
+          color="var(--color-rh-teal)"
+        />
+        <SummaryCard
+          label="Training Time"
+          value={fmtDuration(trainRuntime)}
+        />
+        <SummaryCard
+          label="Steps"
+          value={fmtSteps(lastStep)}
+        />
+      </div>
+
+      {charts.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {charts.map(c => (
+            <MetricChart
+              key={c.title}
+              title={c.title}
+              data={c.data}
+              config={c.config}
+              yLabel={c.yLabel}
+              formatValue={c.formatValue}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface TrainingMetricsChartProps {
   data: AllMetricsData | undefined
   isLoading: boolean
+  /** The training job's ``config.algorithm``; GRPO runs get a reward-centric layout. */
+  algorithm?: unknown
 }
 
-export function TrainingMetricsChart({ data, isLoading }: TrainingMetricsChartProps) {
+export function TrainingMetricsChart({ data, isLoading, algorithm }: TrainingMetricsChartProps) {
   if (isLoading) {
     return <MetricsSkeleton />
   }
@@ -203,6 +286,10 @@ export function TrainingMetricsChart({ data, isLoading }: TrainingMetricsChartPr
         No training metrics available.
       </div>
     )
+  }
+
+  if (isGrpoAlgorithm(algorithm)) {
+    return <GrpoMetrics data={data} />
   }
 
   const { histories, finalValues, params } = data

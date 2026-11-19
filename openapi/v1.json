@@ -7148,7 +7148,7 @@
               }
             ],
             "title": "Text Column",
-            "description": "classifier_sft/embedding_sft: text column name in the dataset (default 'text')"
+            "description": "classifier_sft/embedding_sft: text column name in the dataset (default 'text'). lora_grpo: prompt column (default: first of question, problem, prompt, input, text)"
           },
           "label_column": {
             "anyOf": [
@@ -7160,7 +7160,7 @@
               }
             ],
             "title": "Label Column",
-            "description": "classifier_sft/embedding_sft: label/category column name (default 'label'). Set to 'category' for the classification SDG datasets."
+            "description": "classifier_sft/embedding_sft: label/category column name (default 'label'). Set to 'category' for the classification SDG datasets. lora_grpo: reference-answer column (default: first of ground_truth, answer, label, category, output)"
           },
           "loss_type": {
             "anyOf": [
@@ -7287,6 +7287,113 @@
             ],
             "title": "Revision",
             "description": "classifier_sft: pin the model repo to a revision; with trust_remote_code it must be the full 40-character commit hash"
+          },
+          "reward_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "math",
+                  "tool_call"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reward Type",
+            "description": "lora_grpo reward (training-hub). math (default): answer verification \u2014 the answer is read from \\boxed{} or <answer></answer> and scored 1.0 on an exact or math-equivalent match with the reference answer (works for short labels too). tool_call: tool-call verification; the dataset must hold tool-call traces (question/tools/target_tool_name/target_arguments, or multi-turn messages)."
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "lora_grpo: system prompt for every rollout. The math reward defaults to asking for the final answer inside \\boxed{}."
+          },
+          "group_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 2.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Size",
+            "description": "lora_grpo: rollouts sampled per prompt (default 8)"
+          },
+          "prompt_batch_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Batch Size",
+            "description": "lora_grpo: unique prompts per step (default 100). prompt_batch_size x group_size must be divisible by 4 x nproc_per_node."
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "description": "lora_grpo: max response tokens per rollout (default 512)"
+          },
+          "max_prompt_length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Prompt Length",
+            "description": "lora_grpo: max prompt tokens; longer prompts are dropped (2048)"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature",
+            "description": "lora_grpo: rollout sampling temperature (default 0.7)"
+          },
+          "gpu_memory_utilization": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 1.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Memory Utilization",
+            "description": "lora_grpo: fraction of GPU memory for the vLLM rollout engine (0.45)"
           },
           "nproc_per_node": {
             "type": "integer",
