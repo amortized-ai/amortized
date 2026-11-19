@@ -355,15 +355,9 @@ class SignalPhaseRequest(BaseModel):
     step: str = Field(
         "",
         description=(
-            "Current step within the phase. Signal transitions in order: "
-            "understand_task (identified what the user wants to build), "
-            "load_skill (read the relevant skill guide), "
-            "gather_requirements (asking user for parameters — signal on first ask), "
-            "estimate_cost (checking models, pricing, or VRAM estimates), "
-            "confirm (presenting the job validation/confirmation card), "
-            "execute (job has been submitted), "
-            "review (checking job results or presenting next steps). "
-            "Signal the step you are currently at. Do not repeat a step already signaled."
+            "Slug of the step you are in now, as shown in its heading in your workflow "
+            "(or in your loaded skill's `### Step` headings). Send it on every response, "
+            "including when it is the same step as your previous response."
         ),
     )
 
@@ -379,7 +373,8 @@ class SignalPhaseResponse(BaseModel):
     operation_id="signal_phase",
     summary=(
         "Update the UI progress bar. You MUST call this once on every response "
-        "during an SDG, training, or eval workflow. Set phase to 'sdg', "
+        "during an SDG, training, or eval workflow, including when the step has not "
+        "changed since your previous response. Set phase to 'sdg', "
         "'training', or 'eval' based on the current workflow. Call once per "
         "response at the current step — do not batch or skip."
     ),

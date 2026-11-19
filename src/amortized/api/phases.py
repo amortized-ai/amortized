@@ -93,9 +93,9 @@ def _resolve_title(agent: str, step: str | None) -> str | None:
       is pointed at where to start.
     - A signalled step that matches a section heading (exact or prefix, both normalized) → that
       section.
-    - A signalled step that matches no heading (e.g. the coarse UI progress vocabulary like
-      `gather_requirements`, which is not a section slug) → None, so the pointer stays generic
-      rather than naming a WRONG section."""
+    - A signalled step that matches no heading (e.g. `gather_requirements`, one of the old
+      progress-bar names the `signal_phase` description used to list, which is not a section
+      slug) → None, so the pointer stays generic rather than naming a WRONG section."""
     hit = _resolve_section(agent, step)
     return hit[1] if hit else None
 
@@ -495,10 +495,11 @@ def signal_is_known(role: str, step: str, skill: str | None = None) -> bool:
     tool-owed phase (`_required()`), a `## Workflow` section, or a `### Step` of the loaded skill —
     matched EXACTLY on the normalized slug.
 
-    An unrecognized slug (the driver invented one, e.g. `gather_requirements` instead of the real
-    `gather`) keys to no obligation (`owed_for` is lenient) and names no section (the pointer stays
-    generic), so the adjudicator and the pointer are both blind to it. Such a turn is therefore
-    treated EXACTLY like a skipped signal (`_maybe_nudge_subagent_stall` does not adjudicate it).
+    An unrecognized slug (e.g. `gather_requirements`, one of the old progress-bar names the
+    `signal_phase` description used to list, instead of the real `gather`) keys to no obligation
+    (`owed_for` is lenient) and names no section (the pointer stays generic), so the adjudicator
+    and the pointer are both blind to it. Such a turn is therefore treated EXACTLY like a skipped
+    signal (`_maybe_nudge_subagent_stall` does not adjudicate it).
     Matching is exact (not the pointer's lenient prefix in `_resolve_title`/`skill_step_title`) on
     purpose: an off-by-prefix slug like `gather-requirements` would prefix-resolve to `gather` for
     the pointer yet still leave the adjudicator mis-keyed."""
