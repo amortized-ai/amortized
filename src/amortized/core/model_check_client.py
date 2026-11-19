@@ -137,10 +137,15 @@ async def run_checks(endpoints: list[ModelEndpoint], budget: float) -> list[Chec
             )
 
     tasks = [asyncio.create_task(run_chunk(i, chunk)) for i, chunk in enumerate(chunks)]
-    done, pending = await asyncio.wait(tasks, timeout=max(budget_end - loop.time(), 0.0))
-    for task in pending:
-        task.cancel()
-    await asyncio.gather(*pending, return_exceptions=True)
+    try:
+        done, _ = await asyncio.wait(tasks, timeout=max(budget_end - loop.time(), 0.0))
+    finally:
+        # Also on cancellation of this call (asyncio.wait doesn't cancel its tasks): nothing may
+        # keep probing, or start a queued chunk, after run_checks has returned or raised.
+        unfinished = [t for t in tasks if not t.done()]
+        for task in unfinished:
+            task.cancel()
+        await asyncio.gather(*unfinished, return_exceptions=True)
 
     results: list[CheckResult] = []
     for task, chunk in zip(tasks, chunks, strict=True):

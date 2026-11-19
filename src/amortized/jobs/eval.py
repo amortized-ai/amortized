@@ -123,7 +123,13 @@ def model_checks(
         endpoint_cfg = config[key]
         base_url = str(endpoint_cfg.get("base_url") or "")
         if not base_url or not endpoint_cfg.get("model"):
-            continue  # request validation already rejects a missing base_url/model
+            # A create request can't get here (request validation needs both), but a retry's
+            # overrides skip that validation; build() would reject this endpoint at dispatch,
+            # so reject it now instead of queueing a job that can't run.
+            errors.append(
+                ConfigError(label, "invalid_endpoint", f"{key}: base_url and model are required")
+            )
+            continue
         if not is_http_url(base_url) and resolve_provider(base_url) is None:
             errors.append(
                 ConfigError(

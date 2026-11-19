@@ -21,7 +21,7 @@ vi.mock("@/stores/chat-store", () => ({
   },
 }))
 
-import { sendOpenCodeMessage } from "@/lib/api-client"
+import { sendOpenCodeMessage, EventAlreadyDeliveredError } from "@/lib/api-client"
 
 const EVENT = { eventId: "confirmation_blocked:m1" }
 const mockFetch = vi.fn()
@@ -107,6 +107,32 @@ describe("sendOpenCodeMessage — idempotent events keep their session", () => {
     route((_n, session) => (session === "ses-1" ? json({}, 404) : json({ turn_id: "t1" })))
     await send()
     expect(messagePosts.map((p) => p.session)).toEqual(["ses-1", "ses-2"])
+  })
+})
+
+describe("sendOpenCodeMessage — a resent event the server already completed", () => {
+  it("signals delivery without polling or returning the earlier turn's reply", async () => {
+    route(() => json({ turn_id: "t1", status: "done", replayed: true }), () => {
+      throw new Error("a completed replay must not be polled")
+    })
+    await expect(send()).rejects.toBeInstanceOf(EventAlreadyDeliveredError)
+    expect(messagePosts).toHaveLength(1)
+    expect(cleared).toEqual([]) // the session that recorded the event stays
+  })
+
+  it("also when the server no longer tracks the turn (turn_id null)", async () => {
+    route(() => json({ turn_id: null, status: "done", replayed: true }))
+    await expect(send()).rejects.toBeInstanceOf(EventAlreadyDeliveredError)
+  })
+
+  it("still polls a replay whose turn is running (it is the event's own, latest turn)", async () => {
+    let polled = 0
+    route(() => json({ turn_id: "t1", status: "processing", replayed: true }), () => {
+      polled++
+      return json({ active: false, result: { info: {}, parts: [] } })
+    })
+    await send()
+    expect(polled).toBe(1)
   })
 })
 

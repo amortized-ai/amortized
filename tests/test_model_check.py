@@ -179,7 +179,8 @@ class TestDeadlines:
 
         monkeypatch.setattr(checker, "_request_for", flaky)
         broken, ok = asyncio.run(checker.check_endpoints([_ep("broken"), _ep("fine")], 5.0))
-        assert (broken.outcome, broken.reason) == (FAILED, "internal_error")
+        # A checker bug says nothing about the endpoint: unverified, so it can't block the job.
+        assert (broken.outcome, broken.reason) == (UNVERIFIED, "internal_error")
         assert ok.outcome == PASSED
 
 

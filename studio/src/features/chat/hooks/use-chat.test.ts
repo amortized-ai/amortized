@@ -1073,6 +1073,43 @@ describe("useChat — blocked confirmation (model check)", () => {
     expect(last.proposedAction?.endpoint).toBe("/api/v1/jobs/eval")
   })
 
+  it("a Retry the server already ran renders nothing from later turns and counts as delivered", async () => {
+    const { createJob, sendOpenCodeMessage, fetchSessionMessages, EventAlreadyDeliveredError } =
+      await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(new Error("Cannot reach Morty"))
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction() })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("failed"))
+    const before = useChatStore.getState().getConversationMessages("confirm").length
+
+    // The first send did reach the server; later turns have since added a validate card to the
+    // session. The replay must not resurrect it.
+    vi.mocked(fetchSessionMessages).mockResolvedValue([
+      { info: { role: "user" }, parts: [{ type: "text", text: "later turn" }] },
+      {
+        info: { role: "assistant" },
+        parts: [{
+          type: "tool",
+          tool: "amortized_validate_eval_job",
+          output: JSON.stringify({ valid: true, job_type: "eval", config: {} }),
+        }],
+      },
+    ] as never)
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(
+      new EventAlreadyDeliveredError("confirmation_blocked:action"),
+    )
+    act(() => { result.current.retryBlockedNotice("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    const messages = useChatStore.getState().getConversationMessages("confirm")
+    expect(messages).toHaveLength(before) // the placeholder was removed, no reply rendered
+    expect(messages.some((m) => m.proposedAction)).toBe(false)
+    expect(fetchSessionMessages).not.toHaveBeenCalled()
+  })
+
   it("makes one automatic delivery, then offers Retry that resends the same event", async () => {
     const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
     vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())

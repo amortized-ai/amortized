@@ -66,6 +66,9 @@ MAX_TURNS_HARD = 64
 # state.lock, so beyond this a client is only queuing work unboundedly — reject with
 # 429 rather than letting state.turns / _background_tasks grow without limit.
 MAX_ACTIVE_TURNS = 16
+# Delivered system-event ids remembered per session (SessionState.completed_events): ids only,
+# so this bounds memory while covering every event a client could still resend.
+MAX_COMPLETED_EVENTS = 64
 
 
 @dataclass
@@ -136,6 +139,10 @@ class SessionState:
     # confirmation whose POST response was lost) return the turn already running instead of
     # starting a second one. Pruned with the turns it points at.
     event_turns: dict[str, str] = field(default_factory=dict)
+    # Event ids whose turn succeeded, kept apart from the turn cache (which evicts finished
+    # turns) so a resend long after delivery — e.g. a user Retry — still isn't run twice.
+    # Insertion-ordered and bounded (MAX_COMPLETED_EVENTS).
+    completed_events: dict[str, None] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -293,6 +300,21 @@ def _confirmation_blocked_job_type(body: MessageRequest) -> str | None:
         return None
     job_type = (body.job_type or "").strip().lower()
     return job_type if job_type in _VALID_TARGETS else None
+
+
+def _park_subagent_for_other_blocked_job(state: SessionState, body: MessageRequest) -> None:
+    """A blocked-confirmation notice belongs to the workflow that owns its job type. If a
+    different workflow is active (e.g. the user moved on to SDG before retrying an eval notice),
+    park it — resumable, like a help detour — so the orchestrator hands the notice to the right
+    workflow instead of the active one getting another job type's repair prompt."""
+    blocked = _confirmation_blocked_job_type(body)
+    target = state.subagent_target
+    if not blocked or not state.subagent_id or not target or target == blocked:
+        return
+    state.completed_subagents[target] = state.subagent_id
+    state.completed_last_step[target] = state.last_signal_step
+    state.subagent_id = None
+    state.subagent_target = None
 
 
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
@@ -849,8 +871,14 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         existing_id = state.event_turns.get(body.event_id)
         existing = state.turns.get(existing_id) if existing_id else None
         # A turn that failed may run again; one still running or done is the same event.
+        # `replayed` tells the client this is a resend, so it doesn't render a finished reply
+        # from session messages that may now belong to later turns.
         if existing_id and existing is not None and (existing.active or existing.error is None):
-            return {"turn_id": existing_id, "status": "processing" if existing.active else "done"}
+            status = "processing" if existing.active else "done"
+            return {"turn_id": existing_id, "status": status, "replayed": True}
+        if body.event_id in state.completed_events:
+            # Delivered, and its turn already evicted: still the same event.
+            return {"turn_id": None, "status": "done", "replayed": True}
 
     # Bound pending work per session: active turns are never evicted, so without an
     # admission limit a client could queue unboundedly (state.turns / _background_tasks).
@@ -884,6 +912,7 @@ async def _run_turn(
     turn = state.turns.get(turn_id)
     try:
         async with state.lock:
+            _park_subagent_for_other_blocked_job(state, body)
             if state.subagent_id:
                 result = await _handle_subagent_message(state, session_id, user_text, body)
             else:
@@ -938,7 +967,16 @@ async def _run_turn(
         if turn:
             turn.active = False
             turn.finished_at = datetime.now(UTC)
+            if body.event_id and turn.error is None:
+                _record_completed_event(state, body.event_id)
         state.last_activity = datetime.now(UTC)
+
+
+def _record_completed_event(state: SessionState, event_id: str) -> None:
+    state.completed_events.pop(event_id, None)
+    state.completed_events[event_id] = None
+    while len(state.completed_events) > MAX_COMPLETED_EVENTS:
+        state.completed_events.pop(next(iter(state.completed_events)))
 
 
 @router.get("/session/{session_id}/turn/{turn_id}")

@@ -44,16 +44,27 @@ class SDGBuildError(JobBuildError):
 _BASE_ENV = {"DD_API_KEY": "not-needed"}
 
 
+def _is_chat_column(column: dict[str, Any]) -> bool:
+    """Whether a column calls its model with a chat request — the only kind the check sends.
+    Data Designer's LLM columns (llm-text, llm-code, llm-structured, llm-judge) do; embedding
+    and image columns call other APIs, so a chat probe would wrongly fail them. A column with
+    no column_type is treated as an LLM column (the common case), so it is still checked."""
+    column_type = str(column.get("column_type") or "")
+    return not column_type or column_type.startswith("llm-")
+
+
 def model_checks(
     config: dict[str, Any], env: dict[str, str]
 ) -> tuple[list[ModelEndpoint], list[ConfigError]]:
-    """The teacher models this SDG job will call: only ``model_configs`` entries a column
+    """The teacher models this SDG job will call: only ``model_configs`` entries an LLM column
     references (an unused model config can't block the job). Keys resolve as ``build()``
     delivers them — the forwarded server env plus every enabled provider's key."""
     referenced = {
         str(col.get("model_alias") or col.get("model_config_alias"))
         for col in config.get("columns") or []
-        if isinstance(col, dict) and (col.get("model_alias") or col.get("model_config_alias"))
+        if isinstance(col, dict)
+        and (col.get("model_alias") or col.get("model_config_alias"))
+        and _is_chat_column(col)
     }
     job_env = {**env, **_BASE_ENV}  # build()'s env wins over the forwarded env in the worker
     inject_enabled_provider_keys(job_env)

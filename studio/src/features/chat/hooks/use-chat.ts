@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl, ApiError } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl, ApiError, EventAlreadyDeliveredError } from "@/lib/api-client"
 import { useChatStore, type PersistedMessage } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { jobTypeLabel } from "@/features/jobs/lib/format"
@@ -833,6 +833,12 @@ export function useChat() {
       })
       return true
     } catch (err) {
+      if (err instanceof EventAlreadyDeliveredError) {
+        // Morty already has this event (an earlier send got through): nothing new to show, and
+        // the session's latest messages may belong to later turns, so render none of them.
+        useChatStore.getState().removeMessage(convId, placeholderId)
+        return true
+      }
       const rawMsg = err instanceof Error ? err.message : String(err)
       if (opts.keepFailedTurn === false) {
         useChatStore.getState().removeMessage(convId, placeholderId)
@@ -872,6 +878,9 @@ export function useChat() {
     setNotify("sending")
     try {
       if (!useChatStore.getState().conversations.some((c) => c.id === convId)) return
+      // Like sendMessage: let a pending session warmup settle first, so a warmup that replaces
+      // the session can't swap it out mid-delivery (the server dedups events per session).
+      if (warmupPromiseRef.current) await warmupPromiseRef.current
       if (!(await acquireRequestLock(convId))) {
         setNotify("failed")
         return

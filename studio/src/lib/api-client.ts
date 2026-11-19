@@ -477,6 +477,15 @@ function sessionGone(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404
 }
 
+// Thrown by sendOpenCodeMessage when a resent event (same eventId) already completed on the
+// server: the event is delivered, but its reply belongs to an earlier turn and isn't returned.
+export class EventAlreadyDeliveredError extends Error {
+  constructor(public readonly eventId: string) {
+    super(`event ${eventId} was already delivered`)
+    this.name = "EventAlreadyDeliveredError"
+  }
+}
+
 export interface SendOptions {
   // Stable id for a system event that may be resent (e.g. "confirmation_blocked:<message id>").
   // The server returns the turn it already started for a repeat, so retries are idempotent — and
@@ -547,6 +556,11 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
     let status: number
     if (resp.ok) {
       const data = await resp.json()
+      // A resent event the server already ran to completion: there is no reply to show here.
+      // Rendering one from the session would pick up whatever later turns added since.
+      if (options.eventId && data?.replayed === true && data.status === "done") {
+        throw new EventAlreadyDeliveredError(options.eventId)
+      }
       // Backward-compatible: a synchronous server returns the full result directly.
       if (!data || typeof data.turn_id !== "string") {
         return data as OpenCodeResponse

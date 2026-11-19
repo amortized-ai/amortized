@@ -21,9 +21,11 @@ export function ModelCheckWarnings({ checks }: { checks?: ModelCheckResult[] }) 
   if (unverified.length === 0) return null
   return (
     <div className="mt-2 space-y-1" data-testid="model-check-warnings">
-      {unverified.map((check) => (
+      {/* Keyed by position: two endpoints can share a label and model (e.g. repeated SDG
+          aliases, or the same model under different credentials). */}
+      {unverified.map((check, i) => (
         <p
-          key={`${check.label}-${check.model}`}
+          key={i}
           className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-400"
         >
           <AlertTriangle className="mt-px h-3 w-3 shrink-0" />

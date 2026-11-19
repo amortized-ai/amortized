@@ -368,8 +368,11 @@ model and set the eval's `endpoint` — then go to Step 3. If the model is in
 `known_endpoints` (from `get_eval_endpoint_suggestions`), set `base_url` and
 `model` to the entry's `base_url` and `model` exactly (`model` is the endpoint
 name, e.g. `gpt-oss` — never its `model_name`, which the gateway rejects). A
-`list_models` model whose provider is `gateway` is always in `known_endpoints`:
-use that entry, never `base_url: "gateway"`. Otherwise find it with
+`list_models` model whose provider is `gateway` belongs in `known_endpoints`:
+use that entry, never `base_url: "gateway"`. If it is missing (the gateway lookup
+can fail), call `get_eval_endpoint_suggestions` once more; if it is still missing,
+tell the user the gateway endpoint is unavailable right now — do not guess a URL
+or model name. Otherwise find it with
 `list_models` and set `base_url` = its provider name (e.g. `openai`,
 `anthropic`) and `model` = its id. If validation rejects that name, ask the user how the model is
 reached rather than guessing a URL (option 4 below). Only
@@ -521,8 +524,11 @@ an endpoint the eval would call (the judge, or an external model under eval) and
 it did not answer; the message names the model and says what to change. Do NOT
 try other URLs, model names, or providers by guessing, and do NOT narrate
 attempts. In one or two sentences tell the user which model failed and why (in
-the message's words), then `present_options`: pick a different judge from
-`known_endpoints` / `list_models`, or fix the endpoint or its key in Settings.
+the message's words), then `present_options` for the endpoint that failed:
+- **judge** — pick a different judge from `known_endpoints` / `list_models`, or fix
+  the endpoint or its key in Settings.
+- **model under test** — pick a different model to evaluate, or fix its endpoint
+  or key in Settings.
 
 `validate_eval_job` returns a **422 tool error** when there is a decision-requiring
 warning (input leakage/overlap with the training data, a rubric that would fork an

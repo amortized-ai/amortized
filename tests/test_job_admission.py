@@ -12,6 +12,7 @@ from test_eval_jobs import EVAL_BODY
 
 import amortized.config as config_mod
 from amortized.api import job_admission
+from amortized.core import jobs as core_jobs
 from amortized.core import model_check_client
 from amortized.core.jobs import InvalidJobStateError, create_job
 from amortized.core.model_check_client import CheckReport
@@ -264,6 +265,65 @@ class TestConnectionScoping:
         resp = await client.post("/api/v1/jobs/eval", json=body)
         assert resp.status_code == 422
         assert await _job_count() == 1  # only the training job; the eval was not created
+
+
+class TestAdmissionOrder:
+    @pytest.mark.asyncio
+    async def test_gpu_budget_uses_the_config_the_prechecks_normalized(
+        self, client, monkeypatch
+    ) -> None:
+        # An eval of a CPU classifier: until the prechecks stamp eval_mode, it looks like an
+        # embedded-serving eval (1 GPU) and a zero-GPU deployment would wrongly reject it.
+        monkeypatch.setattr(core_jobs._settings, "gpu_budget", 0)  # the object core.jobs reads
+
+        async def stamp(_repo):  # type: ignore[no-untyped-def]
+            config["eval_mode"] = "classification"
+            return []
+
+        config: dict[str, Any] = {"training_job_id": "t-classifier"}
+        row, _ = await job_admission.admit_job(JobType.eval, config, prechecks=stamp)
+        assert row["status"] == "queued"
+
+    @pytest.mark.asyncio
+    async def test_over_budget_is_rejected_before_any_probe(self, client, monkeypatch) -> None:
+        monkeypatch.setattr(core_jobs._settings, "gpu_budget", 0)  # the object core.jobs reads
+        seen = _stub_report(monkeypatch, CheckReport())
+        with pytest.raises(job_admission.HTTPException) as exc:
+            await job_admission.admit_job(
+                JobType.eval, {"training_job_id": "t"}, prechecks=_no_errors
+            )
+        assert exc.value.status_code == 422
+        assert seen == []
+
+    @pytest.mark.asyncio
+    async def test_prechecks_run_once_when_nothing_was_probed(self, client) -> None:
+        # Training has no endpoints to probe; its prechecks download the dataset from MLflow,
+        # so they must not run a second time for nothing.
+        calls: list[int] = []
+
+        async def counting(_repo):  # type: ignore[no-untyped-def]
+            calls.append(1)
+            return []
+
+        await job_admission.admit_job(JobType.training, {"algorithm": "sft"}, prechecks=counting)
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_prechecks_rerun_when_endpoints_were_probed(self, client, monkeypatch) -> None:
+        ok = CheckResult("judge", "gpt-judge", "http://judge:8000/v1", "passed", "ok")
+        _stub_report(monkeypatch, CheckReport(results=[ok]))
+        calls: list[int] = []
+
+        async def counting(_repo):  # type: ignore[no-untyped-def]
+            calls.append(1)
+            return []
+
+        await job_admission.admit_job(JobType.eval, dict(EVAL_BODY), prechecks=counting)
+        assert len(calls) == 2
+
+
+async def _no_errors(_repo: Any) -> list[str]:
+    return []
 
 
 @pytest.mark.asyncio

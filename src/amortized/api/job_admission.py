@@ -61,7 +61,6 @@ _FAILURE_HINTS = {
     "bad_request": "rejected a test request. Check the model name and endpoint",
     "server_error": "returned a server error. The endpoint may be down",
     "bad_response": "didn't answer like a chat model. Check that the URL is its chat API",
-    "internal_error": "couldn't be checked because of an internal error",
 }
 
 
@@ -113,18 +112,17 @@ async def admit_job(
 ) -> tuple[dict[str, Any], list[CheckResult]]:
     """Validate, model-check, and create a job.
 
-    1. ``prechecks`` (DB-backed validation) in a scoped connection; errors → 422.
+    1. ``prechecks`` (DB-backed validation) in a scoped connection; errors → 422. Then the GPU
+       budget, on the config as the prechecks normalized it.
     2. The model check, with no connection held.
-    3. In a fresh connection: ``prechecks`` again (upstream state may have changed during the
-       check), ``before_insert`` side effects, then the insert with the check report."""
-    # Config-only rejections first: a config carrying credentials must never be probed (a
-    # user:password@ base_url would otherwise be sent before create_job refuses it), and a job
-    # over the GPU budget shouldn't wait out a model check it can never use.
-    static_errors = [
-        e for e in (inline_credential_error(config), gpu_budget_error(job_type, config)) if e
-    ]
-    if static_errors:
-        raise HTTPException(status_code=422, detail=static_errors)
+    3. In a fresh connection: ``prechecks`` again if the check probed anything (upstream state
+       may have changed while it ran), ``before_insert`` side effects, then the insert with the
+       check report."""
+    # A config carrying credentials must never be probed (a user:password@ base_url would
+    # otherwise be sent before create_job refuses it), so this comes before anything else.
+    credential_error = inline_credential_error(config)
+    if credential_error:
+        raise HTTPException(status_code=422, detail=[credential_error])
 
     if prechecks is not None:
         async with get_pool().acquire() as conn:
@@ -132,11 +130,20 @@ async def admit_job(
         if errors:
             raise HTTPException(status_code=422, detail=errors)
 
+    # After the prechecks: they can set fields the GPU estimate reads (an eval of a classifier
+    # gets eval_mode / eval_on_gpu stamped). Still before the probe, so a job over budget
+    # doesn't wait out a check it can never use.
+    budget_error = gpu_budget_error(job_type, config)
+    if budget_error:
+        raise HTTPException(status_code=422, detail=[budget_error])
+
     results = await check_models_or_raise(job_type.value, config)
 
     async with get_pool().acquire() as conn:
         repo = Repository(conn)
-        if prechecks is not None:
+        # Nothing probed means no time passed since the prechecks; re-running them would only
+        # repeat their work (a training precheck downloads the dataset from MLflow).
+        if prechecks is not None and results:
             errors = await prechecks(repo)
             if errors:
                 raise HTTPException(status_code=422, detail=errors)

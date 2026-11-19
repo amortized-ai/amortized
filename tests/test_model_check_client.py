@@ -153,6 +153,35 @@ class TestChunkingAndBudget:
         assert [r.label for r in results] == [f"e{i}" for i in range(9)]
         assert all(r.outcome == PASSED for r in results)
 
+    def test_cancelling_the_check_cancels_every_chunk(self, monkeypatch) -> None:
+        # asyncio.wait doesn't cancel its tasks: if the caller is cancelled, running chunks
+        # must be cancelled and queued ones must never start.
+        started: list[int] = []
+        cancelled: list[int] = []
+
+        async def slow_chunk(chunk, deadline, timeout):  # type: ignore[no-untyped-def]
+            started.append(len(chunk))
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                cancelled.append(len(chunk))
+                raise
+            return [_ok(e) for e in chunk]
+
+        monkeypatch.setattr(client, "_check_chunk", slow_chunk)
+
+        async def go() -> None:
+            task = asyncio.create_task(client.run_checks(_eps(17), 20.0))
+            await asyncio.sleep(0.05)  # the first wave (two chunks) is running
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await asyncio.sleep(0.05)  # a leaked queued chunk would start here
+
+        asyncio.run(go())
+        assert len(started) == client.MAX_CONCURRENT_CHUNKS  # the third chunk never started
+        assert sorted(cancelled) == sorted(started)
+
     def test_seventeen_endpoints_at_most_two_chunks_in_flight(self, service) -> None:
         in_flight = 0
         peak = 0
@@ -277,6 +306,26 @@ class TestEvalHook:
         (judge,) = endpoints
         assert judge.api_key == "" and judge.credential_id == ""
 
+    def test_incomplete_endpoint_is_a_config_error(self, monkeypatch) -> None:
+        # A retry's overrides skip request validation; build() would reject this judge at
+        # dispatch, so the check rejects it up front instead of skipping it.
+        monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
+        endpoints, errors = self._checks(
+            {"model_name_or_path": "m", "judge": {"base_url": "http://judge/v1"}}
+        )
+        assert endpoints == []
+        assert [(e.label, e.reason) for e in errors] == [("judge", "invalid_endpoint")]
+        assert "base_url and model are required" in errors[0].message
+
+    def test_classification_ignores_an_incomplete_judge(self) -> None:
+        # Classification evals never call a judge (build() ignores it too).
+        config = {
+            "eval_mode": "classification",
+            "training_job_id": "t",
+            "judge": {"base_url": "http://judge/v1"},
+        }
+        assert self._checks(config) == ([], [])
+
     def test_unauthenticated_literal_url(self, monkeypatch) -> None:
         monkeypatch.setattr(config_mod.settings, "forward_env", [])
         monkeypatch.delenv("EVAL_JUDGE_API_KEY", raising=False)
@@ -391,6 +440,34 @@ class TestSdgHook:
         _, errors = sdg_builder.model_checks(self._config("unused"), {})
         assert len(errors) == 1 and isinstance(errors[0], ConfigError)
         assert errors[0].reason == "provider_not_configured"
+
+    def test_embedding_and_image_columns_are_not_chat_probed(self, monkeypatch) -> None:
+        # Their models answer other APIs; a chat probe would wrongly fail a valid job.
+        monkeypatch.setattr(
+            model_endpoints,
+            "resolve_provider",
+            lambda n: OPENAI_PROVIDER if n == "openai" else None,
+        )
+        monkeypatch.setattr(
+            sdg_builder,
+            "inject_enabled_provider_keys",
+            lambda env: env.update({"OPENAI_API_KEY": "sk-p"}),
+        )
+        config = {
+            "model_configs": [
+                {"alias": "teacher", "model": "gpt-5", "provider": "openai"},
+                {"alias": "embedder", "model": "text-embedding-3", "provider": "openai"},
+                {"alias": "painter", "model": "gpt-image-1", "provider": "openai"},
+            ],
+            "columns": [
+                {"name": "q", "column_type": "llm-text", "model_alias": "teacher"},
+                {"name": "v", "column_type": "embedding", "model_alias": "embedder"},
+                {"name": "img", "column_type": "image", "model_alias": "painter"},
+            ],
+        }
+        endpoints, errors = sdg_builder.model_checks(config, {})
+        assert errors == []
+        assert [e.model for e in endpoints] == ["gpt-5"]
 
     def test_legacy_alias_field_counts_as_referenced(self, monkeypatch) -> None:
         monkeypatch.setattr(

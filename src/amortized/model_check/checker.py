@@ -190,11 +190,13 @@ async def check_endpoint(ep: ModelEndpoint, deadline: float) -> CheckResult:
         )
     except Exception as exc:  # a checker bug must not drop this or any other endpoint's result
         logger.warning("model check internal error for %s (%s)", ep.label, type(exc).__name__)
+        # Unverified, not failed: a bug in the checker says nothing about the endpoint, so it
+        # must not block the job (checker problems are never definite failures).
         return CheckResult(
             ep.label,
             ep.model,
             redact_url(ep.base_url),
-            FAILED,
+            UNVERIFIED,
             "internal_error",
             type(exc).__name__,
         )

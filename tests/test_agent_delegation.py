@@ -967,6 +967,45 @@ class TestConfirmationBlocked:
         assert 'target "eval"' in orch_send[3] and "resume: true" in orch_send[3]
         assert state.subagent_target == "eval" and state.subagent_id == eval_session
 
+    def test_notice_for_another_workflow_parks_the_active_one(self, router: _Router) -> None:
+        # The user moved on to SDG before retrying an eval notice: the SDG subagent must not get
+        # the eval repair prompt. It is parked (resumable) and the orchestrator hands the notice
+        # to eval.
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "eval", "context": "judge unreachable", "resume": True},
+                    )
+                ]
+            ],
+        )
+        sdg = router.add_session([[_text_part("unused")]])
+        state.subagent_id = sdg
+        state.subagent_target = "sdg"
+        state.last_signal_step = "teacher-model"
+        eval_session = router.queue_session([[_text_part("Let's pick a working judge.")]])
+        body = _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval")
+
+        agent._park_subagent_for_other_blocked_job(state, body)
+        assert state.subagent_id is None
+        assert state.completed_subagents["sdg"] == sdg  # resumable later
+        assert state.completed_last_step["sdg"] == "teacher-model"
+
+        _run(agent._handle_orchestrator_message(state, "s1", self.FAILURE, body))
+        assert all(s[0] != sdg for s in router.sent)  # SDG never saw the eval notice
+        assert state.subagent_target == "eval" and state.subagent_id == eval_session
+
+    def test_notice_for_the_active_workflow_stays_with_it(self, router: _Router) -> None:
+        state = _make_state(router)
+        state.subagent_id = "eval-sub"
+        state.subagent_target = "eval"
+        body = _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval")
+        agent._park_subagent_for_other_blocked_job(state, body)
+        assert state.subagent_id == "eval-sub" and "eval" not in state.completed_subagents
+
     def test_unknown_job_type_gets_no_blocked_steer(self, router: _Router) -> None:
         state = _make_state(router, orchestrator_script=[[_text_part("ok")]])
         _run(agent._handle_orchestrator_message(
@@ -1034,8 +1073,28 @@ class TestEventIdempotency:
         turn = state.turns[first["turn_id"]]
         turn.active = False  # finished successfully
         done = self._send("confirmation_blocked:m1")
-        assert done == {"turn_id": first["turn_id"], "status": "done"}
+        assert done == {"turn_id": first["turn_id"], "status": "done", "replayed": True}
         assert len(state.turns) == 1
+
+    def test_a_delivered_event_stays_deduplicated_after_its_turn_is_evicted(self, session) -> None:
+        # The turn cache drops finished turns; a Retry long after delivery must still not run
+        # the event again.
+        state, started = session
+        first = self._send("confirmation_blocked:m3")
+        agent._record_completed_event(state, "confirmation_blocked:m3")  # the turn succeeded
+        state.turns.pop(first["turn_id"])
+        state.event_turns.pop("confirmation_blocked:m3")
+
+        again = self._send("confirmation_blocked:m3")
+        assert again == {"turn_id": None, "status": "done", "replayed": True}
+        assert len(started) == 1
+
+    def test_completed_events_are_bounded(self, session) -> None:
+        state, _ = session
+        for i in range(agent.MAX_COMPLETED_EVENTS + 5):
+            agent._record_completed_event(state, f"e{i}")
+        assert len(state.completed_events) == agent.MAX_COMPLETED_EVENTS
+        assert "e0" not in state.completed_events  # oldest dropped first
 
     def test_a_failed_turn_can_run_again(self, session) -> None:
         state, _ = session
