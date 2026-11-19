@@ -480,9 +480,12 @@ function sessionGone(error: unknown): boolean {
 // Thrown by sendOpenCodeMessage when a resent event (same eventId) already completed on the
 // server: the event is delivered, but its reply belongs to an earlier turn and isn't returned.
 export class EventAlreadyDeliveredError extends Error {
-  constructor(public readonly eventId: string) {
+  readonly eventId: string
+
+  constructor(eventId: string) {
     super(`event ${eventId} was already delivered`)
     this.name = "EventAlreadyDeliveredError"
+    this.eventId = eventId
   }
 }
 
