@@ -15,7 +15,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from amortized.model_check import checker
 from amortized.model_check.types import ModelEndpoint
@@ -32,7 +32,7 @@ class EndpointIn(BaseModel):
     base_url: str = Field(..., max_length=2048)
     model: str = Field(..., max_length=500)
     provider_type: Literal["openai", "anthropic"] = "openai"
-    api_key: str = Field("", max_length=8192)
+    api_key: SecretStr = Field(SecretStr(""), max_length=8192)
 
 
 class CheckRequest(BaseModel):
@@ -77,7 +77,7 @@ async def check(request: CheckRequest) -> dict[str, Any] | JSONResponse:
                 base_url=e.base_url,
                 model=e.model,
                 provider_type=e.provider_type,
-                api_key=e.api_key,
+                api_key=e.api_key.get_secret_value(),
             )
             for e in request.endpoints
         ]

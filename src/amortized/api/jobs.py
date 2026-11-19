@@ -507,7 +507,9 @@ def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
         if resolve_provider(base_url) is None:
             names = ", ".join(p["name"] for p in enabled_provider_defs()) or "none configured"
             errors.append(
-                f"{key}.base_url {base_url!r} is neither an http(s) URL nor a configured"
+                # The value isn't echoed: a key pasted into the field would otherwise land
+                # in the agent's context and the chat.
+                f"{key}.base_url is neither an http(s) URL nor a configured"
                 f" provider — set it to one of: {names}, or to the URL of an endpoint that"
                 " needs no key (get_eval_endpoint_suggestions lists the URLs of pre-registered"
                 " endpoints in known_endpoints). A model that needs an API key must come from"

@@ -957,7 +957,7 @@ class TestRetryEvalJob:
             )
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
         assert response.status_code == 422
-        assert "judge.base_url 'gateway' is neither" in response.text
+        assert "judge.base_url is neither" in response.text
 
     @pytest.mark.asyncio
     async def test_retry_legacy_row_strips_runtime_keys(self, client: httpx.AsyncClient) -> None:
@@ -1172,7 +1172,6 @@ class TestJudgeProviderResolution:
         spec = eval_builder._endpoint_spec(
             {"judge": {"base_url": "openai", "model": "gpt-5"}},
             "judge",
-            "EVAL_JUDGE_API_KEY",
         )
         assert spec["base_url"] == "https://api.openai.com/v1"
         # points at the injected provider key var, not the bespoke (unset) one
@@ -1183,10 +1182,11 @@ class TestJudgeProviderResolution:
         spec = eval_builder._endpoint_spec(
             {"judge": {"base_url": "http://judge:8000/v1", "model": "m"}},
             "judge",
-            "EVAL_JUDGE_API_KEY",
         )
         assert spec["base_url"] == "http://judge:8000/v1"
-        assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
+        # No key env at all: a key the server forwards to jobs never goes to a URL the config
+        # names (keyed models come from providers configured in Settings).
+        assert spec["api_key_env"] == ""
 
     @pytest.mark.asyncio
     async def test_provider_name_delivers_its_key_only_through_env(self, monkeypatch) -> None:

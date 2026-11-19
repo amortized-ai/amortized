@@ -119,11 +119,11 @@ class TestDefiniteFailuresBlock:
         assert "404 Not Found" in body["details"][0]["error"]
 
     @pytest.mark.asyncio
-    async def test_forwarded_key_is_used_and_never_echoed(
+    async def test_literal_url_is_probed_without_a_forwarded_key(
         self, client, real_check, monkeypatch
     ) -> None:
-        # Job configs carry no keys; a literal-URL judge authenticates through a key the
-        # server forwards to job pods (EVAL_JUDGE_API_KEY), and the check must send that same key.
+        # Job configs carry no keys, and a literal-URL judge is keyless: even a key the server
+        # forwards to job pods (EVAL_JUDGE_API_KEY) is never sent to a URL the config names.
         monkeypatch.setattr(config_mod.settings, "forward_env", ["EVAL_JUDGE_API_KEY"])
         monkeypatch.setenv("EVAL_JUDGE_API_KEY", "sk-forwarded-secret")
         seen_auth: list[str] = []
@@ -137,9 +137,10 @@ class TestDefiniteFailuresBlock:
         real_check(handler)
         resp = await client.post("/api/v1/jobs/eval", json=EVAL_BODY)
         assert resp.status_code == 422
-        assert "auth_failed" in resp.text
+        # Sent unauthenticated, so a 401 means the endpoint needs a key from Settings.
+        assert "auth_required" in resp.text
         assert "sk-forwarded-secret" not in resp.text
-        assert seen_auth and seen_auth[0] == "Bearer sk-forwarded-secret"
+        assert seen_auth == [""]
 
     @pytest.mark.asyncio
     async def test_unknown_provider_is_rejected_before_any_probe(self, client, real_check) -> None:

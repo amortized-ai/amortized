@@ -231,14 +231,27 @@ class TestCheckJobModels:
             return [_ok(e) for e in endpoints]
 
         monkeypatch.setattr(client, "run_checks", fake)
-        monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
+        # Two providers serving the same URL and model under different keys.
+        providers = {
+            name: {
+                "name": name,
+                "endpoint": "http://gw/v1",
+                "provider_type": "openai",
+                "api_key": f"{name.upper()}_KEY",
+            }
+            for name in ("p_one", "p_two")
+        }
+        monkeypatch.setattr(eval_builder, "resolve_provider", lambda n: providers.get(n))
         monkeypatch.setattr(
-            config_mod.settings, "forward_env", ["EVAL_MODEL_API_KEY", "EVAL_JUDGE_API_KEY"]
+            eval_builder,
+            "inject_enabled_provider_keys",
+            lambda env: env.update({"P_ONE_KEY": "k1", "P_TWO_KEY": "k2"}),
         )
-        monkeypatch.setenv("EVAL_MODEL_API_KEY", "k1")
-        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "k2")
-        same = {"base_url": "http://gw/v1", "model": "m"}
-        config = {"endpoint": dict(same), "judge": dict(same), "rubric": [{"name": "x"}]}
+        config = {
+            "endpoint": {"base_url": "p_one", "model": "m"},
+            "judge": {"base_url": "p_two", "model": "m"},
+            "rubric": [{"name": "x"}],
+        }
         asyncio.run(client.check_job_models("eval", config))
         assert len(checked) == 2  # same model, different credentials -> both checked
 
@@ -247,8 +260,10 @@ class TestEvalHook:
     def _checks(self, config: dict[str, Any]):  # type: ignore[no-untyped-def]
         return eval_builder.model_checks(config, forwarded_env())
 
-    def test_literal_url_judge_uses_forwarded_key(self, monkeypatch) -> None:
-        # Parity: the worker forwards EVAL_JUDGE_API_KEY to the pod, so the check must send it.
+    def test_literal_url_judge_never_gets_a_forwarded_key(self, monkeypatch) -> None:
+        # A literal URL is keyless (keyed models come from providers in Settings): a key the
+        # server forwards to jobs is never sent to a URL the config names — not by the job,
+        # and not by the check, which runs at validate time, before the user confirms.
         monkeypatch.setattr(config_mod.settings, "forward_env", ["EVAL_JUDGE_API_KEY"])
         monkeypatch.setenv("EVAL_JUDGE_API_KEY", "sk-forwarded")
         monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
@@ -260,8 +275,7 @@ class TestEvalHook:
         )
         assert errors == []
         (judge,) = endpoints
-        assert judge.api_key == "sk-forwarded"
-        assert judge.credential_id.startswith("EVAL_JUDGE_API_KEY:")
+        assert judge.api_key == "" and judge.credential_id == ""
 
     def test_unauthenticated_literal_url(self, monkeypatch) -> None:
         monkeypatch.setattr(config_mod.settings, "forward_env", [])
