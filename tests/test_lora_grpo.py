@@ -1,4 +1,4 @@
-"""lora_grpo (training-hub verl backend): config validation, thub config, data prep, API checks."""
+"""lora_grpo / grpo (training-hub verl backend): validation, thub config, data prep, API checks."""
 
 from __future__ import annotations
 
@@ -312,20 +312,32 @@ class TestGRPOApiChecks:
         assert any("reward_fn" in e and "arbitrary code" in e for e in errors)
 
 
-class TestDemoPayload:
-    PAYLOAD = (
-        Path(__file__).resolve().parent.parent
-        / "agents"
-        / "training"
-        / "skills"
-        / "grpo"
-        / "reference-payload.json"
-    )
+# The math demo config (Qwen3.5-2B on MATH-500): no SDG job or upload needed.
+_DEMO_CONFIG: dict[str, Any] = {
+    "algorithm": "lora_grpo",
+    "model_name_or_path": "Qwen/Qwen3.5-2B",
+    "data_path": "HuggingFaceH4/MATH-500",
+    "reward_type": "math",
+    "n_train": 512,
+    "num_train_epochs": 1,
+    "prompt_batch_size": 64,
+    "group_size": 8,
+    "max_prompt_length": 512,
+    "max_tokens": 1024,
+    "temperature": 1.0,
+    "learning_rate": 5e-06,
+    "lora_r": 32,
+    "lora_alpha": 64,
+    "gpu_memory_utilization": 0.4,
+    "language_model_only": True,
+    "nproc_per_node": 1,
+    "topic": "math reasoning grpo demo",
+}
 
+
+class TestDemoPayload:
     def _config(self) -> dict[str, Any]:
-        config = json.loads(self.PAYLOAD.read_text())
-        config.pop("_meta")
-        return dict(config)
+        return dict(_DEMO_CONFIG)
 
     def test_payload_validates(self) -> None:
         req = TrainingJobRequest(**self._config())
@@ -346,3 +358,100 @@ class TestDemoPayload:
         assert parsed["language_model_only"] is True
         assert "HuggingFaceH4/MATH-500" in result.pre_commands[-1]
         assert result.resources.gpus == 1
+
+
+class TestFullGRPO:
+    """algorithm="grpo": full-parameter GRPO (`thub grpo`), same data and rewards as lora_grpo."""
+
+    def test_rollout_split_check_applies(self) -> None:
+        with pytest.raises(ValidationError, match="divisible"):
+            TrainingJobRequest(
+                algorithm="grpo", model_name_or_path="m", prompt_batch_size=3, group_size=3
+            )
+
+    def test_thub_config_drops_lora_and_backend(self) -> None:
+        parsed = yaml.safe_load(
+            _training_hub_config_yaml(
+                "grpo",
+                {
+                    **_GRPO_BASE,
+                    "algorithm": "grpo",
+                    "num_train_epochs": 2,
+                    "nproc_per_node": 4,
+                    "lora_r": 16,
+                    "max_grad_norm": 1.0,
+                    "backend": "art",
+                    "concurrency": 8,
+                },
+            )
+        )
+        assert parsed["num_iterations"] == 2
+        assert parsed["n_gpus"] == 4
+        assert parsed["reward_type"] == "math"
+        assert parsed["max_prompt_length"] == 2048
+        assert parsed["n_val"] == 0
+        for key in ("backend", "lora_r", "max_grad_norm", "concurrency", "num_epochs"):
+            assert key not in parsed
+
+    @pytest.mark.asyncio
+    async def test_build_converts_data_and_exports_hf_format(self) -> None:
+        config = {
+            "algorithm": "grpo",
+            "model_name_or_path": "m",
+            "data_path": "/amortized/work/data/generated_data",
+            "nproc_per_node": 2,
+        }
+        files: dict[str, str] = {}
+        result = await training_builder.build({"id": "f1", "type": "training"}, config, files)
+        assert result.command == ["thub", "grpo", "--config", "/amortized/config.yaml"]
+        assert result.resources.gpus == 2
+        assert "prepare_grpo_data.py" in files
+        assert yaml.safe_load(files["config.yaml"])["data_path"] == (
+            "/amortized/work/grpo_data.jsonl"
+        )
+        post = result.post_commands[0]
+        assert "python3 -m verl.model_merger merge --backend fsdp" in post
+        assert "lora_adapter" not in post
+        assert post.endswith(
+            "mlflow artifacts log-artifacts -l /amortized/work/grpo_export"
+            " -r $MLFLOW_RUN_ID -a model"
+        )
+
+    @pytest.mark.asyncio
+    async def test_merges_last_checkpoint_into_hf_format(self, tmp_path: Path) -> None:
+        import subprocess
+
+        for step in (2, 10, 9):
+            (tmp_path / "checkpoints" / f"global_step_{step}" / "actor").mkdir(parents=True)
+        config = {
+            "algorithm": "grpo",
+            "model_name_or_path": "m",
+            "data_path": "org/ds",
+            "reward_type": "tool_call",
+            "output_dir": str(tmp_path),
+        }
+        result = await training_builder.build({"id": "f2", "type": "training"}, config, {})
+        merge = result.post_commands[0].split(" && mlflow")[0]
+        # Swap the merger for echo to see which checkpoint and target the shell resolves.
+        script = merge.replace("python3 -m verl.model_merger", "echo")
+        out = subprocess.run(["sh", "-c", script], capture_output=True, text=True, check=True)
+        assert f"--local_dir {tmp_path}/checkpoints/global_step_10/actor" in out.stdout
+        assert "--target_dir /amortized/work/grpo_export/hf_format/global_step_10" in out.stdout
+
+    @pytest.mark.asyncio
+    async def test_lora_knobs_rejected(self) -> None:
+        from amortized.api import jobs as jobs_api
+
+        config = {"algorithm": "grpo", "model_name_or_path": "m", "lora_r": 16}
+        errors = await jobs_api._validate_training_data(config, "", None)  # type: ignore[arg-type]
+        assert any("lora_r" in e and "lora_grpo" in e for e in errors)
+        config = {"algorithm": "lora_grpo", "model_name_or_path": "m", "lora_r": 16}
+        errors = await jobs_api._validate_training_data(config, "", None)  # type: ignore[arg-type]
+        assert not any("lora_r" in e for e in errors)
+
+    @pytest.mark.asyncio
+    async def test_shape_check_applies(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        errors = await TestGRPOApiChecks._violations(
+            monkeypatch, {"messages": []}, {"algorithm": "grpo"}
+        )
+        assert errors and errors[0].startswith("training data: grpo needs")

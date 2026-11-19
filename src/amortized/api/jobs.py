@@ -263,7 +263,14 @@ async def _validate_training_data(
         # holds storage and MLflow credentials — arbitrary code, so not accepted from a request.
         errors.append(
             f"{', '.join(callables)} cannot be set on a job: training-hub would import"
-            " arbitrary code. Use reward_type (math or tool_call) for lora_grpo instead."
+            " arbitrary code. Use reward_type (math or tool_call) for lora_grpo/grpo instead."
+        )
+    algorithm = str(config.get("algorithm") or "").strip().replace("-", "_")
+    lora_knobs = sorted(k for k in _LORA_TUNABLE_FIELDS if config.get(k) is not None)
+    if algorithm == "grpo" and lora_knobs:
+        errors.append(
+            f"{', '.join(lora_knobs)} cannot be set for grpo: it trains all model weights."
+            " Use algorithm lora_grpo to train a LoRA adapter."
         )
     data_path = config.get("data_path", "")
     data_run_id = str(config.get("data_run_id", "") or "")
@@ -388,14 +395,14 @@ async def _training_shape_violations(
                 " options_column/tokens_column for those tasks) to the dataset's columns —"
                 " a classification SDG dataset uses label_column='category'."
             ]
-    elif algorithm == "lora_grpo" and config.get("reward_type") == "tool_call":
+    elif algorithm in _GRPO_ALGORITHMS and config.get("reward_type") == "tool_call":
         if "messages" not in first and not _GRPO_TOOL_CALL_FIELDS.issubset(first):
             return [
-                "training data: lora_grpo with reward_type='tool_call' needs tool-call traces —"
+                f"training data: {algorithm} with reward_type='tool_call' needs tool-call traces —"
                 f" either {sorted(_GRPO_TOOL_CALL_FIELDS)} or multi-turn `messages` — but the"
                 f" dataset has {columns}."
             ]
-    elif algorithm == "lora_grpo":
+    elif algorithm in _GRPO_ALGORITHMS:
         q_col = config.get("text_column")
         a_col = config.get("label_column")
         has_q = q_col in first if q_col else any(c in first for c in _GRPO_QUESTION_COLUMNS)
@@ -404,7 +411,7 @@ async def _training_shape_violations(
             q_want = q_col or ", ".join(_GRPO_QUESTION_COLUMNS)
             a_want = a_col or ", ".join(_GRPO_ANSWER_COLUMNS)
             return [
-                f"training data: lora_grpo needs a prompt column ({q_want})"
+                f"training data: {algorithm} needs a prompt column ({q_want})"
                 f" and a reference-answer column ({a_want}),"
                 f" but the dataset has {columns}. Set text_column/label_column to the"
                 " dataset's prompt and answer columns — GRPO scores rollouts against the"
@@ -622,6 +629,8 @@ _RESUMABLE_ALGORITHMS = {"sft", "lora_sft", "osft"}
 # (dpo, grpo, kto, gkd) use different schemas, so they are deliberately NOT shape-checked
 # for `messages` — a missing check is safe; a wrong one would false-reject valid data.
 _SFT_MESSAGES_ALGORITHMS = {"sft", "lora_sft", "osft"}
+
+_GRPO_ALGORITHMS = {"lora_grpo", "grpo"}
 
 # Columns prepare_grpo_data.py falls back to when text_column/label_column are unset.
 _GRPO_QUESTION_COLUMNS = ("question", "problem", "prompt", "input", "text")

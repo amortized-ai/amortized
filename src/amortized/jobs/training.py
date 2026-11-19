@@ -1,4 +1,4 @@
-"""Training job builder — LoRA SFT, OSFT, LoRA GRPO, DPO, GKD via Training Hub."""
+"""Training job builder — LoRA SFT, OSFT, (LoRA) GRPO, DPO, GKD via Training Hub."""
 
 from __future__ import annotations
 
@@ -63,6 +63,22 @@ _TRAINING_HUB_SKIP_KEYS = {
     "train_on_gpu",
 }
 
+_GRPO_ALGORITHMS = ("lora_grpo", "grpo")
+
+# Args `thub grpo` (full fine-tuning, verl only) raises on; the LoRA ones are rejected by the
+# API, the rest are lora_grpo/ART-only settings that would otherwise abort the run at startup.
+_FULL_GRPO_UNSUPPORTED = (
+    "backend",
+    "concurrency",
+    "rollout_fn",
+    "tasks",
+    "lora_r",
+    "lora_alpha",
+    "target_modules",
+    "max_lora_rank",
+    "max_grad_norm",
+)
+
 
 def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     import yaml
@@ -122,9 +138,10 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
             thub_config.setdefault("batch_size", batch)
         for irrelevant in ("max_seq_len", "data_output_dir"):
             thub_config.pop(irrelevant, None)
-    elif algorithm == "lora_grpo":
-        # `thub lora-grpo` (verl backend) has its own knob set: no sequence packing, epochs
-        # are num_iterations, and the GPU count is n_gpus (one Ray/verl launcher process).
+    elif algorithm in _GRPO_ALGORITHMS:
+        # `thub lora-grpo` / `thub grpo` (verl backend) have their own knob set: no sequence
+        # packing, epochs are num_iterations, and the GPU count is n_gpus (one Ray/verl
+        # launcher process).
         epochs = thub_config.pop("num_epochs", None)
         if epochs is not None:
             thub_config.setdefault("num_iterations", epochs)
@@ -139,7 +156,11 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         ):
             thub_config.pop(irrelevant, None)
         thub_config["reward_type"] = config.get("reward_type") or "math"
-        thub_config.setdefault("backend", "verl")
+        if algorithm == "lora_grpo":
+            thub_config.setdefault("backend", "verl")
+        else:
+            for unsupported in _FULL_GRPO_UNSUPPORTED:
+                thub_config.pop(unsupported, None)
         thub_config.setdefault("max_prompt_length", 2048)
         # training-hub's math prep takes validation rows from rows[n_train:n_train + n_val], so a
         # dataset with <= n_train rows yields an empty val.parquet, which verl always loads and
@@ -235,7 +256,7 @@ async def build(
     # for math (training-hub's math prep only opens local files); tool_call keeps training-hub's
     # own HF tool-call loader.
     is_hf_id = bool(grpo_source) and "://" not in grpo_source and not grpo_source.startswith("/")
-    if algorithm == "lora_grpo" and (
+    if algorithm in _GRPO_ALGORITHMS and (
         grpo_source.startswith("/") or (is_hf_id and reward_type == "math")
     ):
         assets_dir = os.path.join(os.path.dirname(__file__), "assets")
@@ -293,6 +314,18 @@ async def build(
         post_cmd = (
             f'ADAPTER=$(ls -d {adapters} | sort -V | tail -1) && test -n "$ADAPTER"'
             ' && mlflow artifacts log-artifacts -l "$ADAPTER" -r $MLFLOW_RUN_ID -a model'
+        )
+    elif algorithm == "grpo":
+        # Full GRPO checkpoints are FSDP shards only (training-hub doesn't save HF weights), so
+        # merge the last one into model/hf_format/<step>/ — the sft/osft layout that eval,
+        # serving and resume read.
+        steps = shlex.quote(output_dir) + "/checkpoints/global_step_*"
+        export = "/amortized/work/grpo_export"
+        post_cmd = (
+            f'CKPT=$(ls -d {steps} | sort -V | tail -1) && test -n "$CKPT"'
+            " && python3 -m verl.model_merger merge --backend fsdp"
+            f' --local_dir "$CKPT/actor" --target_dir "{export}/hf_format/$(basename "$CKPT")"'
+            f" && mlflow artifacts log-artifacts -l {export} -r $MLFLOW_RUN_ID -a model"
         )
 
     # embedding_sft trains in-process via SentenceTransformerTrainer (single device, no torchrun;
