@@ -4,7 +4,7 @@ import { Link } from "react-router"
 import { cn } from "@/lib/utils"
 import { getJob, getJobDurationStats, getJobLogs } from "@/lib/api-client"
 import type { JobStatus, ModelCheckResult } from "@/types/api"
-import { ModelCheckWarnings } from "./model-check-warnings"
+import { ModelCheckWarnings } from "@/components/model-check-warnings"
 
 interface JobMonitorCardProps {
   jobId: string

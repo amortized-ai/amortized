@@ -22,8 +22,8 @@ router = APIRouter(prefix="/api/v1/eval", tags=["eval"])
         "Suggest eval endpoints: model-name defaults for a training job"
         " (base from its config, tuned from its registered model) and any"
         " pre-registered serving endpoints (known_endpoints; empty when none"
-        " are configured; use an entry's base_url and model as-is — model is the"
-        " endpoint name, not model_name). A model from list_models is evaluated with"
+        " are configured; use an entry's base_url and model as-is). A model from"
+        " list_models is evaluated with"
         " endpoint.base_url set to its provider name. Eval jobs with a"
         " training_job_id or model_name_or_path serve the model themselves."
     ),

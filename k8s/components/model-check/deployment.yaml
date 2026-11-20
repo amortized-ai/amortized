@@ -1,7 +1,9 @@
-# Model-liveness check service: a small, stateless helper the server calls at job
-# validate/create time to verify the LLM endpoints a job will use (eval judge, SDG teacher
-# models) actually answer. Runs beside the server (same namespace). Callers send each
-# endpoint's resolved key in the request; nothing is mounted or stored here.
+# Standalone model-liveness check service (opt-in; the server checks in-process by default).
+# The server calls it at job validate/create time to verify the LLM endpoints a job will use
+# (eval judge, SDG teacher models). Callers send each endpoint's resolved key in the request, so
+# it serves TLS — here a serving cert from OpenShift's service CA — that the server verifies.
+# Nothing is stored here. Probes leave from this (the server's) namespace: give an in-cluster
+# endpoint a fully qualified <svc>.<ns>.svc URL.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,19 +31,28 @@ spec:
         - name: model-check
           image: ghcr.io/amortized-ai/model-check:latest
           imagePullPolicy: Always
-          args: ["serve", "--port", "7351"]
+          args:
+            - serve
+            - --port
+            - "7351"
+            - --ssl-certfile
+            - /etc/model-check/tls/tls.crt
+            - --ssl-keyfile
+            - /etc/model-check/tls/tls.key
           ports:
-            - name: http
+            - name: https
               containerPort: 7351
           readinessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: https
+              scheme: HTTPS
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: https
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 20
           resources:
@@ -50,7 +61,15 @@ spec:
               memory: 128Mi
             limits:
               memory: 256Mi
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/model-check/tls
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+      volumes:
+        - name: tls
+          secret:
+            secretName: amortized-model-check-tls

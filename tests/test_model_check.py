@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from amortized.core.model_endpoints import FAILED, PASSED, UNVERIFIED, ModelEndpoint
-from amortized.model_check import checker, service
+from amortized.model_check import checker, destinations, service
 from amortized.model_check.types import CheckResult
 
 Handler = Callable[[httpx.Request], httpx.Response | Awaitable[httpx.Response]]
@@ -20,6 +20,17 @@ ANTHROPIC_OK = {"type": "message", "content": [{"type": "text", "text": "pong"}]
 
 def _ep(label: str = "judge", base_url: str = "http://gw:5000/v1", **kw: str) -> ModelEndpoint:
     return ModelEndpoint(label=label, base_url=base_url, model=kw.pop("model", "gpt-oss"), **kw)
+
+
+@pytest.fixture(autouse=True)
+def _destination_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about classifying replies; the destination policy has its own tests
+    (test_destinations.py). Allow every probe, connecting to a placeholder address."""
+
+    async def allowed(_url: str, _approved: object) -> destinations.Decision:
+        return destinations.Decision(destinations.ALLOWED, addresses=("10.0.0.1",))
+
+    monkeypatch.setattr(destinations, "authorize", allowed)
 
 
 @pytest.fixture
@@ -41,7 +52,7 @@ def _route(monkeypatch: pytest.MonkeyPatch, handler: Handler, seen: list[httpx.R
     monkeypatch.setattr(
         checker.httpx,
         "AsyncClient",
-        lambda **kw: real_client(transport=httpx.MockTransport(_handle), **kw),
+        lambda **kw: real_client(**{**kw, "transport": httpx.MockTransport(_handle)}),
     )
 
 
@@ -94,19 +105,55 @@ class TestOutcomes:
         assert "requires an API key" in no_key.detail
         assert (with_key.outcome, with_key.reason) == (FAILED, "auth_failed")
 
-    def test_connection_refused_is_unreachable_after_retries(self, monkeypatch, seen) -> None:
+    def test_connection_refused_is_unverified_after_retries(self, monkeypatch, seen) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("refused", request=request)
 
         _route(monkeypatch, handler, seen)
         result = _check(_ep())
-        assert (result.outcome, result.reason) == (FAILED, "unreachable")
+        assert (result.outcome, result.reason) == (UNVERIFIED, "unreachable")
         assert len(seen) == checker.MAX_ATTEMPTS
 
-    def test_persistent_5xx_is_server_error(self, monkeypatch, seen) -> None:
+    def test_an_oversized_reply_is_not_buffered(self, monkeypatch, seen) -> None:
+        # Probing runs in the API process: at most MAX_RESPONSE_BYTES of a reply is read.
+        filler = b"x" * (checker.MAX_RESPONSE_BYTES * 4)
+        big = b'{"choices": [{"message": {"content": "' + filler + b'"}}]}'
+        _route(monkeypatch, lambda _r: httpx.Response(200, content=big), seen)
+        result = asyncio.run(checker.check_endpoint(_ep("judge"), 5.0))
+        assert (result.outcome, result.reason) == (FAILED, "bad_response")
+        assert "larger than" in result.detail
+
+    def test_status_is_classified_without_waiting_for_the_body(self, monkeypatch, seen) -> None:
+        class StalledBody(httpx.AsyncByteStream):
+            async def __aiter__(self):  # type: ignore[no-untyped-def]
+                await asyncio.sleep(30)
+                yield b""
+
+        _route(monkeypatch, lambda _r: httpx.Response(401, stream=StalledBody()), seen)
+        started = time.monotonic()
+        result = asyncio.run(checker.check_endpoint(_ep("judge"), 2.0))
+        assert time.monotonic() - started < 1.0
+        assert (result.outcome, result.reason) == (FAILED, "auth_required")
+
+    def test_request_timeout_408_is_transient(self, monkeypatch, seen) -> None:
+        monkeypatch.setattr(checker, "BACKOFF_SECONDS", (0.0, 0.0))
+        _route(monkeypatch, lambda _r: httpx.Response(408), seen)
+        result = asyncio.run(checker.check_endpoint(_ep("judge"), 5.0))
+        assert (result.outcome, result.reason) == (UNVERIFIED, "deadline")
+        assert len(seen) == checker.MAX_ATTEMPTS  # retried like a 5xx
+
+    def test_attempt_timeouts_are_unverified(self, monkeypatch, seen) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("timed out", request=request)
+
+        _route(monkeypatch, handler, seen)
+        result = asyncio.run(checker.check_endpoint(_ep("judge"), 5.0))
+        assert (result.outcome, result.reason) == (UNVERIFIED, "deadline")
+
+    def test_persistent_5xx_is_unverified_server_error(self, monkeypatch, seen) -> None:
         _route(monkeypatch, lambda _r: httpx.Response(502), seen)
         result = _check(_ep())
-        assert (result.outcome, result.reason) == (FAILED, "server_error")
+        assert (result.outcome, result.reason) == (UNVERIFIED, "server_error")
         assert len(seen) == checker.MAX_ATTEMPTS
 
     @pytest.mark.parametrize(
@@ -149,7 +196,7 @@ class TestOutcomes:
 
 
 class TestDeadlines:
-    def test_slow_endpoint_fails_within_deadline_while_sibling_passes(
+    def test_slow_endpoint_is_unverified_within_deadline_while_sibling_passes(
         self, monkeypatch, seen
     ) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -165,7 +212,9 @@ class TestDeadlines:
             )
         )
         assert time.monotonic() - started < 2.0
-        assert (slow.outcome, slow.reason) == (FAILED, "deadline")
+        # A cold endpoint can miss the probe's deadline and still serve the job: warn, don't block.
+        assert (slow.outcome, slow.reason) == (UNVERIFIED, "deadline")
+        assert slow.detail == "no answer within 0.5s"
         assert (fast.outcome, fast.reason) == (PASSED, "ok")
 
     def test_internal_error_keeps_other_results(self, monkeypatch, seen) -> None:
@@ -200,7 +249,7 @@ class TestService:
     def test_check_returns_results_without_keys(self, monkeypatch) -> None:
         captured: dict[str, object] = {}
 
-        async def fake(endpoints, deadline):  # type: ignore[no-untyped-def]
+        async def fake(endpoints, deadline, approved=()):  # type: ignore[no-untyped-def]
             captured["deadline"] = deadline
             captured["keys"] = [e.api_key for e in endpoints]
             return [CheckResult(e.label, e.model, e.base_url, PASSED, "ok") for e in endpoints]
@@ -233,7 +282,7 @@ class TestService:
         assert self._post({"endpoints": endpoints}).status_code == 413
 
     def test_over_inflight_cap_is_503(self, monkeypatch) -> None:
-        monkeypatch.setattr(service, "_inflight", service.MAX_INFLIGHT_PROBES)
+        monkeypatch.setattr(checker, "_inflight", checker.MAX_INFLIGHT_PROBES)
         resp = self._post({"endpoints": [{"label": "e", "base_url": "http://gw/v1", "model": "m"}]})
         assert resp.status_code == 503
 

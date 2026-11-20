@@ -53,16 +53,16 @@ class _ConfigJsonMixin(BaseModel):
                 # config_json fully replaces the flat args; anything also passed alongside it
                 # is dropped. Keep that behavior (the escape hatch must absorb a weak model's
                 # smeared extra keys, not reject them), but make the drop auditable by naming
-                # exactly which keys were ignored and the values discarded.
-                ignored = {
-                    k: v for k, v in data.items() if k != "config_json" and v not in (None, "")
-                }
+                # the keys ignored. Names only: a value can be a credential.
+                ignored = sorted(
+                    k for k, v in data.items() if k != "config_json" and v not in (None, "")
+                )
                 if ignored:
                     logger.warning(
                         "config_json is set; ignoring %d flat argument(s) in favor of the "
                         "config_json contents: %s",
                         len(ignored),
-                        ", ".join(f"{k}={v!r}" for k, v in sorted(ignored.items())),
+                        ", ".join(ignored),
                     )
                 return parsed
         return data

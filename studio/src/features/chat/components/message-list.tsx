@@ -8,7 +8,7 @@ interface MessageListProps {
   thinkingStep?: string | null
   isStreaming?: boolean
   onOptionSelect?: (value: string, messageId?: string) => void
-  onConfirmAction?: () => void
+  onConfirmAction?: (messageId: string) => void
   onRejectAction?: () => void
   onRetryBlockedNotice?: (messageId: string) => void
   onJobComplete?: (jobId: string, jobType: string, status: string, mode?: string) => void

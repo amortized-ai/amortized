@@ -1,6 +1,8 @@
 """Tests for eval job API endpoints and builder."""
 
+import json
 import os
+from typing import Any
 
 import httpx
 import pytest
@@ -923,6 +925,68 @@ class TestRetryEvalJob:
         return job_id
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("overrides", "expected"),
+        [
+            # An endpoint replaced with a string.
+            ({"endpoint": "http://tuned:8000/v1"}, "endpoint"),
+            # A judge with no model.
+            ({"judge": {"base_url": "http://judge:8000/v1"}}, "judge.model"),
+            # The judge removed while the rubric still needs one (None drops the key).
+            ({"judge": None}, "a judge endpoint is required"),
+            # A malformed rubric is a schema error, reported without reaching later checks.
+            ({"rubric": [1, 2]}, "rubric.0"),
+            # An empty rubric, rejected for a generative eval exactly as on create.
+            ({"rubric": []}, "at least one rubric criterion"),
+        ],
+    )
+    async def test_retry_validates_the_merged_config_structure(
+        self, client: httpx.AsyncClient, overrides: dict[str, Any], expected: str
+    ) -> None:
+        # Overrides skip request validation; a broken merge must be a 422, not a queued job
+        # that fails in the builder.
+        job_id = await self._seed_failed_eval(client)
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry", json=overrides)
+        assert response.status_code == 422, response.text
+        assert expected in response.text
+
+    @pytest.mark.asyncio
+    async def test_retry_expands_config_json_before_checking_credentials(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A config_json override is normalized first, so credentials inside it are refused
+        # before anything is probed (not only at insert).
+        from amortized.api import job_admission
+
+        job_id = await self._seed_failed_eval(client)
+        probed: list[str] = []
+
+        async def record(job_type: str, config: dict[str, Any]) -> Any:
+            probed.append(job_type)
+            from amortized.core.model_check_client import CheckReport
+
+            return CheckReport()
+
+        monkeypatch.setattr(job_admission, "check_job_models", record)
+        # config_json replaces the whole config: a complete eval whose judge URL carries
+        # credentials.
+        credentialed = {"base_url": "http://user:secret@judge:8000/v1", "model": "j"}
+        override = {"config_json": json.dumps({**EVAL_BODY, "judge": credentialed})}
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry", json=override)
+        assert response.status_code == 422, response.text
+        assert "judge.base_url" in response.text and "secret" not in response.text
+        assert probed == []
+
+    @pytest.mark.asyncio
+    async def test_retry_validates_a_parent_given_through_config_json(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        job_id = await self._seed_failed_eval(client)
+        override = {"config_json": json.dumps({"parent_job_id": "ghost-parent"})}
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry", json=override)
+        assert response.status_code == 422, response.text
+
+    @pytest.mark.asyncio
     async def test_retry_clones_request_config_verbatim(self, client: httpx.AsyncClient) -> None:
         job_id = await self._seed_failed_eval(client)
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
@@ -1022,6 +1086,57 @@ class TestRetryEvalJob:
         assert new_job["config"]["num_records"] == 100
 
     @pytest.mark.asyncio
+    async def test_retry_keeps_supported_legacy_sdg_configs(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Older SDG snapshots name a column's model by model_config_alias and can carry stale
+        # top-level keys; the schema rejects both, so retry translates them first, as build() does.
+        import amortized.db.connection as _db_conn
+
+        legacy = {
+            "topic": "rfe",
+            "num_records": 10,
+            "temperature": 0.7,
+            "model_configs": [{"alias": "t", "model": "gpt-4o-mini", "provider": "openai"}],
+            "columns": [
+                {
+                    "name": "q",
+                    "column_type": "llm-text",
+                    "model_config_alias": "t",
+                    "prompt": "Write a question",
+                }
+            ],
+        }
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, request_config, created_at)
+                   VALUES ('sdg-legacy', 'sdg', 'failed', $1::jsonb, $1::jsonb, now())""",
+                json.dumps(legacy),
+            )
+        response = await client.post("/api/v1/jobs/sdg-legacy/retry")
+        assert response.status_code == 201, response.text
+        config = response.json()["config"]
+        assert config["columns"][0]["model_alias"] == "t"
+        assert "model_config_alias" not in config["columns"][0]
+        assert "temperature" not in config
+
+    @pytest.mark.asyncio
+    async def test_retry_with_malformed_sdg_columns_is_a_field_error(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, request_config, created_at)
+                   VALUES ('sdg-bad-cols', 'sdg', 'failed', '{"topic": "rfe"}'::jsonb,
+                           '{"topic": "rfe"}'::jsonb, now())"""
+            )
+        response = await client.post("/api/v1/jobs/sdg-bad-cols/retry", json={"columns": 1})
+        assert response.status_code == 422, response.text
+        assert "columns" in response.text
+
+    @pytest.mark.asyncio
     async def test_retry_rerun_with_overrides(self, client: httpx.AsyncClient) -> None:
         # "regenerate, 2000 records" — overrides land on the cloned config.
         import amortized.db.connection as _db_conn
@@ -1050,9 +1165,15 @@ class TestRetryEvalJob:
             await conn.execute(
                 """INSERT INTO jobs
                        (id, type, status, config, request_config, created_at)
-                   VALUES ('eval-retry-parent', 'eval', 'failed',
-                           '{"eval_data_run_id": "run-x"}'::jsonb,
-                           '{"eval_data_run_id": "run-x"}'::jsonb, now())"""
+                   VALUES ('eval-retry-parent', 'eval', 'failed', $1::jsonb, $1::jsonb, now())""",
+                json.dumps(
+                    {  # a complete eval (retry validates the merged config like a create)
+                        "eval_data_run_id": "run-x",
+                        "endpoint": {"base_url": "http://e:8000/v1", "model": "m"},
+                        "judge": {"base_url": "http://j:8000/v1", "model": "j"},
+                        "rubric": [{"name": "relevance", "description": "on topic"}],
+                    }
+                ),
             )
         response = await client.post(
             "/api/v1/jobs/eval-retry-parent/retry",

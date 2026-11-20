@@ -1,0 +1,53 @@
+# Only the server may call the model-check service: it receives provider keys and sends
+# requests to caller-supplied URLs, so ClusterIP reachability alone is not enough. The server
+# shares this namespace, so a podSelector alone admits it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: amortized-model-check
+  namespace: amortized
+  labels:
+    app: amortized
+    component: model-check
+spec:
+  podSelector:
+    matchLabels:
+      app: amortized
+      component: model-check
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    # DNS (OpenShift's DNS pods listen on 5353 behind the dns-default service's 53).
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+    # Public addresses only: the destination policy refuses private targets unless approved,
+    # and this keeps the pod itself from reaching them. For the private model services it must
+    # reach (the MLflow AI Gateway, approved URLs), add egress rules in your overlay.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+        - ipBlock:
+            cidr: ::/0
+            except: ["fc00::/7", "fe80::/10", "::1/128"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: amortized
+              component: server
+      ports:
+        - protocol: TCP
+          port: 7351

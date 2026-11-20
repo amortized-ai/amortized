@@ -1,5 +1,6 @@
 """Run a job's model-liveness checks: ask its builder which LLM endpoints it will call, then
-probe them through the check service (or in-process when no service is configured).
+probe them — in-process by default, under the checker's process-wide probe limit, or through the
+opt-in standalone check service (over verified TLS) when ``model_check_url`` is set.
 
 Guarantees callers can rely on:
 - one total time budget for the whole check, however many endpoints there are;
@@ -11,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import weakref
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +28,7 @@ from amortized.core.model_endpoints import (
     CheckResult,
     ConfigError,
     ModelEndpoint,
+    approved_destinations,
     dedup,
     redact,
     redact_url,
@@ -34,7 +38,7 @@ from amortized.jobs import get_builder
 logger = logging.getLogger("amortized.core.model_check_client")
 
 CHUNK_SIZE = 8  # the service's per-request endpoint limit
-MAX_CONCURRENT_CHUNKS = 2  # <= 16 probes per check, so two checks fit the service's 32 cap
+MAX_CONCURRENT_CHUNKS = 2  # <= 16 probes per check, so two checks fit the 32-probe limit
 # Part of the remaining budget kept back for the service's response to arrive: the probes get
 # the rest, so the whole call — not just the probes — finishes inside the budget.
 RESPONSE_OVERHEAD_SECONDS = 2.0
@@ -76,15 +80,22 @@ async def _check_chunk(
     chunk: list[ModelEndpoint], deadline: float, timeout: float
 ) -> list[CheckResult]:
     """Check one chunk: probes get ``deadline``; the call as a whole gets ``timeout``."""
-    url = config_mod.settings.model_check_url
+    settings = config_mod.settings
+    url = model_check_service_url()
     if not url:
-        from amortized.model_check.checker import check_endpoints
+        return await _check_in_process(chunk, deadline)
 
-        return await check_endpoints(chunk, deadline)  # bounded by its own deadline
-
-    payload = {"deadline_seconds": deadline, "endpoints": [ep.to_request() for ep in chunk]}
+    payload = {
+        "deadline_seconds": deadline,
+        "endpoints": [ep.to_request() for ep in chunk],
+        "approved_urls": list(approved_destinations()),  # the service enforces the policy too
+    }
+    # Verified TLS: this request carries provider keys (settings refuse an http:// URL).
+    verify: str | bool = settings.model_check_ca_bundle or True
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=False, verify=verify
+        ) as client:
             resp = await client.post(url.rstrip("/") + "/check", json=payload)
     except httpx.HTTPError as exc:
         logger.warning(
@@ -112,6 +123,49 @@ async def _check_chunk(
     if len(items) != len(chunk):
         logger.warning("model check service returned %d results for %d", len(items), len(chunk))
     return [_from_service(ep, items[i] if i < len(items) else None) for i, ep in enumerate(chunk)]
+
+
+_SA_NAMESPACE_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+
+def _own_namespace() -> str:
+    """The namespace this server runs in: POD_NAMESPACE (downward API), else the service
+    account's namespace file. Empty outside Kubernetes."""
+    namespace = os.environ.get("POD_NAMESPACE", "").strip()
+    if namespace:
+        return namespace
+    try:
+        with open(_SA_NAMESPACE_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def model_check_service_url() -> str:
+    """The standalone check service's URL, with ``{namespace}`` replaced by this server's own.
+    Its certificate names amortized-model-check.<namespace>.svc, and a kustomize ``namespace:``
+    overlay can't rewrite a namespace inside a URL string."""
+    url = config_mod.settings.model_check_url
+    if "{namespace}" in url:
+        namespace = _own_namespace()
+        if not namespace:
+            logger.warning("model_check_url uses {namespace}, but this server's is unknown")
+        url = url.replace("{namespace}", namespace)
+    return url
+
+
+async def _check_in_process(chunk: list[ModelEndpoint], deadline: float) -> list[CheckResult]:
+    """Probe from this process, under the checker's process-wide limit (shared by every
+    validation the server runs at once) — refused, not queued, when it's full."""
+    from amortized.model_check import checker
+
+    if not checker.try_reserve(len(chunk)):
+        logger.warning("model check busy; %d endpoint(s) unverified", len(chunk))
+        return [_unverified(ep, "checker_busy", "too many model checks running") for ep in chunk]
+    try:
+        return await checker.check_endpoints(chunk, deadline, approved_destinations())
+    finally:
+        checker.release(len(chunk))
 
 
 async def run_checks(endpoints: list[ModelEndpoint], budget: float) -> list[CheckResult]:
@@ -176,5 +230,67 @@ async def check_job_models(job_type: str, config: dict[str, Any]) -> CheckReport
     endpoints = dedup(list(endpoints))
     if not endpoints:
         return CheckReport()
-    results = await run_checks(endpoints, config_mod.settings.model_check_deadline_seconds)
-    return CheckReport(results=results)
+    budget = config_mod.settings.model_check_deadline_seconds
+    # Probes start at once, alongside the denial lookups: one endpoint's slow DNS must not eat
+    # the budget another endpoint needs to give its answer.
+    probes = asyncio.create_task(run_checks(endpoints, budget))
+    try:
+        denied = await _destination_denials(endpoints, budget)
+    except BaseException:
+        probes.cancel()
+        raise
+    if denied:
+        probes.cancel()
+        await asyncio.gather(probes, return_exceptions=True)
+        return CheckReport(config_errors=denied)
+    return CheckReport(results=await probes)
+
+
+MAX_CONCURRENT_RESOLUTIONS = 16
+_resolution_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+async def _destination_denials(endpoints: list[ModelEndpoint], budget: float) -> list[ConfigError]:
+    """Policy denials don't depend on the endpoint answering, so they're decided here rather than
+    only by the probe, which a busy or unavailable checker never runs. Lookups share the check's
+    budget; one unresolved or still pending when it ends is left to the probe."""
+    from amortized.model_check import destinations
+
+    approved = approved_destinations()
+    loop = asyncio.get_running_loop()
+    slots = _resolution_slots.setdefault(loop, asyncio.Semaphore(MAX_CONCURRENT_RESOLUTIONS))
+
+    async def decide(ep: ModelEndpoint) -> destinations.Decision:
+        url = destinations.chat_request_url(ep.base_url, ep.provider_type)
+        literal = destinations.literal_address(url)
+        if literal is not None:  # no lookup needed, so no slot
+            return destinations.decide(url, [literal], approved)
+        async with slots:
+            return await destinations.authorize(url, approved)
+
+    tasks = [asyncio.create_task(decide(ep)) for ep in endpoints]
+    try:
+        done, _ = await asyncio.wait(tasks, timeout=budget)
+    finally:
+        unfinished = [t for t in tasks if not t.done()]
+        for task in unfinished:
+            task.cancel()
+        await asyncio.gather(*unfinished, return_exceptions=True)
+    errors: list[ConfigError] = []
+    for ep, task in zip(endpoints, tasks, strict=True):
+        if task not in done or task.cancelled() or task.exception() is not None:
+            continue
+        decision = task.result()
+        if decision.verdict == destinations.DENIED:
+            errors.append(
+                ConfigError(
+                    ep.label,
+                    "destination_denied",
+                    f"{ep.label} model {ep.model!r} at {redact_url(ep.base_url)}"
+                    f" {decision.reason}. Use a public HTTPS endpoint, or ask an operator to"
+                    " approve the service (AMORTIZED_APPROVED_MODEL_URLS)",
+                )
+            )
+    return errors

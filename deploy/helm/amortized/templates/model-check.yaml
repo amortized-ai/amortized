@@ -1,8 +1,10 @@
 {{- if .Values.modelCheck.enabled }}
-# Model-liveness check service: a small, stateless helper the server calls at job
-# validate/create time to verify the LLM endpoints a job will use (eval judge, SDG teacher
-# models) actually answer. Runs beside the server. Callers send each endpoint's resolved
-# key in the request; nothing is stored here.
+{{- $image := dict "repository" .Values.images.modelCheck.repository "tag" (default .Values.images.server.tag .Values.images.modelCheck.tag) "pullPolicy" .Values.images.modelCheck.pullPolicy }}
+{{- $tlsSecret := default "amortized-model-check-tls" .Values.modelCheck.tls.secretName }}
+# Standalone model-liveness check service (opt-in; the server checks in-process by default).
+# The server calls it at job validate/create time to verify the LLM endpoints a job will use
+# (eval judge, SDG teacher models). Callers send each endpoint's resolved key in the request, so
+# it serves TLS that the server verifies; nothing is stored here.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,32 +30,46 @@ spec:
         runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       containers:
         - name: model-check
-          image: {{ include "amortized.image" .Values.images.modelCheck }}
-          imagePullPolicy: {{ include "amortized.pullPolicy" .Values.images.modelCheck }}
+          image: {{ include "amortized.image" $image }}
+          imagePullPolicy: {{ include "amortized.pullPolicy" $image }}
           args:
             - serve
             - --port
             - {{ .Values.modelCheck.port | quote }}
+            - --ssl-certfile
+            - /etc/model-check/tls/tls.crt
+            - --ssl-keyfile
+            - /etc/model-check/tls/tls.key
           ports:
-            - name: http
+            - name: https
               containerPort: {{ .Values.modelCheck.port }}
           readinessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: https
+              scheme: HTTPS
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: https
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 20
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/model-check/tls
+              readOnly: true
           resources:
             {{- toYaml .Values.modelCheck.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ $tlsSecret }}
 ---
 apiVersion: v1
 kind: Service
@@ -63,15 +79,20 @@ metadata:
   labels:
     {{- include "amortized.labels" . | nindent 4 }}
     component: model-check
+  {{- if not .Values.modelCheck.tls.secretName }}
+  annotations:
+    # OpenShift's service CA issues the serving cert (verified by the server with the CA bundle).
+    service.beta.openshift.io/serving-cert-secret-name: {{ $tlsSecret }}
+  {{- end }}
 spec:
   type: ClusterIP
   selector:
     app: amortized
     component: model-check
   ports:
-    - name: http
+    - name: https
       port: {{ .Values.modelCheck.port }}
-      targetPort: http
+      targetPort: https
 ---
 # Only the server may call the model-check service. It sends requests to caller-supplied URLs
 # with caller-supplied keys. The server shares this namespace, so a podSelector alone admits it.
@@ -90,6 +111,34 @@ spec:
       component: model-check
   policyTypes:
     - Ingress
+    - Egress
+  egress:
+    # DNS (OpenShift's DNS pods listen on 5353 behind the dns-default service's 53).
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+    # Public addresses only: the destination policy refuses private targets unless approved,
+    # and this keeps the pod itself from reaching them (approved services: egress.extraRules).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+        - ipBlock:
+            cidr: ::/0
+            except: ["fc00::/7", "fe80::/10", "::1/128"]
+    {{- with .Values.modelCheck.egress.extraRules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   ingress:
     - from:
         - podSelector:

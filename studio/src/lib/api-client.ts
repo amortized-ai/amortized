@@ -469,23 +469,18 @@ export function shouldKeepSessionOnError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 400 || error.status === 429)
 }
 
-// For an idempotent event the server remembers the event per session, so the session is the
-// dedup scope: abandoning it after an ambiguous failure (lost response, gateway error, failed or
-// timed-out turn) would let a retry — automatic or the user's — run the event again in a new one.
-// Only a 404 (the server no longer knows the session) means it is really gone.
-function sessionGone(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404
-}
-
 // Thrown by sendOpenCodeMessage when a resent event (same eventId) already completed on the
-// server: the event is delivered, but its reply belongs to an earlier turn and isn't returned.
+// server. The event is delivered; `messages` is that turn's own reply when the server kept it
+// (null otherwise) — never the session's latest messages, which may belong to later turns.
 export class EventAlreadyDeliveredError extends Error {
   readonly eventId: string
+  readonly messages: OpenCodeResponse[] | null
 
-  constructor(eventId: string) {
+  constructor(eventId: string, messages: OpenCodeResponse[] | null = null) {
     super(`event ${eventId} was already delivered`)
     this.name = "EventAlreadyDeliveredError"
     this.eventId = eventId
+    this.messages = messages
   }
 }
 
@@ -535,6 +530,10 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
   }
 
   let lastError: Error | null = null
+  // For an idempotent event the session is the server's dedup scope, so it is abandoned only when
+  // the server no longer knows it: a 404 on the POST — not on a poll, where it means only that
+  // the turn record was evicted.
+  let sessionMissing = false
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let resp: Response
     try {
@@ -554,15 +553,17 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       logger.warn("network error, resetting session", { attempt, error: lastError.message })
       useChatStore.getState().clearSessionId(conversationId)
       sessionId = await getOrCreateSession(conversationId)
+      sessionMissing = false  // a new session: the old one's 404 doesn't apply
       continue
     }
     let status: number
     if (resp.ok) {
       const data = await resp.json()
-      // A resent event the server already ran to completion: there is no reply to show here.
-      // Rendering one from the session would pick up whatever later turns added since.
       if (options.eventId && data?.replayed === true && data.status === "done") {
-        throw new EventAlreadyDeliveredError(options.eventId)
+        throw new EventAlreadyDeliveredError(
+          options.eventId,
+          Array.isArray(data.messages) ? (data.messages as OpenCodeResponse[]) : null,
+        )
       }
       // Backward-compatible: a synchronous server returns the full result directly.
       if (!data || typeof data.turn_id !== "string") {
@@ -570,7 +571,19 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       }
       const outcome = await pollTurn(sessionId, data.turn_id)
       if (outcome.ok) {
+        // A resend that joined the event's still-running turn is a replay too: the hook applies
+        // the same rules (e.g. no card once the conversation has moved on).
+        if (options.eventId && data.replayed === true) {
+          const result = outcome.result as OpenCodeResponse
+          throw new EventAlreadyDeliveredError(options.eventId, result.event_messages ?? null)
+        }
         return outcome.result as OpenCodeResponse
+      }
+      // The turn record was evicted, not necessarily the session: resend to the same session,
+      // which returns the event's stored reply (a gone session answers the resend with 404).
+      if (options.eventId && outcome.status === 404 && attempt < MAX_RETRIES) {
+        logger.warn("event turn record gone, resending to the same session", { sessionId, attempt: attempt + 1 })
+        continue
       }
       status = outcome.status ?? 500
       // Surface the server's mapped provider-error message (shown in the chat Alert) instead of a
@@ -578,6 +591,7 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       lastError = new ApiError(status, "Agent turn failed", outcome.error ?? null, outcome.code)
     } else {
       status = resp.status
+      if (status === 404) sessionMissing = true
       lastError = new ApiError(status, resp.statusText, null)
     }
     if (status === 500 && options.eventId && attempt < MAX_RETRIES) {
@@ -589,6 +603,7 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       useChatStore.getState().clearSessionId(conversationId)
       useChatStore.getState().setSessionStatus(conversationId, "reconnecting")
       sessionId = await getOrCreateSession(conversationId)
+      sessionMissing = false  // a new session: the old one's 404 doesn't apply
 
       const messages = useChatStore.getState().getConversationMessages(conversationId)
       if (messages.length > 0) {
@@ -622,6 +637,7 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       })
       useChatStore.getState().clearSessionId(conversationId)
       sessionId = await getOrCreateSession(conversationId)
+      sessionMissing = false  // a new session: the old one's 404 doesn't apply
       continue
     }
     break
@@ -629,7 +645,7 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
   // A provider/model error (400) means only the chosen model was rejected — the opencode session
   // is still healthy, so keep it: switching back to a working model then resumes this conversation
   // instead of starting a fresh one. Reset only when the session/upstream may be unusable.
-  const keepForEvent = !!options.eventId && !sessionGone(lastError)
+  const keepForEvent = !!options.eventId && !sessionMissing
   if (!keepForEvent && !shouldKeepSessionOnError(lastError)) {
     useChatStore.getState().clearSessionId(conversationId)
   }

@@ -917,12 +917,13 @@ class TestDelegationStallCheck:
 
 
 class TestConfirmationBlocked:
-    """A confirmed card whose creation was blocked by the model check: no job exists, so no
-    job_complete will come. The studio sends a confirmation_blocked event; the proxy steers the
-    owner of the job type to help fix it and re-validate."""
+    """A confirmed card whose creation was rejected (the model check, or any other check at
+    Confirm time): no job exists, so no job_complete will come. The studio sends a
+    confirmation_blocked event; the proxy steers the owner of the job type to help resolve it
+    and re-validate."""
 
     FAILURE = (
-        "Eval submission was blocked before creating a job. judge model 'gpt-oss' at"
+        "Eval submission was rejected before a job was created. judge model 'gpt-oss' at"
         " 'http://gw/v1' did not answer a test request (unreachable: connection refused)"
     )
 
@@ -1071,9 +1072,16 @@ class TestEventIdempotency:
         assert len(state.turns) == 1
 
         turn = state.turns[first["turn_id"]]
-        turn.active = False  # finished successfully
+        turn.active = False  # finished successfully, recording its reply
+        reply = [{"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "fixed"}]}]
+        agent._record_completed_event(state, "confirmation_blocked:m1", reply)
         done = self._send("confirmation_blocked:m1")
-        assert done == {"turn_id": first["turn_id"], "status": "done", "replayed": True}
+        assert done == {
+            "turn_id": first["turn_id"],
+            "status": "done",
+            "replayed": True,
+            "messages": reply,  # the event's own reply, for a client that never got it
+        }
         assert len(state.turns) == 1
 
     def test_a_delivered_event_stays_deduplicated_after_its_turn_is_evicted(self, session) -> None:
@@ -1086,8 +1094,43 @@ class TestEventIdempotency:
         state.event_turns.pop("confirmation_blocked:m3")
 
         again = self._send("confirmation_blocked:m3")
-        assert again == {"turn_id": None, "status": "done", "replayed": True}
+        assert again == {"turn_id": None, "status": "done", "replayed": True, "messages": None}
         assert len(started) == 1
+
+    def test_turn_messages_are_the_ones_after_the_events_own_user_message(
+        self, session, monkeypatch
+    ) -> None:
+        import asyncio
+
+        state, _ = session
+        history = [
+            {"info": {"role": "user"}, "parts": [{"type": "text", "text": "earlier"}]},
+            {"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "earlier reply"}]},
+            {"info": {"role": "user"}, "parts": [{"type": "text", "text": "blocked"}]},
+            {"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "let's fix it"}]},
+        ]
+
+        async def fake_get(_session_id):  # type: ignore[no-untyped-def]
+            return history
+
+        monkeypatch.setattr(agent, "get_session_messages", fake_get)
+        reply = asyncio.new_event_loop().run_until_complete(agent._turn_messages(state, "s-idem"))
+        assert reply == history[3:]
+
+    def test_an_oversized_reply_is_returned_but_not_kept(self, session, monkeypatch) -> None:
+        # The turn's own result always carries its reply; only a later resend's copy is capped.
+        import asyncio
+
+        state, _ = session
+        big = [{"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "x" * 300_000}]}]
+
+        async def fake_get(_session_id):  # type: ignore[no-untyped-def]
+            return [{"info": {"role": "user"}, "parts": []}, *big]
+
+        monkeypatch.setattr(agent, "get_session_messages", fake_get)
+        reply = asyncio.new_event_loop().run_until_complete(agent._turn_messages(state, "s"))
+        assert reply == big
+        assert agent._fits_retention(big) is False
 
     def test_completed_events_are_bounded(self, session) -> None:
         state, _ = session
@@ -1113,3 +1156,43 @@ class TestEventIdempotency:
         self._send(None)
         self._send(None)
         assert len(state.turns) == 4
+
+
+def test_an_event_turn_result_carries_its_own_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The first send's poll returns them, so the client never renders the session's latest
+    # messages for an event turn; the same reply is kept for a resend.
+    import asyncio
+
+    history = [
+        {"info": {"role": "user"}, "parts": [{"type": "text", "text": "blocked"}]},
+        {"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "let's fix it"}]},
+    ]
+
+    async def orchestrator(state, session_id, user_text, body):  # type: ignore[no-untyped-def]
+        return {"parts": []}
+
+    async def no_parts(_session_id):  # type: ignore[no-untyped-def]
+        return []
+
+    async def messages(_session_id):  # type: ignore[no-untyped-def]
+        return history
+
+    monkeypatch.setattr(agent, "_handle_orchestrator_message", orchestrator)
+    monkeypatch.setattr(agent, "_fetch_all_assistant_parts", no_parts)
+    monkeypatch.setattr(agent, "_ensure_phase_signal", lambda _state, result: result)
+    monkeypatch.setattr(agent, "get_session_messages", messages)
+
+    state = agent.SessionState(orchestrator_id="orch")
+    state.turns["t1"] = agent.TurnState()
+    body = agent.MessageRequest(
+        parts=[agent.MessagePart(type="text", text="blocked")],
+        event="confirmation_blocked",
+        job_type="eval",
+        event_id="confirmation_blocked:m9",
+    )
+    asyncio.new_event_loop().run_until_complete(agent._run_turn(state, "s", "t1", "blocked", body))
+
+    turn = state.turns["t1"]
+    assert turn.error is None
+    assert turn.result is not None and turn.result["event_messages"] == history[1:]
+    assert state.completed_events["confirmation_blocked:m9"] == history[1:]

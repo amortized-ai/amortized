@@ -42,24 +42,43 @@ images:
     repository: ghcr.io/amortized-ai/studio
     tag: latest
     pullPolicy: ""
-  # Model-liveness check service: a small dedicated image (containers/model-check), built with
-  # the same tags as the server — pin it alongside images.server.tag.
+  # Standalone model-check service (only with modelCheck.enabled): a small dedicated image
+  # (containers/model-check) built with the same tags as the server. An empty tag follows
+  # images.server.tag, so pinning the server pins this too.
   modelCheck:
     repository: ghcr.io/amortized-ai/model-check
-    tag: latest
+    tag: ""
     pullPolicy: ""
   opencode:
     repository: ghcr.io/anomalyco/opencode
     tag: latest           # third-party (anomalyco); publishes only :latest, so not sha-pinned here
     pullPolicy: Always    # matches the base manifest
 
-# Model-liveness check service: verifies the LLM endpoints a job will call (eval judge,
-# SDG teacher models) at validate/create time, so a dead endpoint is rejected immediately
-# instead of failing a long-running job. Runs beside the server (same namespace); only the
-# server may call it. Disable to run the check in-process inside the server instead.
+# Model-liveness check: at validate/create time the server checks the LLM endpoints a job will
+# call (eval judge, SDG teacher models), so a misconfigured endpoint is rejected before the job
+# takes a GPU. By default it runs in-process in the server, under a process-wide probe limit.
+# enabled: true deploys it as a separate service instead — for independent scaling or controlled
+# egress. The server sends it provider keys, so it serves verified TLS; only the server may call
+# it (NetworkPolicy). Probes leave from the server's namespace either way, so in-cluster
+# endpoints need a fully qualified <svc>.<ns>.svc URL.
 modelCheck:
-  enabled: true
+  enabled: false
   port: 7351
+  tls:
+    # TLS Secret (tls.crt / tls.key) the service serves. Empty: OpenShift's service CA issues
+    # amortized-model-check-tls through the Service's serving-cert annotation.
+    secretName: ""
+    # ConfigMap and key holding the CA the server verifies the service with. The default is the
+    # OpenShift service CA bundle, present in every namespace.
+    caConfigMap: openshift-service-ca.crt
+    caConfigMapKey: service-ca.crt
+  egress:
+    # The checker may reach DNS and public addresses only (private, loopback and link-local
+    # ranges are excluded). Add NetworkPolicy egress rules here for the private model services
+    # it must reach — the MLflow AI Gateway, anything in server.approvedModelUrls — e.g.
+    #   - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: amortized}}}]
+    #     ports: [{protocol: TCP, port: 5000}]
+    extraRules: []
   resources:
     requests:
       cpu: 50m
@@ -70,6 +89,10 @@ modelCheck:
 server:
   # AMORTIZED_IMAGE_REGISTRY: registry the server composes job image refs from.
   imageRegistry: ghcr.io/amortized-ai
+  # AMORTIZED_APPROVED_MODEL_URLS: model endpoint URL prefixes an eval may name directly as a
+  # literal base_url (e.g. https://vllm.models.svc:8000/v1). Configured providers and the MLflow
+  # AI Gateway are always allowed; any other URL is rejected before the platform requests it.
+  approvedModelUrls: []
   # AMORTIZED_DATA_DIR: mount path for the server's working data.
   dataDir: /data
   # Job orchestration (worker concurrency). maxConcurrentJobs bounds how many jobs the

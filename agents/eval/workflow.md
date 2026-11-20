@@ -365,16 +365,10 @@ source is resolved: set `training_job_id` (or `model_name_or_path` for a
 named HF model) and go straight to Step 3. If they named a model from one
 of their providers (no endpoint URL), resolve it WITHOUT re-asking which
 model and set the eval's `endpoint` — then go to Step 3. If the model is in
-`known_endpoints` (from `get_eval_endpoint_suggestions`), set `base_url` and
-`model` to the entry's `base_url` and `model` exactly (`model` is the endpoint
-name, e.g. `gpt-oss` — never its `model_name`, which the gateway rejects). A
-`list_models` model whose provider is `gateway` belongs in `known_endpoints`:
-use that entry, never `base_url: "gateway"`. If it is missing (the gateway lookup
-can fail), call `get_eval_endpoint_suggestions` once more; if it is still missing,
-tell the user the gateway endpoint is unavailable right now — do not guess a URL
-or model name. Otherwise find it with
-`list_models` and set `base_url` = its provider name (e.g. `openai`,
-`anthropic`) and `model` = its id. If validation rejects that name, ask the user how the model is
+`known_endpoints` (from `get_eval_endpoint_suggestions`), use the entry's
+`base_url` and `model` exactly; otherwise find it with `list_models` and set
+`base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` =
+its id. If validation rejects that name, ask the user how the model is
 reached rather than guessing a URL (option 4 below). Only
 present the options below when the subject is still open — the user said
 "evaluate a model" without naming one, or wants a non-trained endpoint.
@@ -390,7 +384,7 @@ Present the model-source options as clickable choices:
 3. **A provider model** — a model from the user's configured providers
    (`list_models`), e.g. "gpt-4o-mini (openai)". For a model listed in
    `known_endpoints` (from `get_eval_endpoint_suggestions`), set the eval's
-   `endpoint` to the entry's `base_url` and `model` (the endpoint name); for any other model, set
+   `endpoint` to the entry's `base_url` and `model` exactly; for any other model, set
    `base_url` = its provider name and `model` = its id — the platform
    resolves the URL and key. These evals need no GPU.
 4. "My own endpoint" — an OpenAI-compatible endpoint the user runs: they
@@ -472,8 +466,7 @@ Ask the user which model to judge with — offer a soft suggestion, e.g.
 "reuse the model we used for the SDG step as the judge, or a different
 one?" — then set the judge from their choice. Get its endpoint (base_url
 + model) from `get_eval_endpoint_suggestions` / `list_models`, the same
-way you build the model-under-eval endpoint — for a `known_endpoints` entry,
-its `base_url` and `model` exactly (the endpoint name, not `model_name`). Never submit a rubric eval
+way you build the model-under-eval endpoint. Never submit a rubric eval
 without `config.judge`.
 
 Use sensible defaults: `temperature` 0. Leave `max_samples` and
@@ -521,7 +514,8 @@ config that failed validation.
 
 **Failed model check (`model_check_failed`).** The platform sent a test request to
 an endpoint the eval would call (the judge, or an external model under eval) and
-it did not answer; the message names the model and says what to change. Do NOT
+it rejected it (unknown model, rejected key, or not a chat API); the message names
+the model and says what to change. Do NOT
 try other URLs, model names, or providers by guessing, and do NOT narrate
 attempts. In one or two sentences tell the user which model failed and why (in
 the message's words), then `present_options` for the endpoint that failed:

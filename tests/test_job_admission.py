@@ -67,7 +67,7 @@ def real_check(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
         monkeypatch.setattr(
             checker.httpx,
             "AsyncClient",
-            lambda **kw: real_client(transport=httpx.MockTransport(_handle), **kw),
+            lambda **kw: real_client(**{**kw, "transport": httpx.MockTransport(_handle)}),
         )
 
     return install
@@ -75,12 +75,14 @@ def real_check(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
 
 class TestDefiniteFailuresBlock:
     @pytest.mark.asyncio
-    async def test_slow_judge_hits_deadline_and_blocks_creation(
+    async def test_slow_judge_is_a_warning_not_a_block(
         self,
         client,
         real_check,
         monkeypatch,
     ) -> None:
+        # A cold endpoint can miss the probe's deadline and still serve the job (whose runner
+        # waits far longer), so the job is created with an unverified warning — quickly.
         monkeypatch.setattr(config_mod.settings, "model_check_deadline_seconds", 0.5)
 
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -90,12 +92,13 @@ class TestDefiniteFailuresBlock:
 
         real_check(handler)
         resp = await client.post("/api/v1/jobs/eval", json=EVAL_BODY)
-        assert resp.status_code == 422
-        body = resp.json()
-        assert body["code"] == "model_check_failed"
-        assert "judge model 'gpt-judge'" in body["message"] and "deadline" in body["message"]
-        assert [d["field"] for d in body["details"]] == ["judge"]
-        assert await _job_count() == 0
+        assert resp.status_code == 201, resp.text
+        checks = resp.json()["model_checks"]
+        assert sorted((c["label"], c["outcome"], c["reason"]) for c in checks) == [
+            ("judge", "unverified", "deadline"),
+            ("model under test", "passed", "ok"),
+        ]
+        assert await _job_count() == 1
 
     @pytest.mark.asyncio
     async def test_validate_reports_the_same_failure(self, client, real_check) -> None:
@@ -117,7 +120,8 @@ class TestDefiniteFailuresBlock:
         assert "Check the model name" in message
         assert "Client error" not in message and "/chat/completions" not in message
         assert "not_found" in body["details"][0]["error"]
-        assert "404 Not Found" in body["details"][0]["error"]
+        # Built from the numeric status and local codes — no provider-supplied reason phrase.
+        assert body["details"][0]["error"].endswith("not_found: HTTP 404")
 
     @pytest.mark.asyncio
     async def test_literal_url_is_probed_without_a_forwarded_key(
@@ -162,13 +166,64 @@ class TestDefiniteFailuresBlock:
 
 class TestMalformedUrls:
     @pytest.mark.asyncio
-    async def test_malformed_port_is_model_check_failed_not_a_500(self, client, real_check) -> None:
-        real_check(lambda _r: httpx.Response(200, json=OPENAI_OK))
+    async def test_malformed_port_is_a_validation_error_not_a_model_check(
+        self, client, real_check
+    ) -> None:
+        # A typo in the URL is an ordinary validation error (not "the endpoint didn't answer"),
+        # and nothing is probed.
+        probed: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            probed.append(str(request.url))
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
         body = {**EVAL_BODY, "judge": {"base_url": "http://judge:invalid/v1", "model": "j"}}
         for path in ("/api/v1/jobs/eval/validate", "/api/v1/jobs/eval"):
             resp = await client.post(path, json=body)
             assert resp.status_code == 422, (path, resp.text)
-            assert resp.json()["code"] == "model_check_failed"
+            assert resp.json()["code"] != "model_check_failed"
+            assert "judge.base_url is not a valid URL" in resp.text
+        assert probed == []
+
+
+class TestApprovedDestinations:
+    """A private endpoint (the test hosts resolve to 10.0.0.1) must be operator-approved: the
+    platform sends it requests (the check from the server's network, the job from the compute
+    namespace). Public HTTPS needs no approval (see test_destinations.py)."""
+
+    @pytest.mark.asyncio
+    async def test_unapproved_literal_url_is_rejected_before_any_probe(
+        self, client, real_check, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(config_mod.settings, "approved_model_urls", [])
+        monkeypatch.setattr(config_mod.settings, "gateway_url", "")
+        probed: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            probed.append(str(request.url))
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
+        for path in ("/api/v1/jobs/eval/validate", "/api/v1/jobs/eval"):
+            resp = await client.post(path, json=EVAL_BODY)
+            assert resp.status_code == 422, (path, resp.text)
+            body = resp.json()
+            assert body["code"] == "model_check_failed"
+            assert "private address that an operator hasn't approved" in body["message"]
+            assert "AMORTIZED_APPROVED_MODEL_URLS" in body["message"]  # what to do about it
+        assert probed == []
+        assert await _job_count() == 0
+
+    @pytest.mark.asyncio
+    async def test_approved_prefix_and_gateway_are_allowed(
+        self, client, real_check, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(config_mod.settings, "approved_model_urls", ["http://judge:8000/v1"])
+        monkeypatch.setattr(config_mod.settings, "gateway_url", "http://tuned:8000/v1")
+        real_check(lambda _r: httpx.Response(200, json=OPENAI_OK))
+        resp = await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)
+        assert resp.status_code == 200, resp.text
 
 
 class TestUnverifiedProceeds:
@@ -241,30 +296,85 @@ class TestConnectionScoping:
         assert in_use == [0, 0]
 
     @pytest.mark.asyncio
-    async def test_prechecks_rerun_after_the_check(self, client, monkeypatch) -> None:
+    async def _succeeded_training_job(self) -> str:
         import amortized.db.connection as db
+        from amortized.db.repository import Repository
 
         async with db._pool.acquire() as conn:
-            from amortized.db.repository import Repository
-
             training = await create_job(
                 Repository(conn), job_type=JobType.training, config={"algorithm": "sft"}
             )
-            await conn.execute("UPDATE jobs SET status = 'succeeded' WHERE id = $1", training["id"])
+            # A run id too, so the eval's prechecks pass and admission really reaches the check.
+            await conn.execute(
+                "UPDATE jobs SET status = 'succeeded', mlflow_run_id = 'run-1' WHERE id = $1",
+                training["id"],
+            )
+        return str(training["id"])
+
+    def _flip_during_check(
+        self, monkeypatch: pytest.MonkeyPatch, job_id: str, report: CheckReport
+    ) -> list[int]:
+        import amortized.db.connection as db
+
+        calls: list[int] = []
 
         async def flip_upstream(job_type: str, config: dict[str, Any]) -> CheckReport:
-            # The upstream job changes state while the (slow) check runs.
+            calls.append(1)  # the upstream job changes state while the check runs
             async with db._pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE jobs SET status = 'failed' WHERE id = $1", training["id"]
-                )
-            return CheckReport()
+                await conn.execute("UPDATE jobs SET status = 'failed' WHERE id = $1", job_id)
+            return report
 
         monkeypatch.setattr(job_admission, "check_job_models", flip_upstream)
-        body = {**EVAL_BODY, "training_job_id": training["id"]}
+        return calls
+
+    @pytest.mark.asyncio
+    async def test_prechecks_rerun_after_the_check(self, client, monkeypatch) -> None:
+        training_id = await self._succeeded_training_job()
+        ok = CheckResult("judge", "gpt-judge", "http://judge:8000/v1", "passed", "ok")
+        calls = self._flip_during_check(monkeypatch, training_id, CheckReport(results=[ok]))
+        body = {**EVAL_BODY, "training_job_id": training_id}
         resp = await client.post("/api/v1/jobs/eval", json=body)
-        assert resp.status_code == 422
+        assert calls == [1]  # admission got as far as the check
+        assert resp.status_code == 422, resp.text
         assert await _job_count() == 1  # only the training job; the eval was not created
+
+    @pytest.mark.asyncio
+    async def test_dependencies_are_rechecked_at_insert_even_with_nothing_probed(
+        self, client, monkeypatch
+    ) -> None:
+        # Nothing probed (e.g. a classification eval), so the full prechecks don't re-run — the
+        # locked dependency check at insert still catches the upstream job's change.
+        training_id = await self._succeeded_training_job()
+        calls = self._flip_during_check(monkeypatch, training_id, CheckReport())
+        body = {**EVAL_BODY, "training_job_id": training_id}
+        resp = await client.post("/api/v1/jobs/eval", json=body)
+        assert calls == [1]
+        assert resp.status_code == 422, resp.text
+        assert "training_job_id" in resp.text
+        assert await _job_count() == 1
+
+
+class TestValidateEvalOrder:
+    @pytest.mark.asyncio
+    async def test_decision_warnings_are_read_after_the_check(self, client, monkeypatch) -> None:
+        # Another eval created while the check runs must be reflected in the drift warning.
+        from amortized.api import jobs as jobs_api
+
+        order: list[str] = []
+
+        async def check(job_type: str, config: dict[str, Any]) -> CheckReport:
+            order.append("check")
+            return CheckReport()
+
+        async def drift(*_a: Any) -> list[str]:
+            order.append("drift")
+            return []
+
+        monkeypatch.setattr(job_admission, "check_job_models", check)
+        monkeypatch.setattr(jobs_api, "_rubric_drift_warning", drift)
+        resp = await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)
+        assert resp.status_code == 200, resp.text
+        assert order == ["check", "drift"]
 
 
 class TestAdmissionOrder:
@@ -307,19 +417,6 @@ class TestAdmissionOrder:
 
         await job_admission.admit_job(JobType.training, {"algorithm": "sft"}, prechecks=counting)
         assert len(calls) == 1
-
-    @pytest.mark.asyncio
-    async def test_prechecks_rerun_when_endpoints_were_probed(self, client, monkeypatch) -> None:
-        ok = CheckResult("judge", "gpt-judge", "http://judge:8000/v1", "passed", "ok")
-        _stub_report(monkeypatch, CheckReport(results=[ok]))
-        calls: list[int] = []
-
-        async def counting(_repo):  # type: ignore[no-untyped-def]
-            calls.append(1)
-            return []
-
-        await job_admission.admit_job(JobType.eval, dict(EVAL_BODY), prechecks=counting)
-        assert len(calls) == 2
 
 
 async def _no_errors(_repo: Any) -> list[str]:

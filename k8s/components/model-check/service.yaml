@@ -6,12 +6,15 @@ metadata:
   labels:
     app: amortized
     component: model-check
+  annotations:
+    # OpenShift's service CA issues the serving cert into this Secret.
+    service.beta.openshift.io/serving-cert-secret-name: amortized-model-check-tls
 spec:
   type: ClusterIP
   selector:
     app: amortized
     component: model-check
   ports:
-    - name: http
+    - name: https
       port: 7351
-      targetPort: http
+      targetPort: https

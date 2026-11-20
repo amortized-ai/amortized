@@ -13,7 +13,6 @@ import hashlib
 from dataclasses import dataclass
 
 import amortized.config as config_mod
-from amortized.core.model_catalog import resolve_provider
 from amortized.model_check.types import (
     FAILED,
     PASSED,
@@ -34,6 +33,7 @@ __all__ = [
     "CheckResult",
     "ConfigError",
     "ModelEndpoint",
+    "approved_destinations",
     "dedup",
     "endpoint_with_credential",
     "is_http_url",
@@ -78,50 +78,25 @@ def endpoint_with_credential(
     )
 
 
-def _gateway_endpoint(label: str, model: str, env: dict[str, str]) -> ModelEndpoint | None:
-    """Data designer's built-in gateway provider. It isn't in the server's provider
-    catalog — the job image defines it — so it resolves through the server's gateway_url.
-    None when no gateway is configured: there's nothing the server can check."""
-    gateway_url = config_mod.settings.gateway_url.strip()
-    if not gateway_url:
-        return None
-    return endpoint_with_credential(label, gateway_url, model, "openai", "DD_API_KEY", env)
-
-
 def provider_endpoint(
-    label: str, provider_name: str, model: str, env: dict[str, str]
-) -> ModelEndpoint | ConfigError | None:
-    """Resolve a model served by a named provider (e.g. an SDG teacher's provider).
-    None means the endpoint can't be checked from the server (an unconfigured gateway)."""
-    provider = resolve_provider(provider_name)
-    if provider is None and provider_name.strip().lower() == "gateway":
-        return _gateway_endpoint(label, model, env)
-    if provider is None:
-        return ConfigError(
-            label,
-            "provider_not_configured",
-            f"{label}: provider {provider_name!r} is not configured on the server"
-            " (unknown, disabled, or missing its API key)",
-        )
+    label: str, provider_name: str, provider: dict[str, str], model: str, env: dict[str, str]
+) -> ModelEndpoint | ConfigError:
+    """The endpoint for ``model`` served by ``provider`` — a provider definition from the
+    list the job itself will use (e.g. an SDG teacher's), so the check calls what the job calls.
+    The key resolves from ``env`` (an env-var name) or the definition (a literal key)."""
     key_ref = provider.get("api_key", "")
     if key_ref.isupper() and "_" in key_ref:
-        endpoint = endpoint_with_credential(
-            label,
-            provider.get("endpoint", ""),
-            model,
-            provider.get("provider_type", "openai"),
-            key_ref,
-            env,
-        )
+        key_env, key_source = key_ref, env
     else:  # a literal key in the provider definition
-        endpoint = endpoint_with_credential(
-            label,
-            provider.get("endpoint", ""),
-            model,
-            provider.get("provider_type", "openai"),
-            "PROVIDER_KEY",
-            {"PROVIDER_KEY": key_ref},
-        )
+        key_env, key_source = "PROVIDER_KEY", {"PROVIDER_KEY": key_ref}
+    endpoint = endpoint_with_credential(
+        label,
+        provider.get("endpoint", ""),
+        model,
+        provider.get("provider_type", "openai"),
+        key_env,
+        key_source,
+    )
     if not endpoint.api_key:
         return ConfigError(
             label,
@@ -129,6 +104,14 @@ def provider_endpoint(
             f"{label}: provider {provider_name!r} has no API key available to the job",
         )
     return endpoint
+
+
+def approved_destinations() -> tuple[str, ...]:
+    """URL prefixes an operator has approved for private model services: the configured
+    ``approved_model_urls`` plus the operator's MLflow AI Gateway. Public HTTPS endpoints need
+    no approval; see model_check/destinations.py for the policy."""
+    settings = config_mod.settings
+    return tuple(u for u in [*settings.approved_model_urls, settings.gateway_url] if u)
 
 
 def dedup(endpoints: list[ModelEndpoint]) -> list[ModelEndpoint]:

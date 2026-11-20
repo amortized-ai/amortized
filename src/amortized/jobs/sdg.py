@@ -43,12 +43,43 @@ class SDGBuildError(JobBuildError):
 
 _BASE_ENV = {"DD_API_KEY": "not-needed"}
 
+_GATEWAY_PROVIDER = "gateway"
+
+
+def normalize_legacy_config(config: dict[str, Any]) -> None:
+    """Translate fields older SDG configs used, in place: drop stale keys and rename columns'
+    ``model_config_alias`` to ``model_alias``."""
+    for key in _STALE_CONFIG_KEYS:
+        config.pop(key, None)
+    columns = config.get("columns")
+    if not isinstance(columns, list):
+        return  # an invalid shape is the schema's to report
+    for col in columns:
+        if isinstance(col, dict) and "model_config_alias" in col:
+            col.setdefault("model_alias", col.pop("model_config_alias"))
+
+
+def runtime_provider_defs() -> list[dict[str, str]]:
+    """The providers the SDG job gets: every enabled provider plus the configured gateway.
+    ``build()`` writes this list and ``model_checks`` resolves teachers against it, so the check
+    probes what the job calls. Empty means the job keeps the providers baked into its image."""
+    defs = list(enabled_provider_defs())
+    gateway_url = config_mod.settings.gateway_url.strip().rstrip("/")
+    if gateway_url and not any(d.get("name") == _GATEWAY_PROVIDER for d in defs):
+        defs.append(
+            {
+                "name": _GATEWAY_PROVIDER,
+                "endpoint": gateway_url,
+                "provider_type": "openai",
+                "api_key": "DD_API_KEY",  # the gateway needs none; data-designer needs it set
+            }
+        )
+    return defs
+
 
 def _is_chat_column(column: dict[str, Any]) -> bool:
-    """Whether a column calls its model with a chat request — the only kind the check sends.
-    Data Designer's LLM columns (llm-text, llm-code, llm-structured, llm-judge) do; embedding
-    and image columns call other APIs, so a chat probe would wrongly fail them. A column with
-    no column_type is treated as an LLM column (the common case), so it is still checked."""
+    """Whether a column calls its model with a chat request, the only kind the check sends
+    (embedding and image columns call other APIs). No column_type counts as an LLM column."""
     column_type = str(column.get("column_type") or "")
     return not column_type or column_type.startswith("llm-")
 
@@ -68,6 +99,7 @@ def model_checks(
     }
     job_env = {**env, **_BASE_ENV}  # build()'s env wins over the forwarded env in the worker
     inject_enabled_provider_keys(job_env)
+    providers = {d.get("name", "").lower(): d for d in runtime_provider_defs()}
     endpoints: list[ModelEndpoint] = []
     errors: list[ConfigError] = []
     for model_config in config.get("model_configs") or []:
@@ -76,15 +108,27 @@ def model_checks(
         alias = str(model_config.get("alias") or "")
         if alias not in referenced:
             continue
+        label = f"teacher {alias}"
+        provider_name = str(model_config.get("provider") or "")
+        provider = providers.get(provider_name.strip().lower())
+        if provider is None:
+            if not providers and provider_name.strip().lower() == _GATEWAY_PROVIDER:
+                continue  # the image's own gateway (no gateway_url here): nothing to check
+            errors.append(
+                ConfigError(
+                    label,
+                    "provider_not_configured",
+                    f"{label}: provider {provider_name!r} is not available to the job"
+                    " (unknown, disabled, or missing its API key)",
+                )
+            )
+            continue
         resolved = provider_endpoint(
-            f"teacher {alias}",
-            str(model_config.get("provider") or ""),
-            str(model_config.get("model") or ""),
-            job_env,
+            label, provider_name, provider, str(model_config.get("model") or ""), job_env
         )
         if isinstance(resolved, ConfigError):
             errors.append(resolved)
-        elif resolved is not None:
+        else:
             endpoints.append(resolved)
     return endpoints, errors
 
@@ -124,8 +168,7 @@ async def build(
     env: dict[str, str] = dict(_BASE_ENV)
     job_id = job["id"]
 
-    for key in _STALE_CONFIG_KEYS:
-        config.pop(key, None)
+    normalize_legacy_config(config)
 
     document_ids = config.pop("document_ids", []) or config.pop("document_id", [])
     if isinstance(document_ids, str):
@@ -190,10 +233,6 @@ async def build(
         params = mc.setdefault("inference_parameters", {})
         params.setdefault("max_parallel_requests", 32)
 
-    for col in config.get("columns", []):
-        if "model_config_alias" in col:
-            col.setdefault("model_alias", col.pop("model_config_alias"))
-
     num_records = config.pop("num_records", 100)
     mode = config.pop("mode", "create")
     topic = config.pop("topic", None)
@@ -231,12 +270,9 @@ async def build(
     dd_config = {"data_designer": rendered}
     config_files["config.yaml"] = yaml.dump(dd_config, default_flow_style=False, sort_keys=False)
 
-    # Direct-provider stopgap for the absent MLflow AI Gateway: the job image's
-    # builtin default provider is `gateway` (a bundled MLflow gateway that does not
-    # exist here), so write a model_providers.yaml with the providers enabled by
-    # dropped-in keys and point DATA_DESIGNER_HOME at it.
+    # Replace the image's baked-in provider list with the one the model check resolved against.
     pre_commands: list[str] = []
-    provider_defs = enabled_provider_defs()
+    provider_defs = runtime_provider_defs()
     if provider_defs:
         dd_home = "/amortized/work/.data-designer"
         config_files["model_providers.yaml"] = yaml.dump(

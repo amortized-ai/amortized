@@ -46,26 +46,26 @@ class ModelCheckFailedError(Exception):
         self.details = details
 
 
-# What each definite failure means and what to change, in words. The message is relayed by the
-# agent and shown on the "Not submitted" card, so it says what's wrong — not the raw HTTP error,
-# which reads as a broken endpoint when the usual cause is a wrong model name (a 404 from a
-# gateway that serves no such model). The raw detail stays in the per-endpoint `details`.
+# What each definite failure means and what to change. The agent relays the message, so it says
+# what's wrong rather than giving the raw status; the status stays in `details`.
 _FAILURE_HINTS = {
-    "not_found": "isn't served there (HTTP 404). Check the model name; for a gateway endpoint,"
-    " use the endpoint name",
+    "not_found": "isn't served there (HTTP 404). Check the model name",
     "auth_required": "requires an API key (HTTP 401/403). Add the endpoint's key in Settings",
     "auth_failed": "rejected the API key (HTTP 401/403). Check the key in Settings",
-    "unreachable": "couldn't be reached. Check the URL",
-    "deadline": "didn't answer before the check's deadline. The endpoint may be overloaded or"
-    " the URL wrong",
     "bad_request": "rejected a test request. Check the model name and endpoint",
-    "server_error": "returned a server error. The endpoint may be down",
     "bad_response": "didn't answer like a chat model. Check that the URL is its chat API",
+    "invalid_url": "isn't a valid URL. Check the host and port",
 }
 
 
 def _failure_line(result: CheckResult) -> str:
-    hint = _FAILURE_HINTS.get(result.reason, f"failed a test request ({result.reason})")
+    if result.reason == "destination_denied":
+        hint = (
+            f"{result.detail}. Use a public HTTPS endpoint, or ask an operator to approve the"
+            " service (AMORTIZED_APPROVED_MODEL_URLS)"
+        )
+    else:
+        hint = _FAILURE_HINTS.get(result.reason, f"failed a test request ({result.reason})")
     return f"{result.label} model {result.model!r} at {result.base_url} {hint}."
 
 
@@ -108,6 +108,7 @@ async def admit_job(
     recipe: str = "",
     retry_of: str = "",
     prechecks: Prechecks | None = None,
+    dependencies: Prechecks | None = None,
     before_insert: BeforeInsert | None = None,
 ) -> tuple[dict[str, Any], list[CheckResult]]:
     """Validate, model-check, and create a job.
@@ -115,8 +116,10 @@ async def admit_job(
     1. ``prechecks`` (DB-backed validation) in a scoped connection; errors → 422. Then the GPU
        budget, on the config as the prechecks normalized it.
     2. The model check, with no connection held.
-    3. In a fresh connection: ``prechecks`` again if the check probed anything (upstream state
-       may have changed while it ran), ``before_insert`` side effects, then the insert with the
+    3. In one transaction: ``prechecks`` again if the check probed anything (they can be
+       expensive — a training precheck downloads the dataset); ``dependencies`` always — a cheap
+       check that locks the upstream job rows (FOR SHARE) so none can be deleted or change
+       status before the insert commits; ``before_insert`` side effects; the insert with the
        check report."""
     # A config carrying credentials must never be probed (a user:password@ base_url would
     # otherwise be sent before create_job refuses it), so this comes before anything else.
@@ -139,12 +142,15 @@ async def admit_job(
 
     results = await check_models_or_raise(job_type.value, config)
 
-    async with get_pool().acquire() as conn:
+    async with get_pool().acquire() as conn, conn.transaction():
         repo = Repository(conn)
-        # Nothing probed means no time passed since the prechecks; re-running them would only
-        # repeat their work (a training precheck downloads the dataset from MLflow).
+        # Prechecks can be expensive; re-run them only if time passed during a probe.
         if prechecks is not None and results:
             errors = await prechecks(repo)
+            if errors:
+                raise HTTPException(status_code=422, detail=errors)
+        if dependencies is not None:
+            errors = await dependencies(repo)
             if errors:
                 raise HTTPException(status_code=422, detail=errors)
         if before_insert is not None:

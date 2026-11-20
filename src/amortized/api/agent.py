@@ -66,9 +66,10 @@ MAX_TURNS_HARD = 64
 # state.lock, so beyond this a client is only queuing work unboundedly — reject with
 # 429 rather than letting state.turns / _background_tasks grow without limit.
 MAX_ACTIVE_TURNS = 16
-# Delivered system-event ids remembered per session (SessionState.completed_events): ids only,
-# so this bounds memory while covering every event a client could still resend.
+# Delivered system events remembered per session; replies larger than MAX_EVENT_REPLY_BYTES
+# keep only the id.
 MAX_COMPLETED_EVENTS = 64
+MAX_EVENT_REPLY_BYTES = 256_000
 
 
 @dataclass
@@ -139,10 +140,11 @@ class SessionState:
     # confirmation whose POST response was lost) return the turn already running instead of
     # starting a second one. Pruned with the turns it points at.
     event_turns: dict[str, str] = field(default_factory=dict)
-    # Event ids whose turn succeeded, kept apart from the turn cache (which evicts finished
-    # turns) so a resend long after delivery — e.g. a user Retry — still isn't run twice.
+    # Event id -> the messages its turn produced (None when too large). Separate from the turn
+    # cache, which evicts finished turns, so a late resend is neither re-run nor answered with
+    # a later turn's messages.
     # Insertion-ordered and bounded (MAX_COMPLETED_EVENTS).
-    completed_events: dict[str, None] = field(default_factory=dict)
+    completed_events: dict[str, list[Any] | None] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -272,25 +274,22 @@ _SUBAGENT_JOB_FAILED_PROMPT = (
     "new work — hand control back now."
 )
 
-# A blocked confirmation: the user clicked Confirm on a job card, but creation was rejected
-# by the model-liveness check (an LLM endpoint the job would call can't answer, or isn't
-# configured). No job exists, so no job_complete event will ever arrive — the studio sends a
-# `confirmation_blocked` event instead. As with the job_complete hand-back, the imperative rides
-# the SYSTEM channel; the user part carries only the sanitized failure.
+# A confirmed job whose create request was rejected: no job_complete will ever arrive, so the
+# studio sends `confirmation_blocked`. The imperative rides the SYSTEM channel; the user part
+# carries only the server's reason.
 _CONFIRMATION_BLOCKED_PROMPT = (
-    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but the model check"
-    " blocked it (the failure is in the user message). Explain the problem briefly, help the user"
-    " fix the endpoint or choose a different model, then call validate_{job_type}_job with the"
-    " updated configuration to present a new confirmation card. Do not say a job was submitted or"
-    " is running."
+    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but creation was"
+    " rejected (the reason is in the user message). Explain the problem briefly, help the user"
+    " resolve it, then call validate_{job_type}_job with the updated configuration to present a"
+    " new confirmation card. Do not say a job was submitted or is running."
 )
 # Same event when no subagent is active: the orchestrator can't validate a job itself, so it
 # hands the fix back to the workflow agent that owns the job type, resuming its context.
 _ORCHESTRATOR_CONFIRMATION_BLOCKED_PROMPT = (
-    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but the model check"
-    " blocked it (the failure is in the user message). Your only move: delegate_to_subagent with"
-    ' target "{job_type}" and resume: true, passing the failure as context, so the {job_type}'
-    " workflow helps the user fix it and presents a new confirmation card."
+    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but creation was"
+    " rejected (the reason is in the user message). Your only move: delegate_to_subagent with"
+    ' target "{job_type}" and resume: true, passing the reason as context, so the {job_type}'
+    " workflow helps the user resolve it and presents a new confirmation card."
 )
 
 
@@ -303,10 +302,8 @@ def _confirmation_blocked_job_type(body: MessageRequest) -> str | None:
 
 
 def _park_subagent_for_other_blocked_job(state: SessionState, body: MessageRequest) -> None:
-    """A blocked-confirmation notice belongs to the workflow that owns its job type. If a
-    different workflow is active (e.g. the user moved on to SDG before retrying an eval notice),
-    park it — resumable, like a help detour — so the orchestrator hands the notice to the right
-    workflow instead of the active one getting another job type's repair prompt."""
+    """If a different workflow than the blocked job's is active, park it (resumable, like a help
+    detour) so the orchestrator routes the notice to the workflow that owns that job type."""
     blocked = _confirmation_blocked_job_type(body)
     target = state.subagent_target
     if not blocked or not state.subagent_id or not target or target == blocked:
@@ -873,12 +870,16 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         # A turn that failed may run again; one still running or done is the same event.
         # `replayed` tells the client this is a resend, so it doesn't render a finished reply
         # from session messages that may now belong to later turns.
-        if existing_id and existing is not None and (existing.active or existing.error is None):
-            status = "processing" if existing.active else "done"
-            return {"turn_id": existing_id, "status": status, "replayed": True}
+        if existing_id and existing is not None and existing.active:
+            return {"turn_id": existing_id, "status": "processing", "replayed": True}
         if body.event_id in state.completed_events:
-            # Delivered, and its turn already evicted: still the same event.
-            return {"turn_id": None, "status": "done", "replayed": True}
+            # Delivered already (its turn may be evicted): return that turn's own reply.
+            return {
+                "turn_id": existing_id if existing is not None else None,
+                "status": "done",
+                "replayed": True,
+                "messages": state.completed_events[body.event_id],
+            }
 
     # Bound pending work per session: active turns are never evicted, so without an
     # admission limit a client could queue unboundedly (state.turns / _background_tasks).
@@ -941,6 +942,13 @@ async def _run_turn(
                 p for p in (result.get("parts") or []) if p.get("tool") == _BACKFILL_PHASE_TOOL
             ]
             result["parts"] = [*client_parts, *phase_backfill]
+            if body.event_id:
+                # Still under the lock, so no later turn has added to the session yet.
+                reply = await _turn_messages(state, session_id)
+                kept = reply if reply is not None and _fits_retention(reply) else None
+                _record_completed_event(state, body.event_id, kept)
+                # The client renders only these, never the session's latest messages.
+                result["event_messages"] = reply if reply is not None else []
         if turn:
             turn.result = result
     except AgentTurnError as exc:
@@ -967,14 +975,41 @@ async def _run_turn(
         if turn:
             turn.active = False
             turn.finished_at = datetime.now(UTC)
-            if body.event_id and turn.error is None:
-                _record_completed_event(state, body.event_id)
         state.last_activity = datetime.now(UTC)
 
 
-def _record_completed_event(state: SessionState, event_id: str) -> None:
+async def _turn_messages(state: SessionState, session_id: str) -> list[Any] | None:
+    """The messages the turn that just finished added — what the client's GET /message would
+    show for it: the active session's messages after its last user message. None when they
+    can't be read."""
+    try:
+        messages = await get_session_messages(session_id)
+    except Exception:
+        logger.warning("could not read an event turn's messages: session=%s", session_id)
+        return None
+    if not isinstance(messages, list):
+        return None
+    last_user = max(
+        (
+            i
+            for i, m in enumerate(messages)
+            if isinstance(m, dict) and (m.get("info") or {}).get("role") == "user"
+        ),
+        default=-1,
+    )
+    return messages[last_user + 1 :]
+
+
+def _fits_retention(reply: list[Any]) -> bool:
+    """Whether an event's reply is small enough to keep for a later resend."""
+    return len(json.dumps(reply, default=str)) <= MAX_EVENT_REPLY_BYTES
+
+
+def _record_completed_event(
+    state: SessionState, event_id: str, messages: list[Any] | None = None
+) -> None:
     state.completed_events.pop(event_id, None)
-    state.completed_events[event_id] = None
+    state.completed_events[event_id] = messages
     while len(state.completed_events) > MAX_COMPLETED_EVENTS:
         state.completed_events.pop(next(iter(state.completed_events)))
 

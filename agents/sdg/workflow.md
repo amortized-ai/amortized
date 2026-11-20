@@ -262,8 +262,8 @@ ask a natural follow-up to get the missing information, fix the config,
 and retry.
 
 **Failed model check (`model_check_failed`).** The platform sent a test request to
-a teacher model and it did not answer; the message names the model and says what
-to change. Do NOT try other models or providers by guessing, and do NOT narrate
+a teacher model and it was rejected (unknown model, rejected key, or not a chat
+API); the message names the model and says what to change. Do NOT try other models or providers by guessing, and do NOT narrate
 attempts. In one or two sentences tell the user which teacher failed and why (in
 the message's words), then `present_options`: pick a different teacher from
 `list_models`, or fix the provider's endpoint or key in Settings.

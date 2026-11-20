@@ -11,7 +11,6 @@ import pytest
 
 import amortized.config as config_mod
 from amortized.core import model_check_client as client
-from amortized.core import model_endpoints
 from amortized.core.job_env import forwarded_env
 from amortized.core.model_endpoints import (
     FAILED,
@@ -37,7 +36,7 @@ def _ok(ep: ModelEndpoint) -> CheckResult:
 @pytest.fixture
 def service(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     """Point the client at a fake check service; returns a list the handler appends to."""
-    monkeypatch.setattr(config_mod.settings, "model_check_url", "http://svc:7351")
+    monkeypatch.setattr(config_mod.settings, "model_check_url", "https://svc:7351")
     calls: list[dict[str, Any]] = []
     real_client = httpx.AsyncClient
 
@@ -53,7 +52,7 @@ def service(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
         def factory(**kw: Any) -> httpx.AsyncClient:
             if timeouts is not None:
                 timeouts.append(kw.get("timeout"))
-            return real_client(transport=httpx.MockTransport(_handle), **kw)
+            return real_client(**{**kw, "transport": httpx.MockTransport(_handle)})
 
         monkeypatch.setattr(client.httpx, "AsyncClient", factory)
         return calls
@@ -99,6 +98,39 @@ class TestCheckerAvailability:
         results = asyncio.run(client.run_checks(_eps(2), 5.0))
         assert [(r.outcome, r.reason) for r in results] == [(UNVERIFIED, reason)] * 2
 
+    def test_service_tls_is_verified_with_the_configured_ca(self, monkeypatch, service) -> None:
+        service(_results_for)
+        seen_verify: list[object] = []
+        patched = client.httpx.AsyncClient
+
+        def capture(**kw):  # type: ignore[no-untyped-def]
+            seen_verify.append(kw.get("verify"))
+            return patched(**kw)
+
+        monkeypatch.setattr(client.httpx, "AsyncClient", capture)
+        monkeypatch.setattr(config_mod.settings, "model_check_ca_bundle", "/etc/ca/service-ca.crt")
+        asyncio.run(client.run_checks(_eps(1), 5.0))
+        assert seen_verify == ["/etc/ca/service-ca.crt"]
+
+    def test_in_process_checks_share_a_process_wide_limit(self, monkeypatch) -> None:
+        # Full: refused (unverified/checker_busy), not queued behind other validations.
+        monkeypatch.setattr(config_mod.settings, "model_check_url", "")
+        monkeypatch.setattr(checker, "_inflight", checker.MAX_INFLIGHT_PROBES)
+        results = asyncio.run(client.run_checks(_eps(2), 5.0))
+        assert [(r.outcome, r.reason) for r in results] == [(UNVERIFIED, "checker_busy")] * 2
+
+    def test_in_process_slots_are_released(self, monkeypatch) -> None:
+        monkeypatch.setattr(config_mod.settings, "model_check_url", "")
+        monkeypatch.setattr(checker, "_inflight", 0)
+
+        async def fake(endpoints, deadline, approved=()):  # type: ignore[no-untyped-def]
+            assert checker._inflight == len(endpoints)
+            return [_ok(e) for e in endpoints]
+
+        monkeypatch.setattr(checker, "check_endpoints", fake)
+        asyncio.run(client.run_checks(_eps(3), 5.0))
+        assert checker._inflight == 0
+
     def test_partial_or_mismatched_results_yield_one_result_each(self, service) -> None:
         def handler(payload: dict[str, Any]) -> httpx.Response:
             good = _results_for(payload).json()["results"]
@@ -130,7 +162,7 @@ class TestCheckerAvailability:
     def test_hung_check_is_cancelled_at_the_budget(self, monkeypatch) -> None:
         monkeypatch.setattr(config_mod.settings, "model_check_url", "")
 
-        async def hang(endpoints, deadline):  # type: ignore[no-untyped-def]
+        async def hang(endpoints, deadline, approved=()):  # type: ignore[no-untyped-def]
             await asyncio.sleep(100)
 
         monkeypatch.setattr("amortized.model_check.checker.check_endpoints", hang)
@@ -225,7 +257,7 @@ class TestChunkingAndBudget:
         monkeypatch.setattr(config_mod.settings, "model_check_url", "")
         seen: list[float] = []
 
-        async def fake(endpoints, deadline):  # type: ignore[no-untyped-def]
+        async def fake(endpoints, deadline, approved=()):  # type: ignore[no-untyped-def]
             seen.append(deadline)
             return [_ok(e) for e in endpoints]
 
@@ -419,11 +451,7 @@ class TestSdgHook:
         }
 
     def test_only_referenced_models_are_checked(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            model_endpoints,
-            "resolve_provider",
-            lambda n: OPENAI_PROVIDER if n == "openai" else None,
-        )
+        monkeypatch.setattr(sdg_builder, "enabled_provider_defs", lambda: [OPENAI_PROVIDER])
         monkeypatch.setattr(
             sdg_builder,
             "inject_enabled_provider_keys",
@@ -436,18 +464,14 @@ class TestSdgHook:
         ]
 
     def test_referenced_model_with_unknown_provider_is_config_error(self, monkeypatch) -> None:
-        monkeypatch.setattr(model_endpoints, "resolve_provider", lambda _n: None)
+        monkeypatch.setattr(sdg_builder, "enabled_provider_defs", lambda: [])
         _, errors = sdg_builder.model_checks(self._config("unused"), {})
         assert len(errors) == 1 and isinstance(errors[0], ConfigError)
         assert errors[0].reason == "provider_not_configured"
 
     def test_embedding_and_image_columns_are_not_chat_probed(self, monkeypatch) -> None:
         # Their models answer other APIs; a chat probe would wrongly fail a valid job.
-        monkeypatch.setattr(
-            model_endpoints,
-            "resolve_provider",
-            lambda n: OPENAI_PROVIDER if n == "openai" else None,
-        )
+        monkeypatch.setattr(sdg_builder, "enabled_provider_defs", lambda: [OPENAI_PROVIDER])
         monkeypatch.setattr(
             sdg_builder,
             "inject_enabled_provider_keys",
@@ -470,11 +494,7 @@ class TestSdgHook:
         assert [e.model for e in endpoints] == ["gpt-5"]
 
     def test_legacy_alias_field_counts_as_referenced(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            model_endpoints,
-            "resolve_provider",
-            lambda n: OPENAI_PROVIDER if n == "openai" else None,
-        )
+        monkeypatch.setattr(sdg_builder, "enabled_provider_defs", lambda: [OPENAI_PROVIDER])
         monkeypatch.setattr(
             sdg_builder,
             "inject_enabled_provider_keys",
@@ -500,7 +520,7 @@ class TestSdgGatewayTeacher:
 
     @pytest.fixture(autouse=True)
     def _gateway_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(model_endpoints, "resolve_provider", lambda _n: None)
+        monkeypatch.setattr(sdg_builder, "enabled_provider_defs", lambda: [])
         monkeypatch.setattr(sdg_builder, "inject_enabled_provider_keys", lambda _env: None)
         monkeypatch.setattr(config_mod.settings, "gateway_url", self.GATEWAY)
 
@@ -539,7 +559,7 @@ class TestSdgGatewayTeacher:
         monkeypatch.setattr(
             checker.httpx,
             "AsyncClient",
-            lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw),
+            lambda **kw: real_client(**{**kw, "transport": httpx.MockTransport(handler)}),
         )
         report = await client.check_job_models("sdg", self._config("nope"))
         assert report.config_errors == []
@@ -552,7 +572,7 @@ class TestSdgGatewayTeacher:
 
     def test_a_catalog_provider_named_gateway_wins(self, monkeypatch) -> None:
         custom = {**OPENAI_PROVIDER, "name": "gateway", "endpoint": "https://gw.example/v1"}
-        monkeypatch.setattr(model_endpoints, "resolve_provider", lambda _n: custom)
+        monkeypatch.setattr(sdg_builder, "enabled_provider_defs", lambda: [custom])
         monkeypatch.setattr(
             sdg_builder,
             "inject_enabled_provider_keys",
@@ -560,3 +580,85 @@ class TestSdgGatewayTeacher:
         )
         [ep], _ = sdg_builder.model_checks(self._config(), {})
         assert (ep.base_url, ep.api_key) == ("https://gw.example/v1", "sk-p")
+
+
+class TestServiceSettings:
+    def test_an_http_service_url_is_refused(self, monkeypatch) -> None:
+        # The server sends provider keys to the standalone service: TLS only.
+        monkeypatch.setenv("AMORTIZED_MODEL_CHECK_URL", "http://amortized-model-check:7351")
+        with pytest.raises(ValueError, match="must be https"):
+            config_mod.Settings()
+
+
+class TestSdgRuntimeProviders:
+    """The check and the job share one provider list (sdg.runtime_provider_defs)."""
+
+    GATEWAY = "http://gw.example.svc:5000/gateway/mlflow/v1"
+
+    def _config(self) -> dict[str, Any]:
+        return {
+            "model_configs": [
+                {"alias": "direct", "model": "gpt-5", "provider": "openai"},
+                {"alias": "gw", "model": "gpt-oss", "provider": "gateway"},
+            ],
+            "columns": [
+                {"name": "a", "column_type": "llm-text", "model_alias": "direct", "prompt": "x"},
+                {"name": "b", "column_type": "llm-text", "model_alias": "gw", "prompt": "y"},
+            ],
+        }
+
+    @pytest.fixture(autouse=True)
+    def _providers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sdg_builder, "enabled_provider_defs", lambda: [OPENAI_PROVIDER])
+        monkeypatch.setattr(
+            sdg_builder,
+            "inject_enabled_provider_keys",
+            lambda env: env.update({"OPENAI_API_KEY": "sk-p"}),
+        )
+        monkeypatch.setattr(config_mod.settings, "gateway_url", self.GATEWAY)
+
+    def test_gateway_stays_available_alongside_direct_providers(self) -> None:
+        endpoints, errors = sdg_builder.model_checks(self._config(), {})
+        assert errors == []
+        assert {(e.model, e.base_url) for e in endpoints} == {
+            ("gpt-5", "https://api.openai.com/v1"),
+            ("gpt-oss", self.GATEWAY),
+        }
+
+    @pytest.mark.asyncio
+    async def test_the_job_gets_the_same_gateway_the_check_probed(self) -> None:
+        import yaml
+
+        result = await sdg_builder.build({"id": "job-providers"}, self._config(), {})
+        providers = yaml.safe_load(result.config_files["model_providers.yaml"])["providers"]
+        by_name = {p["name"]: p for p in providers}
+        assert by_name["gateway"]["endpoint"] == self.GATEWAY  # not the image's baked-in URL
+        assert by_name["openai"]["endpoint"] == "https://api.openai.com/v1"
+        assert result.env["DD_API_KEY"] == "not-needed"
+
+    def test_without_a_gateway_url_a_gateway_teacher_is_a_config_error(self, monkeypatch) -> None:
+        # Direct providers replace the image's list, so the job would have no gateway.
+        monkeypatch.setattr(config_mod.settings, "gateway_url", "")
+        _, errors = sdg_builder.model_checks(self._config(), {})
+        assert [(e.label, e.reason) for e in errors] == [("teacher gw", "provider_not_configured")]
+
+
+class TestServiceUrl:
+    def test_namespace_placeholder_is_the_servers_own(self, monkeypatch) -> None:
+        # The serving cert names amortized-model-check.<ns>.svc; an overlay can't rewrite the
+        # namespace inside the URL string, so the server fills it in.
+        monkeypatch.setattr(
+            config_mod.settings,
+            "model_check_url",
+            "https://amortized-model-check.{namespace}.svc:7351",
+        )
+        monkeypatch.setenv("POD_NAMESPACE", "amortized-ns")
+        assert client.model_check_service_url() == (
+            "https://amortized-model-check.amortized-ns.svc:7351"
+        )
+
+    def test_the_placeholder_url_passes_the_https_rule(self, monkeypatch) -> None:
+        monkeypatch.setenv(
+            "AMORTIZED_MODEL_CHECK_URL", "https://amortized-model-check.{namespace}.svc:7351"
+        )
+        assert "{namespace}" in config_mod.Settings().model_check_url

@@ -59,8 +59,23 @@ class Settings(BaseSettings):
     )
     model_check_url: str = Field(
         "",
-        description="Base URL of the model-liveness check service (deployed beside the "
-        "server). Empty runs the check in-process — for local development.",
+        description="Base URL of the standalone model-liveness check service (opt-in). Empty "
+        "(the default) runs the same check in-process, under a process-wide probe limit. Must "
+        "be https: the server sends each endpoint's provider key to the service.",
+    )
+    model_check_ca_bundle: str = Field(
+        "",
+        description="CA bundle (PEM path) that verifies the standalone check service's TLS "
+        "certificate, e.g. the OpenShift service CA. Empty uses the system trust store.",
+    )
+    approved_model_urls: list[str] = Field(
+        default_factory=list,
+        description="URL prefixes of private model services (cluster or RFC 1918 addresses, or "
+        "plain HTTP) the platform may send requests to, e.g. "
+        "http://vllm.models.svc.cluster.local:8000/v1. Public HTTPS endpoints need no approval, "
+        "and the MLflow AI Gateway (gateway_url) is always approved; loopback, link-local and "
+        'cloud-metadata addresses are always refused. "*" approves any private service '
+        "(development).",
     )
     model_check_deadline_seconds: float = Field(
         20.0,
@@ -132,6 +147,17 @@ class Settings(BaseSettings):
                 "mlflow_tracking_token_file is set (MLflow bearer auth) but "
                 "mlflow_tracking_uri is not https:// — refusing to send the token in "
                 "cleartext. Use an https:// MLflow URI, or unset the token file."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_https_for_model_check_service(self) -> "Settings":
+        """The server sends provider keys to the standalone check service: TLS only."""
+        if self.model_check_url and not self.model_check_url.lower().startswith("https://"):
+            raise ValueError(
+                "model_check_url must be https:// — the server sends provider keys to the "
+                "model check service. Serve it with TLS, or leave model_check_url empty to run "
+                "the check in-process."
             )
         return self
 

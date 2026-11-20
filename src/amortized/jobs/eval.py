@@ -112,15 +112,22 @@ def model_checks(
     inject_enabled_provider_keys(job_env)
     targets: list[tuple[str, str]] = []
     external_key = _external_model_key(config)
-    if external_key and isinstance(config.get(external_key), dict):
+    if external_key:
+        # build() calls this endpoint whether or not it is set.
         targets.append(("model under test", external_key))
-    if isinstance(config.get("judge"), dict):
+    if config.get("judge") not in (None, {}):
         targets.append(("judge", "judge"))
 
     endpoints: list[ModelEndpoint] = []
     errors: list[ConfigError] = []
     for label, key in targets:
-        endpoint_cfg = config[key]
+        endpoint_cfg = config.get(key)
+        if not isinstance(endpoint_cfg, dict):
+            # Reachable only via retry overrides; build() would reject it at dispatch.
+            errors.append(
+                ConfigError(label, "invalid_endpoint", f"{key}: base_url and model are required")
+            )
+            continue
         base_url = str(endpoint_cfg.get("base_url") or "")
         if not base_url or not endpoint_cfg.get("model"):
             # A create request can't get here (request validation needs both), but a retry's

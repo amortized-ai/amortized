@@ -120,19 +120,64 @@ describe("sendOpenCodeMessage — a resent event the server already completed", 
     expect(cleared).toEqual([]) // the session that recorded the event stays
   })
 
+  it("carries the event turn's own reply when the server kept it", async () => {
+    const reply = [{ info: { role: "assistant" }, parts: [{ type: "text", text: "fixed" }] }]
+    route(() => json({ turn_id: "t1", status: "done", replayed: true, messages: reply }))
+    const err = await send().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(EventAlreadyDeliveredError)
+    expect((err as EventAlreadyDeliveredError).messages).toEqual(reply)
+  })
+
+  it("resends to the same session when the polled turn record is gone (evicted)", async () => {
+    const reply = [{ info: { role: "assistant" }, parts: [{ type: "text", text: "fixed" }] }]
+    route(
+      (n) => (n === 1
+        ? json({ turn_id: "t1" })
+        : json({ turn_id: null, status: "done", replayed: true, messages: reply })),
+      () => json({}, 404),
+    )
+    const err = await send().catch((e: unknown) => e)
+    expect((err as EventAlreadyDeliveredError).messages).toEqual(reply)
+    expect(created).toBe(1) // no replacement session
+    expect(messagePosts.map((p) => p.session)).toEqual(["ses-1", "ses-1"])
+  })
+
   it("also when the server no longer tracks the turn (turn_id null)", async () => {
     route(() => json({ turn_id: null, status: "done", replayed: true }))
     await expect(send()).rejects.toBeInstanceOf(EventAlreadyDeliveredError)
   })
 
-  it("still polls a replay whose turn is running (it is the event's own, latest turn)", async () => {
+  it("polls a replay whose turn is still running, then reports it as a replay", async () => {
+    // Not returned as a fresh reply: the hook must apply replay rules (no superseded card).
+    const reply = [{ info: { role: "assistant" }, parts: [{ type: "text", text: "fixed" }] }]
     let polled = 0
     route(() => json({ turn_id: "t1", status: "processing", replayed: true }), () => {
       polled++
-      return json({ active: false, result: { info: {}, parts: [] } })
+      return json({ active: false, result: { info: {}, parts: [], event_messages: reply } })
     })
-    await send()
+    const err = await send().catch((e: unknown) => e)
     expect(polled).toBe(1)
+    expect(err).toBeInstanceOf(EventAlreadyDeliveredError)
+    expect((err as EventAlreadyDeliveredError).messages).toEqual(reply)
+  })
+
+  it("a 404 from the old session doesn't drop its replacement", async () => {
+    // ses-1 is gone (404) and ses-2 replaces it; ses-2's turn then fails ambiguously.
+    route(
+      (_n, session) => (session === "ses-1" ? json({}, 404) : json({ turn_id: "t" })),
+      () => json({ active: false, error: "boom", error_status: 500 }),
+    )
+    await expect(send()).rejects.toThrow()
+    expect(sessions.get("conv")).toBe("ses-2")
+    expect(cleared).toEqual(["conv"]) // only the gone ses-1 was cleared
+  })
+
+  it("keeps the session when the polled turn is missing even on the last attempt", async () => {
+    // A missing turn isn't a missing session: clearing it would let a Retry escape dedup.
+    route((n) => json({ turn_id: `t${n}` }), () => json({}, 404))
+    await expect(send()).rejects.toThrow()
+    expect(cleared).toEqual([])
+    expect(sessions.get("conv")).toBe("ses-1")
   })
 })
 

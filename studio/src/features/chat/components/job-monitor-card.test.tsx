@@ -204,7 +204,7 @@ describe("JobMonitorCard — model-check warnings", () => {
     })
     render(<JobMonitorCard jobId="34bd1852-e8bd-433c-aca0-4a42181210f4" jobType="EVAL" />)
     await waitFor(() =>
-      expect(screen.getByText(/Judge gpt-oss not verified: the model check service was busy/)).toBeInTheDocument(),
+      expect(screen.getByText(/Judge gpt-oss not verified: too many model checks were running/)).toBeInTheDocument(),
     )
   })
 })

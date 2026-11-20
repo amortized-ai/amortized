@@ -120,6 +120,17 @@ describe("ActionCard", () => {
     expect(onConfirm).toHaveBeenCalledOnce()
   })
 
+  it("re-enables Confirm and Cancel when Confirm settles without removing the card", async () => {
+    // e.g. Confirm refused because a job is already running.
+    render(
+      <ActionCard action={action} onConfirm={vi.fn(async () => {})} onReject={vi.fn()} />,
+      { wrapper: Wrapper },
+    )
+    fireEvent.click(screen.getByText("Confirm"))
+    await waitFor(() => expect(screen.getByRole("button", { name: /Confirm/ })).toBeEnabled())
+    expect(screen.getByRole("button", { name: /Cancel/ })).toBeEnabled()
+  })
+
   it("calls onReject when reject button is clicked", () => {
     const onReject = vi.fn()
     render(

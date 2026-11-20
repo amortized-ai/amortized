@@ -56,7 +56,7 @@ interface MessageBubbleProps {
   isLatest?: boolean
   thinkingStep?: string | null
   onOptionSelect?: (value: string, messageId?: string) => void
-  onConfirmAction?: () => void
+  onConfirmAction?: (messageId: string) => void
   onRejectAction?: () => void
   // Resend a blocked-confirmation notice to Morty after automatic delivery failed.
   onRetryBlockedNotice?: (messageId: string) => void
@@ -268,7 +268,7 @@ export function MessageBubble({
           <div className="mt-3">
             <ActionCard
               action={message.proposedAction}
-              onConfirm={onConfirmAction}
+              onConfirm={() => onConfirmAction(message.id)}
               onReject={onRejectAction}
             />
           </div>
@@ -285,6 +285,11 @@ export function MessageBubble({
             <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{message.actionBlocked.message}</p>
             {message.actionBlocked.notify === "sending" && (
               <p className="mt-1 text-muted-foreground">Letting Morty know…</p>
+            )}
+            {message.actionBlocked.notify === "deferred" && (
+              <p className="mt-1 text-muted-foreground">
+                Morty will be told once the pending job card is confirmed or dismissed.
+              </p>
             )}
             {message.actionBlocked.notify === "failed" && onRetryBlockedNotice && (
               <p className="mt-1 text-muted-foreground">

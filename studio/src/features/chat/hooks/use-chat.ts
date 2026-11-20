@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl, ApiError, EventAlreadyDeliveredError } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getJob, getBaseUrl, ApiError, EventAlreadyDeliveredError } from "@/lib/api-client"
 import { useChatStore, type PersistedMessage } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { jobTypeLabel } from "@/features/jobs/lib/format"
@@ -8,6 +8,7 @@ import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-chat")
 import type {
+  ActionBlocked,
   ChatMessage,
   ChatState,
   ProposedAction,
@@ -54,6 +55,34 @@ function modelFailureMessage(err: unknown, modelName: string): string | null {
 // every mounted useChat (page, panel, sidebar) shares it: one delivery per message at a time, and
 // a remount can tell an in-flight delivery from one a reload interrupted.
 const blockedNoticeInFlight = new Set<string>()
+
+// A conversation's running job, kept until it is known to be terminal. Only that job's own
+// completion releases it (an older job's late completion must not), and the composer lock
+// (jobInFlight) goes with it. With no job id recorded, any completion releases the lock.
+function markJobRunning(convId: string, jobId: string): void {
+  useChatStore.getState().setRunningJob(convId, jobId)
+  useChatStore.getState().setJobInFlight(convId, true)
+}
+
+function releaseRunningJob(convId: string, jobId: string): void {
+  const running = useChatStore.getState().runningJob[convId]
+  if (running && running !== jobId) return
+  useChatStore.getState().setRunningJob(convId, null)
+  useChatStore.getState().setJobInFlight(convId, false)
+}
+
+function jobRunning(convId: string): boolean {
+  const { runningJob, jobInFlight } = useChatStore.getState()
+  return !!runningJob[convId] || !!jobInFlight[convId]
+}
+
+function anotherJobRunning(convId: string, jobId: string): boolean {
+  const running = useChatStore.getState().runningJob[convId]
+  return !!running && running !== jobId
+}
+
+const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "cancelled"])
+
 const REQUEST_LOCK_TIMEOUT_MS = 15_000
 
 // The event id is derived from the blocked message, so every send of the same notice — automatic
@@ -62,15 +91,55 @@ function blockedNoticeEventId(messageId: string): string {
   return `confirmation_blocked:${messageId}`
 }
 
-// The sanitized failure from a model_check_failed response — the envelope's message alone, not
-// the per-endpoint detail bullets formatErrorBody appends.
+// A 4xx from create rejects the job itself. Auth, timeouts, size and rate limits don't, and
+// network errors / 5xx may be transient: those keep the error banner.
+const NOT_A_JOB_REJECTION = new Set([401, 403, 408, 413, 429])
+function isCreateRejection(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status >= 400 && err.status < 500 && !NOT_A_JOB_REJECTION.has(err.status)
+}
+
+// The envelope's message plus its field details (a schema 422's message alone gives nothing to
+// repair); model_check_failed messages already name each endpoint.
+const MAX_REJECTION_DETAILS = 10
+
+function rejectionDetail(item: unknown): string | null {
+  if (typeof item === "string") return item
+  if (!item || typeof item !== "object") return null
+  const d = item as Record<string, unknown>
+  const loc = Array.isArray(d.loc) ? d.loc.filter((p) => p !== "body").join(".") : ""
+  const field = typeof d.field === "string" ? d.field : loc
+  const message = typeof d.error === "string" ? d.error : typeof d.msg === "string" ? d.msg : ""
+  if (!message) return null
+  return field ? `${field}: ${message}` : message
+}
+
 function blockedMessage(err: ApiError): string {
-  const body = err.body
-  if (body && typeof body === "object") {
-    const message = (body as Record<string, unknown>).message
-    if (typeof message === "string" && message) return message
-  }
-  return err.message
+  const body = err.body && typeof err.body === "object" ? (err.body as Record<string, unknown>) : {}
+  const message = typeof body.message === "string" && body.message ? body.message : err.message
+  if (err.code === "model_check_failed" || !Array.isArray(body.details)) return message
+  const details = body.details.map(rejectionDetail).filter((d): d is string => !!d)
+  if (details.length === 0) return message
+  const shown = details.slice(0, MAX_REJECTION_DETAILS).map((d) => `- ${d}`)
+  if (details.length > MAX_REJECTION_DETAILS) shown.push(`- … and ${details.length - MAX_REJECTION_DETAILS} more`)
+  return [message, ...shown].join("\n")
+}
+
+function hasLaterUserTurn(convId: string, messageId: string): boolean {
+  const msgs = useChatStore.getState().getConversationMessages(convId)
+  const index = msgs.findIndex((m) => m.id === messageId)
+  return index >= 0 && msgs.slice(index + 1).some((m) => m.role === "user")
+}
+
+function hasNewerPendingCard(convId: string, messageId: string): boolean {
+  const msgs = useChatStore.getState().getConversationMessages(convId)
+  const index = msgs.findIndex((m) => m.id === messageId)
+  return index >= 0 && msgs.slice(index + 1).some((m) => m.proposedAction)
+}
+
+// A notice's Morty turn waits while a newer card is pending (it could re-validate into a second
+// live card) or a job is running (it would wake Morty mid-job).
+function noticeMayRun(convId: string, messageId: string): boolean {
+  return !hasNewerPendingCard(convId, messageId) && !jobRunning(convId)
 }
 
 // Wait (bounded) until this conversation's request lock is free, then take it.
@@ -481,6 +550,8 @@ export function useChat() {
   }, [currentConversationId, requestInFlight])
 
   const warmupPromiseRef = useRef<Promise<void> | null>(null)
+  // resumeDeferredNotices is defined after sendMessage, which calls it.
+  const resumeDeferredRef = useRef<((convId: string) => Promise<void>) | null>(null)
 
   // On mount, reconcile a conversation that was mid-stream.
   useEffect(() => {
@@ -521,7 +592,16 @@ export function useChat() {
           if (!cancelled) useChatStore.getState().setSessionStatus(convId, "connected")
           return
         }
-      } catch { /* session is stale or unreachable */ }
+        // Only a 404 means the session is gone. Keep it through transient errors: it also holds
+        // the server's record of delivered events.
+        if (resp.status !== 404) {
+          if (!cancelled) useChatStore.getState().setSessionStatus(convId, "unknown")
+          return
+        }
+      } catch {
+        if (!cancelled) useChatStore.getState().setSessionStatus(convId, "unknown")
+        return
+      }
 
       if (cancelled) return
       useChatStore.getState().setSessionStatus(convId, "reconnecting")
@@ -727,13 +807,12 @@ export function useChat() {
             phase: extractPhase(toolResults),
           })
 
-          if (toolResults.some((t) => {
-            if (!JOB_CREATION_TOOLS.has(t.name)) return false
+          const createdJobIds = toolResults.flatMap((t) => {
+            if (!JOB_CREATION_TOOLS.has(t.name)) return []
             const parsed = unwrapToolResult(t.result) as { id?: unknown } | null
-            return typeof parsed?.id === "string" && parsed.id.length > 0
-          })) {
-            useChatStore.getState().setJobInFlight(convId, true)
-          }
+            return typeof parsed?.id === "string" && parsed.id.length > 0 ? [parsed.id] : []
+          })
+          if (createdJobIds.length > 0) markJobRunning(convId, createdJobIds.at(-1)!)
 
           useChatStore.getState().setSessionStatus(convId, "connected")
 
@@ -767,6 +846,8 @@ export function useChat() {
       } finally {
         useChatStore.getState().finishRequest(convId)
       }
+      // The turn may have dismissed the card a notice was deferred behind.
+      void resumeDeferredRef.current?.(convId)
       // Reached only when the message was accepted (the guard above returns false
       // instead). A caught turn error still counts as sent — the user turn was posted.
       return true
@@ -800,6 +881,8 @@ export function useChat() {
       keepFailedTurn?: boolean
       // Stable id making the send idempotent server-side (see SendOptions.eventId).
       eventId?: string
+      // false: no card from a replayed reply (the conversation has moved on).
+      allowReplayCard?: boolean
     },
   ): Promise<boolean> => {
     const placeholderId = generateId()
@@ -818,7 +901,11 @@ export function useChat() {
         ? await sendOpenCodeMessage(...args, { eventId: opts.eventId })
         : await sendOpenCodeMessage(...args)
       const parsed = parseOpenCodeResponse(response)
-      const sessionMessages = await fetchSessionMessages(convId)
+      // Render an event turn from its own messages only; the session's latest may be another
+      // turn's.
+      const ownMessages = response.event_messages ?? (opts.eventId ? [] : undefined)
+      const boundary = { info: { role: "user" }, parts: [] } as unknown as OpenCodeResponse
+      const sessionMessages = ownMessages ? [boundary, ...ownMessages] : await fetchSessionMessages(convId)
       const session = extractSessionData(sessionMessages, parsed.toolResults)
       const toolResults = dedupeConsecutiveOptions(convId, session.tools)
       // An automatic turn may re-validate (a failed job whose config the agent then fixes, or
@@ -834,9 +921,20 @@ export function useChat() {
       return true
     } catch (err) {
       if (err instanceof EventAlreadyDeliveredError) {
-        // Morty already has this event (an earlier send got through): nothing new to show, and
-        // the session's latest messages may belong to later turns, so render none of them.
-        useChatStore.getState().removeMessage(convId, placeholderId)
+        // An earlier send got through: show that turn's own reply if the server kept it.
+        if (err.messages?.length) {
+          const boundary = { info: { role: "user" }, parts: [] } as unknown as OpenCodeResponse
+          const session = extractSessionData([boundary, ...err.messages], [])
+          const toolResults = dedupeConsecutiveOptions(convId, session.tools)
+          useChatStore.getState().updateMessageFields(convId, placeholderId, {
+            content: session.text,
+            toolResults,
+            proposedAction: opts.allowReplayCard === false ? null : buildProposedAction(toolResults),
+            phase: extractPhase(toolResults),
+          })
+        } else {
+          useChatStore.getState().removeMessage(convId, placeholderId)
+        }
         return true
       }
       const rawMsg = err instanceof Error ? err.message : String(err)
@@ -859,53 +957,76 @@ export function useChat() {
     }
   }, [addMessage])
 
-  // Tell Morty a confirmed job was blocked by the model check. No job was created, so no
+  // Tell Morty the server rejected a confirmed job (e.g. the model check). No job was created, so no
   // job_complete will ever wake Morty — this is the only signal it gets. One automatic delivery
   // (sendOpenCodeMessage retries the transport, idempotently via the event id); if it fails the
   // bubble offers Retry, which resends the same event. The "Not submitted" explanation stays
   // visible either way. Always delivered to the conversation the card was confirmed in.
-  const deliverBlockedNotice = useCallback(async (convId: string, messageId: string) => {
-    if (blockedNoticeInFlight.has(messageId)) return
+  const deliverBlockedNotice = useCallback(async (
+    convId: string, messageId: string,
+  ): Promise<ActionBlocked["notify"] | undefined> => {
+    if (blockedNoticeInFlight.has(messageId)) return undefined
     const findBlocked = () =>
       useChatStore.getState().getConversationMessages(convId).find((m) => m.id === messageId)?.actionBlocked
     const blocked = findBlocked()
-    if (!blocked) return
-    blockedNoticeInFlight.add(messageId)
-    const setNotify = (notify: "sending" | "delivered" | "failed") => {
+    if (!blocked) return undefined
+    const setNotify = (notify: ActionBlocked["notify"]) => {
       const current = findBlocked()
       if (current) useChatStore.getState().updateMessageFields(convId, messageId, { actionBlocked: { ...current, notify } })
+      return notify
     }
+    if (!noticeMayRun(convId, messageId)) {
+      return setNotify("deferred") // resumed by resumeDeferredNotices once it may run
+    }
+    blockedNoticeInFlight.add(messageId)
     setNotify("sending")
     try {
-      if (!useChatStore.getState().conversations.some((c) => c.id === convId)) return
+      if (!useChatStore.getState().conversations.some((c) => c.id === convId)) return undefined
       // Like sendMessage: let a pending session warmup settle first, so a warmup that replaces
       // the session can't swap it out mid-delivery (the server dedups events per session).
       if (warmupPromiseRef.current) await warmupPromiseRef.current
       if (!(await acquireRequestLock(convId))) {
-        setNotify("failed")
-        return
+        return setNotify("failed")
+      }
+      // A card or job may have appeared while waiting for the lock.
+      if (!noticeMayRun(convId, messageId)) {
+        useChatStore.getState().finishRequest(convId)
+        return setNotify("deferred")
       }
       let delivered = false
       try {
         delivered = await runSystemEventTurn(
           convId,
-          `${jobTypeLabel(blocked.jobType)} submission was blocked before creating a job. ${blocked.message}`,
+          `${jobTypeLabel(blocked.jobType)} submission was rejected before a job was created. ${blocked.message}`,
           {
             event: "confirmation_blocked",
             jobType: blocked.jobType,
             fallbackError: "",
             keepFailedTurn: false,
             eventId: blockedNoticeEventId(messageId),
+            allowReplayCard: !hasLaterUserTurn(convId, messageId),
           },
         )
       } finally {
         useChatStore.getState().finishRequest(convId)
       }
-      setNotify(delivered ? "delivered" : "failed")
+      return setNotify(delivered ? "delivered" : "failed")
     } finally {
       blockedNoticeInFlight.delete(messageId)
     }
   }, [runSystemEventTurn])
+
+  // One at a time, oldest first: each turn may produce a card that defers the rest.
+  const resumeDeferredNotices = useCallback(async (convId: string) => {
+    for (;;) {
+      const next = useChatStore.getState().getConversationMessages(convId)
+        .find((m) => m.actionBlocked?.notify === "deferred")
+      if (!next) return
+      if ((await deliverBlockedNotice(convId, next.id)) !== "delivered") return
+    }
+  }, [deliverBlockedNotice])
+
+  resumeDeferredRef.current = resumeDeferredNotices
 
   const retryBlockedNotice = useCallback((messageId: string) => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
@@ -920,18 +1041,23 @@ export function useChat() {
     const store = useChatStore.getState()
     for (const conv of store.conversations) {
       for (const m of store.getConversationMessages(conv.id)) {
-        if (m.actionBlocked?.notify === "sending" && !blockedNoticeInFlight.has(m.id)) {
-          store.updateMessageFields(conv.id, m.id, { actionBlocked: { ...m.actionBlocked, notify: "failed" } })
+        const blocked = m.actionBlocked
+        const interrupted = blocked?.notify === "sending" || blocked?.notify === "deferred"
+        if (blocked && interrupted && !blockedNoticeInFlight.has(m.id)) {
+          store.updateMessageFields(conv.id, m.id, { actionBlocked: { ...blocked, notify: "failed" } })
         }
       }
     }
   }, [hasHydrated])
 
-  const confirmAction = useCallback(async () => {
+  // Two live cards can coexist, so Confirm submits the clicked one (newest when no id is given).
+  const confirmAction = useCallback(async (messageId?: string) => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
     if (!convId) return
     const msgs = useChatStore.getState().getConversationMessages(convId)
-    const actionMsg = [...msgs].reverse().find((m) => m.proposedAction)
+    const actionMsg = messageId
+      ? msgs.find((m) => m.id === messageId)
+      : [...msgs].reverse().find((m) => m.proposedAction)
     if (!actionMsg?.proposedAction) return
 
     const { endpoint, config, parentJobId, recipe, jobType } = actionMsg.proposedAction as ProposedAction
@@ -945,6 +1071,13 @@ export function useChat() {
       if (parentJobId) body.parent_job_id = parentJobId
     }
 
+    // One job at a time per conversation; the card stays.
+    if (jobRunning(convId)) {
+      useChatStore.getState().setRequestError(
+        convId, "A job is already running in this conversation. Confirm this one once it finishes.",
+      )
+      return
+    }
     if (!useChatStore.getState().tryStartRequest(convId)) return
 
     let blockedMessageId: string | null = null
@@ -958,7 +1091,7 @@ export function useChat() {
       }
 
       const store = useChatStore.getState()
-      store.setJobInFlight(convId, true)
+      markJobRunning(convId, job.id)
       store.updateMessageFields(convId, actionMsg.id, {
         proposedAction: null,
         toolResults: [...(actionMsg.toolResults ?? []), jobToolResult],
@@ -971,10 +1104,8 @@ export function useChat() {
       // POST used to carry (the real job id) is folded into the single job_complete
       // wake (processJobNotifyQueue), which is the only point Morty needs it.
     } catch (err) {
-      useChatStore.getState().setJobInFlight(convId, false)
-      if (err instanceof ApiError && err.code === "model_check_failed") {
-        // The job was not created: replace the card with the reason, then hand the
-        // failure to Morty in this conversation so it can help fix it and re-validate.
+      if (isCreateRejection(err)) {
+        // Replace the card with the server's reason and tell Morty in this conversation.
         useChatStore.getState().updateMessageFields(convId, actionMsg.id, {
           proposedAction: null,
           actionBlocked: { message: blockedMessage(err), jobType: jobType ?? "", notify: "sending" },
@@ -986,8 +1117,11 @@ export function useChat() {
     } finally {
       useChatStore.getState().finishRequest(convId)
     }
-    if (blockedMessageId) void deliverBlockedNotice(convId, blockedMessageId)
-  }, [currentConversationId, deliverBlockedNotice])
+    // A created job defers notices until it completes.
+    if (blockedMessageId) {
+      void deliverBlockedNotice(convId, blockedMessageId).then(() => resumeDeferredNotices(convId))
+    }
+  }, [currentConversationId, deliverBlockedNotice, resumeDeferredNotices])
 
   const rejectAction = useCallback(async () => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
@@ -1016,7 +1150,8 @@ export function useChat() {
         logger.warn("morty rejection notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
       }
     }
-  }, [currentConversationId, clearProposedActions])
+    void resumeDeferredNotices(convId) // the pending card is dismissed; older notices may go now
+  }, [currentConversationId, clearProposedActions, resumeDeferredNotices])
 
   const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string; mode?: string }>>([])
   const jobNotifyRunningRef = useRef(false)
@@ -1043,7 +1178,12 @@ export function useChat() {
           continue
         }
         const nextMessages = store.getConversationMessages(nextConvId)
-        if (store.activeRequests[nextConvId] || nextMessages.at(-1)?.proposedAction) {
+        // Also wait while a different job runs here: its completion turn would wake Morty mid-job.
+        if (
+          store.activeRequests[nextConvId]
+          || nextMessages.at(-1)?.proposedAction
+          || anotherJobRunning(nextConvId, nextJobId)
+        ) {
           // Keep the entry until the blocker clears, even after this view unmounts or
           // jobInFlight resets. Store changes wake the queue without a polling timeout.
           await new Promise<void>((resolve) => {
@@ -1065,7 +1205,7 @@ export function useChat() {
         const { jobId, jobType, status, convId, mode } = jobNotifyQueueRef.current.shift()!
 
         try {
-          useChatStore.getState().setJobInFlight(convId, false)
+          releaseRunningJob(convId, jobId)
           const answered = await runSystemEventTurn(
             convId,
             // Neutral FACT only. The behaviour (orchestrator → present next steps; subagent →
@@ -1102,11 +1242,12 @@ export function useChat() {
         } finally {
           useChatStore.getState().finishRequest(convId)
         }
+        void resumeDeferredNotices(convId)
       }
     } finally {
       jobNotifyRunningRef.current = false
     }
-  }, [runSystemEventTurn])
+  }, [runSystemEventTurn, resumeDeferredNotices])
 
   const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string, mode?: string) => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
@@ -1115,6 +1256,8 @@ export function useChat() {
     const notified = useChatStore.getState().getNotifiedJobs(convId)
     if (notified.includes(jobId)) return
 
+    // The job is terminal now, even if Morty's notification has to wait for the request lock.
+    releaseRunningJob(convId, jobId)
     jobNotifyQueueRef.current.push({ jobId, jobType, status, convId, mode })
     await processJobNotifyQueue()
   }, [currentConversationId, processJobNotifyQueue])
@@ -1122,28 +1265,41 @@ export function useChat() {
   const jobInFlight = useChatStore(
     (s) => s.jobInFlight[s.currentConversationId ?? ""] ?? false,
   )
+  const runningJobId = useChatStore(
+    (s) => s.runningJob[s.currentConversationId ?? ""] ?? null,
+  )
 
   useEffect(() => {
-    if (!jobInFlight || !currentConversationId) return
-    const clear = (reason: string) => {
-      logger.warn(`jobInFlight cleared (${reason})`, { convId: currentConversationId })
-      useChatStore.getState().setJobInFlight(currentConversationId, false)
+    if ((!jobInFlight && !runningJobId) || !currentConversationId) return
+    const convId = currentConversationId
+    // Unlocks the composer at once, but releases the running job only once its status is verified
+    // terminal (or it no longer exists): until then Confirm and other jobs' completion turns wait.
+    const recover = (reason: string) => {
+      if (useChatStore.getState().jobInFlight[convId]) {
+        logger.warn(`jobInFlight cleared (${reason})`, { convId })
+        useChatStore.getState().setJobInFlight(convId, false)
+      }
+      const jobId = useChatStore.getState().runningJob[convId]
+      if (!jobId) return
+      getJob(jobId)
+        .then((job) => {
+          if (TERMINAL_JOB_STATUSES.has(job.status)) releaseRunningJob(convId, jobId)
+        })
+        .catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) releaseRunningJob(convId, jobId)
+        })
     }
-    // Clear the input lock when the user comes back to the tab — if the completion
-    // notification never arrived (tab was closed, server restarted), a returning user
-    // should be able to type immediately rather than wait out the fallback. The backend
-    // stage-gate (agent proxy) still blocks any premature forward step, so unlocking
-    // early is safe.
-    const onFocus = () => clear("window focus")
+    // A returning user may have missed the completion notification (tab closed, server
+    // restarted): unlock the composer rather than make them wait out the fallback. The agent
+    // proxy's stage gate still blocks a premature forward step.
+    const onFocus = () => recover("window focus")
     window.addEventListener("focus", onFocus)
-    // Shortened fallback (was 30m) so the lock self-releases promptly even if the user
-    // never refocuses the tab.
-    const timeout = setTimeout(() => clear("timeout"), 5 * 60 * 1000)
+    const interval = setInterval(() => recover("timeout"), 5 * 60 * 1000)
     return () => {
       window.removeEventListener("focus", onFocus)
-      clearTimeout(timeout)
+      clearInterval(interval)
     }
-  }, [jobInFlight, currentConversationId])
+  }, [jobInFlight, runningJobId, currentConversationId])
 
   const isStreaming = requestInFlight || jobInFlight
 
