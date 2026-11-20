@@ -93,20 +93,31 @@ def _resolve_title(agent: str, step: str | None) -> str | None:
       is pointed at where to start.
     - A signalled step that matches a section heading (exact or prefix, both normalized) → that
       section.
-    - A signalled step that matches no heading (e.g. the coarse UI progress vocabulary like
-      `gather_requirements`, which is not a section slug) → None, so the pointer stays generic
-      rather than naming a WRONG section."""
+    - A signalled step that matches no heading (e.g. `gather_requirements`, one of the old
+      progress-bar names the `signal_phase` description used to list, which is not a section
+      slug) → None, so the pointer stays generic rather than naming a WRONG section."""
+    hit = _resolve_section(agent, step)
+    return hit[1] if hit else None
+
+
+def _resolve_section(agent: str, step: str | None) -> tuple[str, str] | None:
+    """`_resolve_title`'s rules, returning the section's `(slug, title)`."""
     sections = _sections(agent)
     if not sections:
         return None
-    if not step:
-        return sections[0][1]
-    target = _norm(step)
+    if not _norm(step or ""):
+        return sections[0]
+    return _match_step(sections, step)
+
+
+def _match_step(entries: Sequence[tuple[str, str]], step: str | None) -> tuple[str, str] | None:
+    """The `(slug, title)` entry a signalled step names — normalized, exact or prefix match."""
+    target = _norm(step or "")
     if not target:
-        return sections[0][1]
-    for slug, title in sections:
+        return None
+    for slug, title in entries:
         if slug == target or slug.startswith(f"{target}-") or target.startswith(f"{slug}-"):
-            return title
+            return slug, title
     return None
 
 
@@ -211,15 +222,8 @@ def _skill_steps(skill_name: str) -> tuple[tuple[str, str], ...]:
 def skill_step_title(skill_name: str | None, stamp: str | None) -> str | None:
     """The SKILL.md step title for the slug the agent signalled (`signal_phase.step`), matched on
     the normalized slug (exact or prefix). None when the skill or slug is unknown."""
-    if not skill_name or not stamp:
-        return None
-    target = _norm(stamp)
-    if not target:
-        return None
-    for slug, title in _skill_steps(skill_name):
-        if slug == target or slug.startswith(f"{target}-") or target.startswith(f"{slug}-"):
-            return title
-    return None
+    hit = _match_step(_skill_steps(skill_name), stamp) if skill_name else None
+    return hit[1] if hit else None
 
 
 def subagent_pointer(
@@ -240,13 +244,23 @@ def subagent_pointer(
     text."""
     if not agent or agent not in _SUBAGENTS or not _sections(agent):
         return None
-    wf_title = _resolve_title(agent, step)
-    skill_title = None if wf_title else skill_step_title(skill, step)
-    at_title = wf_title or skill_title
+    wf_step = _resolve_section(agent, step)
+    skill_step = None if wf_step or not skill else _match_step(_skill_steps(skill), step)
+    at_slug, at_title = wf_step or skill_step or (None, None)
     at = f" — your current step is **{at_title}**" if at_title else ""
+    # An unsignalled turn is not stall-checked, so a skipped signal on a step change leaves the new
+    # step unchecked. In replays of a real eval session (GLM-flash), this sentence raised the first
+    # reply's signal on the step change to `validate` from 15/21 to 20/21; the change to `metrics`
+    # was 21/21 either way.
+    signal = (
+        f" Call `signal_phase` in this response: with `{at_slug}` if you are still on this "
+        "step, or with the new step's name if you move on."
+        if at_slug
+        else " Call `signal_phase` in this response with your current step's slug."
+    )
 
     skill_clause = ""
-    if skill_title:
+    if skill_step:
         skill_clause = (
             f" You have the **{skill}** skill loaded; its gathering steps are resident in the "
             "SKILL.md. Work that `### Step` sequence IN ORDER — ask ONE question per turn with "
@@ -259,7 +273,7 @@ def subagent_pointer(
         f"{skill_clause} Find your current step there and follow it now, in order. When a step "
         "calls for a transition tool (e.g. `request_orchestrator_help`, "
         "`signal_subagent_completion`), CALL the tool — do NOT describe the action in prose. Do "
-        "not work ahead to a later step."
+        f"not work ahead to a later step.{signal}"
     )
 
 
@@ -481,14 +495,14 @@ def signal_is_known(role: str, step: str, skill: str | None = None) -> bool:
     tool-owed phase (`_required()`), a `## Workflow` section, or a `### Step` of the loaded skill —
     matched EXACTLY on the normalized slug.
 
-    An unrecognized slug (the driver invented one, e.g. `gather_requirements` instead of the real
-    `gather`) keys to no obligation (`owed_for` is lenient) and names no section (the pointer stays
-    generic), so the adjudicator and the pointer are both blind to it. For the signalled-guard such
-    a turn is therefore EQUIVALENT to a skipped signal — the key it leaves behind is unusable.
+    An unrecognized slug (e.g. `gather_requirements`, one of the old progress-bar names the
+    `signal_phase` description used to list, instead of the real `gather`) keys to no obligation
+    (`owed_for` is lenient) and names no section (the pointer stays generic), so the adjudicator
+    and the pointer are both blind to it. Such a turn is therefore treated EXACTLY like a skipped
+    signal (`_maybe_nudge_subagent_stall` does not adjudicate it).
     Matching is exact (not the pointer's lenient prefix in `_resolve_title`/`skill_step_title`) on
     purpose: an off-by-prefix slug like `gather-requirements` would prefix-resolve to `gather` for
-    the pointer yet still leave the adjudicator mis-keyed, so the guard re-drives it to the exact
-    vocabulary."""
+    the pointer yet still leave the adjudicator mis-keyed."""
     if not step:
         return False
     target = _norm(step)
@@ -499,6 +513,41 @@ def signal_is_known(role: str, step: str, skill: str | None = None) -> bool:
     if role in _SUBAGENTS and any(slug == target for slug, _ in _sections(role)):
         return True
     return bool(skill) and any(slug == target for slug, _ in _skill_steps(skill))
+
+
+def signal_step_error(role: str, step: str) -> str | None:
+    """The `signal_phase` tool's own check: None when `signal_is_known` would accept `step` for
+    `role` with SOME skill loaded, else the 422 message listing the valid slugs, so the agent can
+    correct the call in the same turn.
+
+    The tool call carries no session, so it can't see which skill is loaded: a step of another
+    skill of the same role passes here and the proxy still treats it as a skipped signal. With no
+    workflow sections to check against (no `agents/` tree) every step passes."""
+    sections = tuple(slug for slug, _ in _sections(role))
+    if not sections:
+        return None
+    skills = tuple(
+        (name, steps)
+        for name, (agent, _reldir) in sorted(_skill_index().items())
+        if agent == role and (steps := tuple(slug for slug, _ in _skill_steps(name)))
+    )
+    if signal_is_known(role, step) or any(
+        signal_is_known(role, step, skill=name) for name, _ in skills
+    ):
+        return None
+    got = f'"{step}"' if step.strip() else "an empty step"
+    if skills:
+        per_skill = "; ".join(f"{name}: {', '.join(steps)}" for name, steps in skills)
+        valid = (
+            f"a workflow phase ({', '.join(sections)}) or, while gathering, the current step of "
+            f"your loaded skill ({per_skill})"
+        )
+    else:
+        valid = f"the slug of the workflow section you are in ({', '.join(sections)})"
+    return (
+        f'signal_phase got {got} for phase "{role}", which is not a step slug. Send {valid}. '
+        "Call signal_phase again with one of these."
+    )
 
 
 def owed_for(
@@ -516,9 +565,9 @@ def owed_for(
 
     The step is normalized to the canonical slug FIRST — the same `_norm` that `signal_is_known`
     applies — so the two never disagree. Without this, a driver that signals a variant separator
-    (`held_out_request_help`) passed the signalled-guard as "known" (which normalizes) yet the raw
-    catalog lookup here missed it → lenient → a prose-only hand-off on an owed-solo step escaped
-    the nudge entirely (#534 P2b)."""
+    (`held_out_request_help`) passed the missing-signal check as "known" (which normalizes) yet the
+    raw catalog lookup here missed it → lenient → a prose-only hand-off on an owed-solo step
+    escaped the nudge entirely (#534 P2b)."""
     step = _norm(phase_step)
     owed = _required().get((role, step))
     if owed is not None:
