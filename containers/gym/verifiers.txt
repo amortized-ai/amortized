@@ -1,0 +1,34 @@
+# NeMo Gym resources servers shipped as GRPO reward verifiers (one per line).
+# Each must start offline without Ray and score a single text answer: the image's
+# test_verifiers.py checks this. Left out of the 35 single-turn text candidates in Gym v0.7.0:
+#   install fails: reasoning_gym ruler2 speed_bench
+#   cannot start offline: bigcodebench ifbench (startup subprocess), moldetox (rdkit drawing
+#   libs), rolemrc (downloads NLTK data)
+arc_agi
+asr_with_pc
+assaybench
+bunsenbench_chemistry_mcq
+calendar
+equivalence_rule
+ether0
+format_verification
+fukuyamabench
+generative_reward_model
+gpqa_diamond
+graphwalks
+hotpotqa_qa
+iheval
+imo_gradingbench
+instruction_following
+lc_niah
+mcqa
+mrcr
+proof_genselect
+ragtruth
+ruler
+scicodepile
+spartqa
+string_match
+structeval
+swe_pivot
+terminal_multi_harness

@@ -490,6 +490,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         user_id=job.get("user_id", ""),
         resources=result.resources,
         ports=result.ports,
+        sidecars=result.sidecars,
     )
 
     logger.info("Submitting job %s to backend %r", job_id, backend_name)

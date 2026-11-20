@@ -8,8 +8,9 @@ import shlex
 from typing import Any
 
 import amortized.config as config_mod
-from amortized.backends import Resources
+from amortized.backends import Resources, Sidecar
 from amortized.core.mlflow_client import MLflowClient
+from amortized.gym_verifiers import GYM_VERIFIERS
 from amortized.jobs.base import JobBuildResult
 from amortized.jobs.common import (
     resolve_training_model,
@@ -40,6 +41,8 @@ ALGO_ALIASES: dict[str, str] = {
 
 _TRAINING_HUB_SKIP_KEYS = {
     "algorithm",
+    # amortized-side: picks the gym sidecar's verifier, not a thub parameter.
+    "gym_verifier",
     "engine",
     "use_peft",
     "qlora",
@@ -64,6 +67,11 @@ _TRAINING_HUB_SKIP_KEYS = {
 }
 
 _GRPO_ALGORITHMS = ("lora_grpo", "grpo")
+
+# reward_type=gym: training-hub runs it as a custom reward — gym_reward.compute_score POSTs
+# each rollout to the NeMo Gym verifier sidecar (GYM_SERVER=gym_verifier) on localhost.
+_GYM_PORT = 8000
+_GYM_DATA_CHECK_ROWS = 20
 
 # Args `thub grpo` (full fine-tuning, verl only) raises on; the LoRA ones are rejected by the
 # API, the rest are lora_grpo/ART-only settings that would otherwise abort the run at startup.
@@ -155,7 +163,17 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
             "label_column",
         ):
             thub_config.pop(irrelevant, None)
-        thub_config["reward_type"] = config.get("reward_type") or "math"
+        reward_type = config.get("reward_type") or "math"
+        if reward_type == "gym":
+            # training-hub's custom-reward path: question/ground_truth data, and verl calls
+            # this function (shipped as /amortized/gym_reward.py, on PYTHONPATH) per rollout.
+            thub_config["reward_type"] = "custom"
+            thub_config["reward_fn"] = "gym_reward.compute_score"
+            verifier = GYM_VERIFIERS[str(config.get("gym_verifier"))]
+            if verifier.system_prompt:
+                thub_config.setdefault("system_prompt", verifier.system_prompt)
+        else:
+            thub_config["reward_type"] = reward_type
         if algorithm == "lora_grpo":
             thub_config.setdefault("backend", "verl")
         else:
@@ -256,8 +274,14 @@ async def build(
     # for math (training-hub's math prep only opens local files); tool_call keeps training-hub's
     # own HF tool-call loader.
     is_hf_id = bool(grpo_source) and "://" not in grpo_source and not grpo_source.startswith("/")
+    gym_verifier = (
+        str(config.get("gym_verifier"))
+        if algorithm in _GRPO_ALGORITHMS and reward_type == "gym"
+        else None
+    )
+    grpo_jsonl = ""
     if algorithm in _GRPO_ALGORITHMS and (
-        grpo_source.startswith("/") or (is_hf_id and reward_type == "math")
+        grpo_source.startswith("/") or (is_hf_id and reward_type in ("math", "gym"))
     ):
         assets_dir = os.path.join(os.path.dirname(__file__), "assets")
         with open(os.path.join(assets_dir, "prepare_grpo_data.py")) as f:
@@ -277,6 +301,32 @@ async def build(
         thub_input = {**config, "data_path": grpo_jsonl}
 
     config_files["config.yaml"] = _training_hub_config_yaml(algorithm, thub_input)
+
+    sidecars: list[Sidecar] = []
+    env: dict[str, str] = {}
+    if gym_verifier is not None:
+        assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+        with open(os.path.join(assets_dir, "gym_reward.py")) as f:
+            config_files["gym_reward.py"] = f.read()
+        # thub resolves reward_fn as a dotted import; config files are mounted at /amortized.
+        env["PYTHONPATH"] = "/amortized"
+        env["GYM_VERIFIER_URL"] = f"http://localhost:{_GYM_PORT}/verify"
+        if grpo_jsonl:
+            # The verifier's own request schema is the data-format check: score the first
+            # rows (with an empty answer) before the model loads, failing fast on bad fields.
+            with open(os.path.join(assets_dir, "check_gym_data.py")) as f:
+                config_files["check_gym_data.py"] = f.read()
+            model_pre_commands.append(
+                f"python3 /amortized/check_gym_data.py {grpo_jsonl} {_GYM_DATA_CHECK_ROWS}"
+            )
+        sidecars.append(
+            Sidecar(
+                name="gym",
+                image=config_mod.job_image("gym", config_mod.settings.gym_image_tag),
+                port=_GYM_PORT,
+                env={"GYM_SERVER": gym_verifier},
+            )
+        )
 
     # Raw SDG parquet uses large_string columns, which leave embedding_sft's encoded
     # labels as strings (training crashes with "too many dimensions 'str'"). Only the
@@ -365,10 +415,11 @@ async def build(
         # training-hub's sft/osft memory estimates assume expandable segments; without them
         # the allocator fragments and reserves well beyond what it allocates.
         env=(
-            {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
+            {**env, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
             if algorithm in ("sft", "osft")
-            else {}
+            else env
         ),
+        sidecars=sidecars,
     )
 
 

@@ -9,6 +9,8 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from amortized.gym_verifiers import GYM_VERIFIERS
+
 logger = logging.getLogger(__name__)
 
 
@@ -227,7 +229,7 @@ class TrainingJobConfig(BaseModel):
         ),
     )
     # --- lora_grpo / grpo (verl backend) ---
-    reward_type: Literal["math", "tool_call"] | None = Field(
+    reward_type: Literal["math", "tool_call", "gym"] | None = Field(
         None,
         description=(
             "lora_grpo/grpo reward (training-hub). math (default): answer verification — the"
@@ -235,6 +237,21 @@ class TrainingJobConfig(BaseModel):
             " math-equivalent match with the reference answer (works for short labels too)."
             " tool_call: tool-call verification; the dataset must hold tool-call traces"
             " (question/tools/target_tool_name/target_arguments, or multi-turn messages)."
+            " gym: score with a NeMo Gym verifier picked by gym_verifier (runs next to"
+            " training; kubernetes backend only)."
+        ),
+    )
+    gym_verifier: str | None = Field(
+        None,
+        description=(
+            "reward_type=gym: the NeMo Gym verifier (reward function) that scores each"
+            " rollout. Rows hold the question plus that verifier's fields, passed to it"
+            " unchanged. Available — name: what it scores [fields, * = required]: "
+            + "; ".join(
+                f"{v.name}: {v.description or v.domain}"
+                f" [{', '.join(f + ('*' if f in v.required else '') for f in v.fields)}]"
+                for v in GYM_VERIFIERS.values()
+            )
         ),
     )
     system_prompt: str | None = Field(
@@ -319,6 +336,19 @@ class TrainingJobConfig(BaseModel):
         if self.algorithm == "osft" and self.unfreeze_rank_ratio is None:
             msg = "unfreeze_rank_ratio is required for OSFT (e.g. 0.2)"
             raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def check_gym_verifier(self) -> "TrainingJobConfig":
+        available = ", ".join(sorted(GYM_VERIFIERS))
+        if self.reward_type == "gym" and not self.gym_verifier:
+            raise ValueError(f"reward_type=gym needs gym_verifier (one of: {available})")
+        if self.gym_verifier and self.reward_type != "gym":
+            raise ValueError("gym_verifier only applies with reward_type=gym")
+        if self.gym_verifier and self.gym_verifier not in GYM_VERIFIERS:
+            raise ValueError(
+                f"unknown gym_verifier {self.gym_verifier!r}; available: {available}"
+            )
         return self
 
     @model_validator(mode="after")

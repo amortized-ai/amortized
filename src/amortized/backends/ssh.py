@@ -14,6 +14,7 @@ from amortized.backends import (
     BackendStatus,
     Capability,
     JobSpec,
+    reject_sidecars,
 )
 
 logger = logging.getLogger("amortized.backends.ssh")
@@ -69,6 +70,7 @@ class SSHBackend:
         return await asyncssh.connect(**kwargs)
 
     async def submit(self, spec: JobSpec) -> BackendHandle:
+        reject_sidecars(spec, self.name)
         remote_dir = f"{self._remote_base_dir}/{spec.job_id}"
         config_path = f"{remote_dir}/config.json"
 

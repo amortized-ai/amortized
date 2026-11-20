@@ -9,8 +9,13 @@ is downloaded with ``datasets``.
   taken from the prompt and reference-answer columns.
 - ``tool_call``: rows are copied unchanged — training-hub reads the tool-call trace fields
   (question/tools/target_tool_name/target_arguments, or multi-turn messages) itself.
+- ``gym``: each row becomes ``question``/``ground_truth`` for training-hub's custom-reward data
+  prep. The prompt column is the question; every OTHER column is passed unchanged as the NeMo
+  Gym verifier's request fields: ``ground_truth`` is ``{"prompt": ..., "fields": {...}}``,
+  which gym_reward.py sends to the verifier. No per-verifier parsing — the verifier's own
+  schema checks the fields (check_gym_data.py, before training).
 
-Usage: python3 prepare_grpo_data.py <math|tool_call> <data_path> <out.jsonl>
+Usage: python3 prepare_grpo_data.py <math|tool_call|gym> <data_path> <out.jsonl>
            [question_column] [answer_column]
 """
 
@@ -24,6 +29,7 @@ from typing import Any
 
 QUESTION_COLUMNS = ("question", "problem", "prompt", "input", "text")
 ANSWER_COLUMNS = ("ground_truth", "answer", "label", "category", "output")
+REWARD_TYPES = ("math", "tool_call", "gym")
 
 
 def _data_files(path: str) -> list[str]:
@@ -90,6 +96,33 @@ def _math_record(row: dict[str, Any], question_column: str, answer_column: str) 
     return {"problem": str(row[q_col]), "answer": str(row[a_col])}
 
 
+def _drop_nulls(value: Any) -> Any:
+    """Remove None-valued dict keys, recursively. Parquet stores a list of dicts as structs
+    padded with every key seen in the column ([{"A": "x", "B": None}, ...]), which a verifier
+    would read as extra, empty entries."""
+    if isinstance(value, dict):
+        return {k: _drop_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_drop_nulls(v) for v in value]
+    return value
+
+
+def _gym_record(row: dict[str, Any], question_column: str) -> dict[str, str]:
+    q_col = _pick(row, question_column, QUESTION_COLUMNS)
+    if q_col is None:
+        raise SystemExit(
+            "prepare_grpo_data: gym rows need a prompt column"
+            f" ({question_column or ' / '.join(QUESTION_COLUMNS)}); got {sorted(row)}"
+        )
+    question = str(row[q_col])
+    fields = _drop_nulls({k: v for k, v in row.items() if k != q_col and v is not None})
+    ground_truth = {"prompt": question, "fields": fields}
+    return {
+        "question": question,
+        "ground_truth": json.dumps(ground_truth, ensure_ascii=False, default=str),
+    }
+
+
 def convert(
     reward_type: str,
     data_path: str,
@@ -97,15 +130,18 @@ def convert(
     question_column: str = "",
     answer_column: str = "",
 ) -> int:
-    if reward_type not in ("math", "tool_call"):
+    if reward_type not in REWARD_TYPES:
         raise SystemExit(f"prepare_grpo_data: unknown reward_type {reward_type!r}")
     written = 0
     rows = _rows(data_path)
     with open(out_path, "w") as out:
         for row in rows:
-            record = (
-                _math_record(row, question_column, answer_column) if reward_type == "math" else row
-            )
+            if reward_type == "math":
+                record = _math_record(row, question_column, answer_column)
+            elif reward_type == "gym":
+                record = _gym_record(row, question_column)
+            else:
+                record = row
             out.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
             written += 1
     if written == 0:

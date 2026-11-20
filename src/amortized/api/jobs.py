@@ -49,6 +49,7 @@ from amortized.core.placeholders import (
 )
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
+from amortized.gym_verifiers import GYM_VERIFIERS
 from amortized.jobs.training import ALGO_ALIASES
 from amortized.models import (
     EvalJobRequest,
@@ -263,8 +264,20 @@ async def _validate_training_data(
         # holds storage and MLflow credentials — arbitrary code, so not accepted from a request.
         errors.append(
             f"{', '.join(callables)} cannot be set on a job: training-hub would import"
-            " arbitrary code. Use reward_type (math or tool_call) for lora_grpo/grpo instead."
+            " arbitrary code. Use reward_type (math, tool_call, or gym with a gym_verifier) for"
+            " lora_grpo/grpo instead."
         )
+    if config.get("reward_type") == "gym":
+        from amortized.config import settings as _settings
+
+        backend = _settings.resolved_default_backend
+        if backend != "kubernetes":
+            # The verifier runs as a sidecar container in the training pod.
+            errors.append(
+                f"reward_type=gym needs the kubernetes compute backend"
+                f" (it runs the NeMo Gym verifier next to training); this server uses"
+                f" '{backend}'"
+            )
     algorithm = str(config.get("algorithm") or "").strip().replace("-", "_")
     lora_knobs = sorted(k for k in _LORA_TUNABLE_FIELDS if config.get(k) is not None)
     if algorithm == "grpo" and lora_knobs:
@@ -407,6 +420,20 @@ async def _training_shape_violations(
         a_col = config.get("label_column")
         has_q = q_col in first if q_col else any(c in first for c in _GRPO_QUESTION_COLUMNS)
         has_a = a_col in first if a_col else any(c in first for c in _GRPO_ANSWER_COLUMNS)
+        if config.get("reward_type") == "gym":
+            # Rows are the question plus the verifier's own request fields (passed through
+            # unchanged); the full schema check runs against the verifier in the pod.
+            name = str(config.get("gym_verifier") or "")
+            verifier = GYM_VERIFIERS.get(name)
+            missing = [f for f in verifier.required if f not in first] if verifier else []
+            if not has_q or missing:
+                need = ", ".join(([] if has_q else [q_col or "a prompt column"]) + missing)
+                return [
+                    f"training data: gym_verifier '{name}' needs {need}, but the dataset has"
+                    f" {columns}. Rows hold the question plus the verifier's fields"
+                    f" ({', '.join(verifier.fields) if verifier else 'see gym_verifier'})."
+                ]
+            return []
         if not (has_q and has_a):
             q_want = q_col or ", ".join(_GRPO_QUESTION_COLUMNS)
             a_want = a_col or ", ".join(_GRPO_ANSWER_COLUMNS)

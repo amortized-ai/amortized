@@ -150,7 +150,7 @@ choice, and GPU count.
 |-------|-----------|
 | `model_name_or_path` | User's chosen model |
 | `algorithm` | `lora_grpo` (default). `grpo` only when the user asks for full fine-tuning |
-| `reward_type` | `tool_call` for tool-call traces; `math` for short checkable answers. See Reward Functions |
+| `reward_type` | `tool_call` for tool-call traces; `math` for short checkable answers; `gym` + `gym_verifier` for anything else a Gym verifier can score. See Reward Functions |
 | `num_train_epochs` | Passes over the data. 1 for a first run or 2000+ samples; 2–3 for <1000 samples |
 | `learning_rate` | 5e-6 for `lora_grpo`; 1e-6 for `grpo`. RL is sensitive to high learning rates |
 | `group_size` | Answers sampled per prompt (8). More gives a steadier signal but costs rollout time |
@@ -212,6 +212,7 @@ The reward decides what a "better answer" is. Only the rewards below exist; set 
 |---|---|---|
 | `tool_call` | 1.0 = right tool and arguments; 0.5 = right tool, wrong arguments; 0 = wrong or no call | Single-turn tool calls (Data Format above); multi-turn not supported |
 | `math` | 1.0 = final answer matches the reference (exact or math-equivalent); else 0 | A prompt column and a reference-answer column |
+| `gym` | Whatever the chosen `gym_verifier` checks (see below) | A prompt column plus that verifier's fields |
 
 **`tool_call`** parses the model's call from `<tool_call>{"name": ..., "arguments": ...}</tool_call>`
 or a bare `{"name": ..., "arguments": ...}` JSON object (thinking blocks are ignored). Tool
@@ -227,11 +228,22 @@ the user wants different instructions, and if they set one it must still ask for
 - `label_column` — reference-answer column. Unset: first of ground_truth, answer, label,
   category, output.
 
-**Custom rewards are not available yet.** Validation rejects `reward_fn` (and
-`rollout_fn` / `iteration_callback`): training-hub would import arbitrary code inside the
-training pod. Never put code or a module path in a job config. If no reward above fits
-the task (e.g. open-ended writing, rubric scoring), say GRPO can't score it today and
-offer OSFT on reference responses instead.
+**`gym`** — the reward pool for everything else. NVIDIA NeMo Gym verifiers run next to
+training and score each answer; pick the one that fits the task and recommend it to the
+user as `gym_verifier`. The `gym_verifier` field description lists every available
+verifier (28 today — multiple choice, exact/string match, instruction following, long-context
+retrieval, proof selection, structured output, ...) with its fields; `*` marks required ones.
+- Each row is the question (`text_column`, default as for `math`) plus the verifier's
+  fields under their exact names, e.g. `mcqa`: `options` = `[{"A": "..."}, {"B": "..."}]`
+  and `expected_answer` = `"B"`. Plan SDG to produce those columns.
+- Leave `system_prompt` unset: the verifier's default asks for its answer format.
+- Starter recipe: **Gym Reward GRPO (LoRA)** (`mcqa` example) — swap `gym_verifier` and the
+  data columns for other verifiers.
+- Before training, the first rows are checked against the verifier; a field mismatch fails
+  the job in seconds with the verifier's error.
+- If no verifier fits (e.g. open-ended writing), say GRPO can't score it today and offer
+  OSFT on reference responses instead. Never put code or a module path (`reward_fn`, etc.)
+  in a job config — validation rejects it.
 
 ## Compute Requirements
 

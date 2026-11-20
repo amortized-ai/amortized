@@ -17,6 +17,7 @@ from amortized.backends import (
     BackendStatus,
     Capability,
     JobSpec,
+    reject_sidecars,
 )
 
 logger = logging.getLogger("amortized.backends.local")
@@ -36,6 +37,7 @@ class LocalBackend:
         return None
 
     async def submit(self, spec: JobSpec) -> BackendHandle:
+        reject_sidecars(spec, self.name)
         work_dir = os.path.expanduser(spec.work_dir)
         os.makedirs(work_dir, exist_ok=True)
 

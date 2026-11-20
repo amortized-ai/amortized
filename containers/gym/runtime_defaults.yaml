@@ -1,0 +1,23 @@
+# Global keys `gym env start` resolves for every server (captured from a real run, Gym v0.7.0).
+# make_config.py merges each verifier's resources_servers block on top. No head server or Ray
+# runs: run_verifier.sh launches the server's app.py directly.
+use_absolute_ip: false
+port_range_low: 10001
+port_range_high: 20000
+head_server:
+  host: 127.0.0.1
+  port: 11000
+disallowed_ports:
+- 11000
+- 8000
+allow_openai_version_skew: false
+python_version: 3.13.14
+skip_venv_if_present: true
+dry_run: false
+server_spinup_timeout_seconds: 600
+model_endpoint_readiness_timeout_seconds: 600
+results_dir: /opt/gym/results
+cache_dir: /opt/gym/cache
+uv_cache_dir: /opt/gym/cache/uv
+uv_lock_timeout_seconds: 1800
+uv_venv_dir: /opt/gym

@@ -52,6 +52,24 @@ class Resources:
 
 
 @dataclass
+class Sidecar:
+    """A helper container that runs alongside the job's main container for its whole
+    lifetime (e.g. the NeMo Gym verifier a GRPO reward function calls on localhost).
+
+    The main container starts only once ``port`` accepts TCP connections, and the sidecar
+    is stopped when the main container exits. Only the Kubernetes backend supports sidecars.
+    """
+
+    name: str
+    image: str
+    port: int
+    env: dict[str, str] = field(default_factory=dict)
+    cpu_request: str = "250m"
+    memory_request: str = "256Mi"
+    memory_limit: str = "512Mi"
+
+
+@dataclass
 class JobSpec:
     job_id: str
     command: list[str]
@@ -64,6 +82,17 @@ class JobSpec:
     config_files: dict[str, str] = field(default_factory=dict)
     job_type: str = ""
     user_id: str = ""
+    sidecars: list[Sidecar] = field(default_factory=list)
+
+
+def reject_sidecars(spec: JobSpec, backend_name: str) -> None:
+    """Fail a submission whose job needs sidecars on a backend that cannot run them."""
+    if spec.sidecars:
+        names = ", ".join(s.name for s in spec.sidecars)
+        raise RuntimeError(
+            f"job needs sidecar container(s) ({names}), which only the kubernetes backend"
+            f" runs; backend '{backend_name}' cannot"
+        )
 
 
 @runtime_checkable

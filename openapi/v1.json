@@ -7294,7 +7294,8 @@
                 "type": "string",
                 "enum": [
                   "math",
-                  "tool_call"
+                  "tool_call",
+                  "gym"
                 ]
               },
               {
@@ -7302,7 +7303,19 @@
               }
             ],
             "title": "Reward Type",
-            "description": "lora_grpo/grpo reward (training-hub). math (default): answer verification \u2014 the answer is read from \\boxed{} or <answer></answer> and scored 1.0 on an exact or math-equivalent match with the reference answer (works for short labels too). tool_call: tool-call verification; the dataset must hold tool-call traces (question/tools/target_tool_name/target_arguments, or multi-turn messages)."
+            "description": "lora_grpo/grpo reward (training-hub). math (default): answer verification \u2014 the answer is read from \\boxed{} or <answer></answer> and scored 1.0 on an exact or math-equivalent match with the reference answer (works for short labels too). tool_call: tool-call verification; the dataset must hold tool-call traces (question/tools/target_tool_name/target_arguments, or multi-turn messages). gym: score with a NeMo Gym verifier picked by gym_verifier (runs next to training; kubernetes backend only)."
+          },
+          "gym_verifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gym Verifier",
+            "description": "reward_type=gym: the NeMo Gym verifier (reward function) that scores each rollout. Rows hold the question plus that verifier's fields, passed to it unchanged. Available \u2014 name: what it scores [fields, * = required]: arc_agi: Solve puzzles designed to test intelligence. See https://arcprize.org/arc-agi. [train, test_input, expected_output, task_id]; asr_with_pc: ASR with WER scoring (standard, case-sensitive, punctuation+capitalization) [expected_answer, sample_id, split, task_type, audio_duration, reference_fields]; assaybench: AssayBench -- rank the hit genes of a CRISPR screen from its plain-text description (arXiv:2605.10876) [verifier_metadata, relevance_genes*, relevance_scores*, dataset_name, split, question, cleaned_phenotype, screen_category, author, source_id, num_genes]; bunsenbench_chemistry_mcq: Public BunsenBench chemistry multiple-choice benchmark verifier [uuid, options, expected_answer, metadata, grading_mode, template_metadata, bunsen_id, choices, source, bct_field, bct_subfield]; calendar: Multi-turn calendar scheduling dataset. User states events and constraints in natural language; model schedules events to satisfy all constraints. [exp_cal_state*]; equivalence_rule: Question - Answering with rule-based reward [expected_answer*]; ether0: ether0 chemistry benchmark verifiers [verifier_metadata]; format_verification: Verify citation/reference markers in model responses via string matching [verifier*]; fukuyamabench: FukuyamaBench organic reaction-mechanism pathway verifier [verifier_metadata]; generative_reward_model: Train GenRM to score and rank response pairs per-rubric and overall [id*, ground_truth_overall, ground_truth_rubric_scores]; gpqa_diamond: GPQA Diamond multiple-choice question answering problems [uuid, options, expected_answer, metadata, grading_mode, template_metadata]; graphwalks: Long-context graph-walks (BFS / parents) with F1-over-node-sets grading from openai/graphwalks [expected_answer*, problem_type*, n_tokens, prompt_chars]; hotpotqa_qa: Short-answer QA with deterministic SQuAD-style + alternative-aware substring verification (HotpotQA closed-book). [expected_answer*]; iheval: IHEval instruction-hierarchy benchmark (8 single-turn tasks \u2014 task execution, safety, tool use, rule following) scored with the upstream rule-based checkers. [id, task, domain, setting, instruction, answer, verifier_metadata]; imo_gradingbench: Four-class grading of math proofs \u2014 the policy model reads a problem plus a candidate proof and emits one of correct / almost / partial / incorrect as the last word. [expected_answer, grading_id, problem_id]; instruction_following: Instruction following datasets targeting IFEval and IFBench style instruction following capabilities [id*, verifier_metadata]; lc_niah: Answer-correctness reward gated by low reasoning/input overlap [expected_answer*]; mcqa: Multi-choice question answering problems [uuid, options, expected_answer, metadata, grading_mode, template_metadata]; mrcr: Multi-round coreference resolution over multi-turn conversations with prefix-gated SequenceMatcher grading [expected_answer*, random_string_to_prepend*, n_needles*, n_tokens*]; proof_genselect: Pairwise proof selection with binary correctness reward [problem*, proof_1*, proof_2*, correct_index*, score_1, score_2]; ragtruth: RAGTruth case-level hallucination detection; reward = 1 when the model's binary \"any hallucination?\" verdict matches the gold label. [is_halu, task_type]; ruler: other [outputs*, length*, subset*]; scicodepile: Verifies model-generated Python against SciCodePile's runnable scientific-code tests. [verifier_metadata]; spartqa: SpartQA spatial reasoning, CO (choose-object) question type; four candidate answers per question (two story objects, \"both of them\", \"none of them\"); reward = 1 iff the answer resolves to the single gold label. [target, options, verifier_metadata]; string_match: General-purpose string matching verifier for free-form text answers [expected_answer*, extraction_mode, case_sensitive, metadata]; structeval: StructEval non-renderable format verification (JSON, YAML, CSV, TOML, XML) [task_id*, task_name*, input_type*, output_type*, raw_output_metric*, rendering]; swe_pivot: SWE pivot verifier for PivotRL on coding agent trajectories [uuid, expected_answer, expected_action, metadata]; terminal_multi_harness: Agent006 harness structured-action verifier for next-step pivot RL. [harness, expected_action*, declared_tools, threshold]"
           },
           "system_prompt": {
             "anyOf": [

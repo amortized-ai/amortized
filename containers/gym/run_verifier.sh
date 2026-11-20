@@ -1,7 +1,8 @@
 #!/bin/sh
 # Start one NeMo Gym resources server the way `gym env start` would, minus the orchestrator:
 # no head server, no Ray (v0.7.0's orchestrator always boots a Ray cluster, which OOMs a pod).
-# GYM_SERVER names both configs/<name>.yaml and resources_servers/<name>/.
+# GYM_SERVER names both configs/<name>.yaml (generated at build by make_config.py) and
+# resources_servers/<name>/.
 set -eu
 : "${GYM_SERVER:=mcqa}"
 cfg="/opt/amortized-gym/configs/${GYM_SERVER}.yaml"

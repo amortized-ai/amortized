@@ -12,6 +12,7 @@ from amortized.backends import (
     BackendStatus,
     Capability,
     JobSpec,
+    Sidecar,
 )
 
 logger = logging.getLogger("amortized.backends.kubernetes")
@@ -291,6 +292,10 @@ class KubernetesBackend:
             security_context=container_security_context,
         )
 
+        init_containers = [
+            self._build_sidecar(sidecar, container_security_context) for sidecar in spec.sidecars
+        ]
+
         node_selector = None
         runtime_class_name = None
         if spec.resources.gpus > 0:
@@ -299,6 +304,7 @@ class KubernetesBackend:
 
         return V1PodSpec(
             containers=[container],
+            init_containers=init_containers or None,
             volumes=volumes,
             restart_policy="Never",
             node_selector=node_selector,
@@ -309,6 +315,43 @@ class KubernetesBackend:
             # fsGroup here broke eval on OpenShift (1000 is outside the allowed
             # range). Container-level hardening (no-priv-escalation, drop caps)
             # still applies to every job.
+        )
+
+    def _build_sidecar(self, sidecar: Sidecar, security_context: Any) -> Any:
+        """A native sidecar: an init container with restartPolicy Always (Kubernetes 1.29+).
+
+        The kubelet starts it before the job container and waits for its startup probe, so
+        the job never calls it before it listens; it is stopped once the job container exits,
+        so the Job still completes.
+        """
+        from kubernetes_asyncio.client import (
+            V1Container,
+            V1EnvVar,
+            V1Probe,
+            V1ResourceRequirements,
+            V1TCPSocketAction,
+        )
+
+        env = [V1EnvVar(name=k, value=v) for k, v in sidecar.env.items()]
+        # Helpers are CPU-only; on nodes whose default runtime is nvidia they would
+        # otherwise see every GPU (see the CPU-job note in _build_pod_spec).
+        env.append(V1EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="void"))
+        return V1Container(
+            name=sidecar.name,
+            image=sidecar.image,
+            image_pull_policy=self._image_pull_policy,
+            restart_policy="Always",
+            env=env,
+            resources=V1ResourceRequirements(
+                requests={"cpu": sidecar.cpu_request, "memory": sidecar.memory_request},
+                limits={"memory": sidecar.memory_limit},
+            ),
+            startup_probe=V1Probe(
+                tcp_socket=V1TCPSocketAction(port=sidecar.port),
+                period_seconds=2,
+                failure_threshold=90,
+            ),
+            security_context=security_context,
         )
 
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:
@@ -580,11 +623,22 @@ class KubernetesBackend:
                     continue
                 if pod.status.phase != "Pending":
                     continue
-                for cs in pod.status.container_statuses or []:
+                # Sidecars are init containers: a sidecar image that cannot be pulled keeps
+                # the pod Pending with the error only in init_container_statuses.
+                statuses = [
+                    (cs, True) for cs in getattr(pod.status, "init_container_statuses", None) or []
+                ] + [(cs, False) for cs in pod.status.container_statuses or []]
+                for cs, is_sidecar in statuses:
                     waiting = getattr(cs.state, "waiting", None) if cs.state else None
                     if not waiting:
                         continue
                     reason = waiting.reason or ""
+                    if reason == "CrashLoopBackOff" and is_sidecar:
+                        # A sidecar restarts on failure, so the job container never starts.
+                        return (
+                            f"Sidecar container '{cs.name}' keeps crashing (CrashLoopBackOff),"
+                            " so the job never started. Check the sidecar's logs."
+                        )
                     if reason not in self._STUCK_WAITING_REASONS:
                         continue
                     image = cs.image or "unknown"
@@ -682,6 +736,7 @@ class KubernetesBackend:
             log_text = await core.read_namespaced_pod_log(
                 name=pod_name,
                 namespace=self._namespace,
+                container="job",
                 tail_lines=2000,
             )
             if log_text:

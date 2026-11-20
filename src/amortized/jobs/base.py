@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from amortized.backends import Resources
+from amortized.backends import Resources, Sidecar
 
 
 class JobBuildError(Exception):
@@ -26,6 +26,8 @@ class JobBuildResult:
     post_commands: list[str] = field(default_factory=list)
     ports: dict[int, int] = field(default_factory=dict)
     """Container ports to expose via a Service (long-running jobs)."""
+    sidecars: list[Sidecar] = field(default_factory=list)
+    """Helper containers that run next to the job for its lifetime (Kubernetes only)."""
 
 
 class JobBuilder(Protocol):

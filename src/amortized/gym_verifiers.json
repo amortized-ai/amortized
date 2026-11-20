@@ -1,0 +1,377 @@
+[
+ {
+  "name": "arc_agi",
+  "description": "Solve puzzles designed to test intelligence. See https://arcprize.org/arc-agi.",
+  "domain": "knowledge",
+  "fields": [
+   "train",
+   "test_input",
+   "expected_output",
+   "task_id"
+  ],
+  "required": []
+ },
+ {
+  "name": "asr_with_pc",
+  "description": "ASR with WER scoring (standard, case-sensitive, punctuation+capitalization)",
+  "domain": "other",
+  "fields": [
+   "expected_answer",
+   "sample_id",
+   "split",
+   "task_type",
+   "audio_duration",
+   "reference_fields"
+  ],
+  "required": []
+ },
+ {
+  "name": "assaybench",
+  "description": "AssayBench -- rank the hit genes of a CRISPR screen from its plain-text description (arXiv:2605.10876)",
+  "domain": "knowledge",
+  "fields": [
+   "verifier_metadata",
+   "relevance_genes",
+   "relevance_scores",
+   "dataset_name",
+   "split",
+   "question",
+   "cleaned_phenotype",
+   "screen_category",
+   "author",
+   "source_id",
+   "num_genes"
+  ],
+  "required": [
+   "relevance_genes",
+   "relevance_scores"
+  ]
+ },
+ {
+  "name": "bunsenbench_chemistry_mcq",
+  "description": "Public BunsenBench chemistry multiple-choice benchmark verifier",
+  "domain": "knowledge",
+  "fields": [
+   "uuid",
+   "options",
+   "expected_answer",
+   "metadata",
+   "grading_mode",
+   "template_metadata",
+   "bunsen_id",
+   "choices",
+   "source",
+   "bct_field",
+   "bct_subfield"
+  ],
+  "required": []
+ },
+ {
+  "name": "calendar",
+  "description": "Multi-turn calendar scheduling dataset. User states events and constraints in natural language; model schedules events to satisfy all constraints.",
+  "domain": "agent",
+  "fields": [
+   "exp_cal_state"
+  ],
+  "required": [
+   "exp_cal_state"
+  ]
+ },
+ {
+  "name": "equivalence_rule",
+  "description": "Question - Answering with rule-based reward",
+  "domain": "knowledge",
+  "fields": [
+   "expected_answer"
+  ],
+  "required": [
+   "expected_answer"
+  ]
+ },
+ {
+  "name": "ether0",
+  "description": "ether0 chemistry benchmark verifiers",
+  "domain": "knowledge",
+  "fields": [
+   "verifier_metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "format_verification",
+  "description": "Verify citation/reference markers in model responses via string matching",
+  "domain": "instruction_following",
+  "fields": [
+   "verifier"
+  ],
+  "required": [
+   "verifier"
+  ]
+ },
+ {
+  "name": "fukuyamabench",
+  "description": "FukuyamaBench organic reaction-mechanism pathway verifier",
+  "domain": "knowledge",
+  "fields": [
+   "verifier_metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "generative_reward_model",
+  "description": "Train GenRM to score and rank response pairs per-rubric and overall",
+  "domain": "rlhf",
+  "fields": [
+   "id",
+   "ground_truth_overall",
+   "ground_truth_rubric_scores"
+  ],
+  "required": [
+   "id"
+  ]
+ },
+ {
+  "name": "gpqa_diamond",
+  "description": "GPQA Diamond multiple-choice question answering problems",
+  "domain": "knowledge",
+  "fields": [
+   "uuid",
+   "options",
+   "expected_answer",
+   "metadata",
+   "grading_mode",
+   "template_metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "graphwalks",
+  "description": "Long-context graph-walks (BFS / parents) with F1-over-node-sets grading from openai/graphwalks",
+  "domain": "other",
+  "fields": [
+   "expected_answer",
+   "problem_type",
+   "n_tokens",
+   "prompt_chars"
+  ],
+  "required": [
+   "expected_answer",
+   "problem_type"
+  ]
+ },
+ {
+  "name": "hotpotqa_qa",
+  "description": "Short-answer QA with deterministic SQuAD-style + alternative-aware substring verification (HotpotQA closed-book).",
+  "domain": "knowledge",
+  "fields": [
+   "expected_answer"
+  ],
+  "required": [
+   "expected_answer"
+  ]
+ },
+ {
+  "name": "iheval",
+  "description": "IHEval instruction-hierarchy benchmark (8 single-turn tasks \u2014 task execution, safety, tool use, rule following) scored with the upstream rule-based checkers.",
+  "domain": "instruction_following",
+  "fields": [
+   "id",
+   "task",
+   "domain",
+   "setting",
+   "instruction",
+   "answer",
+   "verifier_metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "imo_gradingbench",
+  "description": "Four-class grading of math proofs \u2014 the policy model reads a problem plus a candidate proof and emits one of correct / almost / partial / incorrect as the last word.",
+  "domain": "math",
+  "fields": [
+   "expected_answer",
+   "grading_id",
+   "problem_id"
+  ],
+  "required": []
+ },
+ {
+  "name": "instruction_following",
+  "description": "Instruction following datasets targeting IFEval and IFBench style instruction following capabilities",
+  "domain": "instruction_following",
+  "fields": [
+   "id",
+   "verifier_metadata"
+  ],
+  "required": [
+   "id"
+  ]
+ },
+ {
+  "name": "lc_niah",
+  "description": "Answer-correctness reward gated by low reasoning/input overlap",
+  "domain": "knowledge",
+  "fields": [
+   "expected_answer"
+  ],
+  "required": [
+   "expected_answer"
+  ]
+ },
+ {
+  "name": "mcqa",
+  "description": "Multi-choice question answering problems",
+  "domain": "knowledge",
+  "fields": [
+   "uuid",
+   "options",
+   "expected_answer",
+   "metadata",
+   "grading_mode",
+   "template_metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "mrcr",
+  "description": "Multi-round coreference resolution over multi-turn conversations with prefix-gated SequenceMatcher grading",
+  "domain": "other",
+  "fields": [
+   "expected_answer",
+   "random_string_to_prepend",
+   "n_needles",
+   "n_tokens"
+  ],
+  "required": [
+   "expected_answer",
+   "random_string_to_prepend",
+   "n_needles",
+   "n_tokens"
+  ]
+ },
+ {
+  "name": "proof_genselect",
+  "description": "Pairwise proof selection with binary correctness reward",
+  "domain": "math",
+  "fields": [
+   "problem",
+   "proof_1",
+   "proof_2",
+   "correct_index",
+   "score_1",
+   "score_2"
+  ],
+  "required": [
+   "problem",
+   "proof_1",
+   "proof_2",
+   "correct_index"
+  ]
+ },
+ {
+  "name": "ragtruth",
+  "description": "RAGTruth case-level hallucination detection; reward = 1 when the model's binary \"any hallucination?\" verdict matches the gold label.",
+  "domain": "knowledge",
+  "fields": [
+   "is_halu",
+   "task_type"
+  ],
+  "required": []
+ },
+ {
+  "name": "ruler",
+  "description": "",
+  "domain": "other",
+  "fields": [
+   "outputs",
+   "length",
+   "subset"
+  ],
+  "required": [
+   "outputs",
+   "length",
+   "subset"
+  ]
+ },
+ {
+  "name": "scicodepile",
+  "description": "Verifies model-generated Python against SciCodePile's runnable scientific-code tests.",
+  "domain": "coding",
+  "fields": [
+   "verifier_metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "spartqa",
+  "description": "SpartQA spatial reasoning, CO (choose-object) question type; four candidate answers per question (two story objects, \"both of them\", \"none of them\"); reward = 1 iff the answer resolves to the single gold label.",
+  "domain": "other",
+  "fields": [
+   "target",
+   "options",
+   "verifier_metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "string_match",
+  "description": "General-purpose string matching verifier for free-form text answers",
+  "domain": "knowledge",
+  "fields": [
+   "expected_answer",
+   "extraction_mode",
+   "case_sensitive",
+   "metadata"
+  ],
+  "required": [
+   "expected_answer"
+  ]
+ },
+ {
+  "name": "structeval",
+  "description": "StructEval non-renderable format verification (JSON, YAML, CSV, TOML, XML)",
+  "domain": "instruction_following",
+  "fields": [
+   "task_id",
+   "task_name",
+   "input_type",
+   "output_type",
+   "raw_output_metric",
+   "rendering"
+  ],
+  "required": [
+   "task_id",
+   "task_name",
+   "input_type",
+   "output_type",
+   "raw_output_metric"
+  ]
+ },
+ {
+  "name": "swe_pivot",
+  "description": "SWE pivot verifier for PivotRL on coding agent trajectories",
+  "domain": "agent",
+  "fields": [
+   "uuid",
+   "expected_answer",
+   "expected_action",
+   "metadata"
+  ],
+  "required": []
+ },
+ {
+  "name": "terminal_multi_harness",
+  "description": "Agent006 harness structured-action verifier for next-step pivot RL.",
+  "domain": "agent",
+  "fields": [
+   "harness",
+   "expected_action",
+   "declared_tools",
+   "threshold"
+  ],
+  "required": [
+   "expected_action"
+  ]
+ }
+]
