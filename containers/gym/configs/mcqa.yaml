@@ -1,0 +1,38 @@
+# NeMo Gym mcqa verifier — resources server only (no agent / model server, no Ray).
+# The training job's reward function POSTs each rollout to http://localhost:8000/verify.
+# Adapted from resources_servers/mcqa/configs/mcqa.yaml in NeMo Gym (Apache-2.0).
+#
+# This is the fully resolved config `gym env start` would hand the server via
+# NEMO_GYM_CONFIG_DICT. The image launches app.py directly with it, because in Gym v0.7.0
+# `gym env start` always starts a Ray cluster (one idle worker per visible CPU — >15 GB on a
+# big node, OOMKilled in a pod) even though this server never uses Ray.
+mcqa:
+  resources_servers:
+    mcqa:
+      entrypoint: app.py
+      host: 0.0.0.0
+      port: 8000
+      grading_mode: null
+      domain: knowledge
+      verified: false
+      description: Multi-choice question answering problems
+use_absolute_ip: false
+port_range_low: 10001
+port_range_high: 20000
+head_server:
+  host: 127.0.0.1
+  port: 11000
+disallowed_ports:
+- 11000
+- 8000
+allow_openai_version_skew: false
+python_version: 3.13.14
+skip_venv_if_present: true
+dry_run: false
+server_spinup_timeout_seconds: 600
+model_endpoint_readiness_timeout_seconds: 600
+results_dir: /opt/gym/results
+cache_dir: /opt/gym/cache
+uv_cache_dir: /opt/gym/cache/uv
+uv_lock_timeout_seconds: 1800
+uv_venv_dir: /opt/gym

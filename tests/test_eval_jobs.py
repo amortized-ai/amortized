@@ -1459,6 +1459,23 @@ class TestJobImageTag:
         )
         assert train.image == f"{reg}/training:latest"
 
+    def test_gym_image_tag_follows_job_tag_unless_overridden(self, monkeypatch) -> None:
+        import amortized.config as config_mod
+
+        reg = "ghcr.io/amortized-ai"
+        monkeypatch.setattr(config_mod.settings, "job_image_tag", "sha-abc123")
+
+        # Built by amortized CI per commit (like eval/SDG), so empty follows job_image_tag.
+        monkeypatch.setattr(config_mod.settings, "gym_image_tag", "")
+        gym = config_mod.job_image("gym", config_mod.settings.gym_image_tag)
+        assert gym == f"{reg}/gym:sha-abc123"
+
+        # An override repoints only the gym image, not the other CI job images.
+        monkeypatch.setattr(config_mod.settings, "gym_image_tag", "xingliu-dev")
+        gym = config_mod.job_image("gym", config_mod.settings.gym_image_tag)
+        assert gym == f"{reg}/gym:xingliu-dev"
+        assert config_mod.job_image("eval") == f"{reg}/eval:sha-abc123"
+
 
 class TestClassificationEvalOnSuccess:
     @pytest.mark.asyncio

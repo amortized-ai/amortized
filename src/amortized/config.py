@@ -40,6 +40,13 @@ class Settings(BaseSettings):
         "not per amortized commit, so pin a published version (e.g. 0.1.0) for a "
         "reproducible release.",
     )
+    gym_image_tag: str = Field(
+        "",
+        description="Tag for the NeMo Gym verifier image (ghcr.io/amortized-ai/gym:<tag>), the "
+        "GRPO reward sidecar. Empty (default) follows job_image_tag — the image is built by "
+        "amortized CI like eval/SDG. Set it to test a locally built image without repointing "
+        "the other job images.",
+    )
 
     max_concurrent_jobs: int = Field(
         4,
