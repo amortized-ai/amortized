@@ -1,0 +1,429 @@
+"""Job admission: model checks gate validate/create/retry through one shared path,
+without holding a DB connection while probing."""
+
+import asyncio
+import json
+from typing import Any
+
+import httpx
+import pytest
+import test_eval_jobs
+from test_eval_jobs import EVAL_BODY
+
+import amortized.config as config_mod
+from amortized.api import job_admission
+from amortized.core import jobs as core_jobs
+from amortized.core import model_check_client
+from amortized.core.jobs import InvalidJobStateError, create_job
+from amortized.core.model_check_client import CheckReport
+from amortized.core.model_endpoints import FAILED, UNVERIFIED, CheckResult
+from amortized.jobs import eval as eval_builder
+from amortized.model_check import checker
+from amortized.models import JobType
+
+OPENAI_OK = {"choices": [{"message": {"role": "assistant", "content": "pong"}}]}
+
+# Reuse the eval tests' DB + ASGI client fixtures.
+_use_temp_db = test_eval_jobs._use_temp_db
+client = test_eval_jobs.client
+
+
+async def _job_count() -> int:
+    import amortized.db.connection as db
+
+    async with db._pool.acquire() as conn:
+        return int(await conn.fetchval("SELECT count(*) FROM jobs"))
+
+
+def _stub_report(monkeypatch: pytest.MonkeyPatch, report: CheckReport) -> list[dict[str, Any]]:
+    seen: list[dict[str, Any]] = []
+
+    async def fake(job_type: str, config: dict[str, Any]) -> CheckReport:
+        seen.append({"job_type": job_type, "config": json.loads(json.dumps(config))})
+        return report
+
+    monkeypatch.setattr(job_admission, "check_job_models", fake)
+    return seen
+
+
+@pytest.fixture
+def real_check(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+    """Run the real in-process check against a mock network instead of the offline stub
+    (switched on when the test installs its handler, so setup can still create jobs)."""
+    monkeypatch.setattr(config_mod.settings, "model_check_url", "")
+    monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
+    monkeypatch.setattr(checker, "BACKOFF_SECONDS", (0.0, 0.0))
+    real_client = httpx.AsyncClient
+
+    def install(handler) -> None:  # type: ignore[no-untyped-def]
+        monkeypatch.setattr(job_admission, "check_job_models", model_check_client.check_job_models)
+
+        async def _handle(request: httpx.Request) -> httpx.Response:
+            response = handler(request)
+            if asyncio.iscoroutine(response):
+                response = await response
+            return response
+
+        monkeypatch.setattr(
+            checker.httpx,
+            "AsyncClient",
+            lambda **kw: real_client(**{**kw, "transport": httpx.MockTransport(_handle)}),
+        )
+
+    return install
+
+
+class TestDefiniteFailuresBlock:
+    @pytest.mark.asyncio
+    async def test_slow_judge_is_a_warning_not_a_block(
+        self,
+        client,
+        real_check,
+        monkeypatch,
+    ) -> None:
+        # A cold endpoint can miss the probe's deadline and still serve the job (whose runner
+        # waits far longer), so the job is created with an unverified warning — quickly.
+        monkeypatch.setattr(config_mod.settings, "model_check_deadline_seconds", 0.5)
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "judge":
+                await asyncio.sleep(10)
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
+        resp = await client.post("/api/v1/jobs/eval", json=EVAL_BODY)
+        assert resp.status_code == 201, resp.text
+        checks = resp.json()["model_checks"]
+        assert sorted((c["label"], c["outcome"], c["reason"]) for c in checks) == [
+            ("judge", "unverified", "deadline"),
+            ("model under test", "passed", "ok"),
+        ]
+        assert await _job_count() == 1
+
+    @pytest.mark.asyncio
+    async def test_validate_reports_the_same_failure(self, client, real_check) -> None:
+        real_check(
+            lambda r: (
+                httpx.Response(404)
+                if r.url.host == "judge"
+                else httpx.Response(200, json=OPENAI_OK)
+            )
+        )
+        resp = await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["code"] == "model_check_failed"
+        # The message says what's wrong in words (it is relayed by the agent and shown on the
+        # "Not submitted" card); the raw HTTP error stays in the per-endpoint details.
+        message = body["message"]
+        assert message.startswith("judge model 'gpt-judge' at http://judge:8000/v1 isn't served")
+        assert "Check the model name" in message
+        assert "Client error" not in message and "/chat/completions" not in message
+        assert "not_found" in body["details"][0]["error"]
+        # Built from the numeric status and local codes — no provider-supplied reason phrase.
+        assert body["details"][0]["error"].endswith("not_found: HTTP 404")
+
+    @pytest.mark.asyncio
+    async def test_literal_url_is_probed_without_a_forwarded_key(
+        self, client, real_check, monkeypatch
+    ) -> None:
+        # Job configs carry no keys, and a literal-URL judge is keyless: even a key the server
+        # forwards to job pods (EVAL_JUDGE_API_KEY) is never sent to a URL the config names.
+        monkeypatch.setattr(config_mod.settings, "forward_env", ["EVAL_JUDGE_API_KEY"])
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "sk-forwarded-secret")
+        seen_auth: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "judge":
+                seen_auth.append(request.headers.get("Authorization", ""))
+                return httpx.Response(401)
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
+        resp = await client.post("/api/v1/jobs/eval", json=EVAL_BODY)
+        assert resp.status_code == 422
+        # Sent unauthenticated, so a 401 means the endpoint needs a key from Settings.
+        assert "auth_required" in resp.text
+        assert "sk-forwarded-secret" not in resp.text
+        assert seen_auth == [""]
+
+    @pytest.mark.asyncio
+    async def test_unknown_provider_is_rejected_before_any_probe(self, client, real_check) -> None:
+        probed: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            probed.append(str(request.url))
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
+        body = {**EVAL_BODY, "judge": {"base_url": "anthropic", "model": "claude"}}
+        resp = await client.post("/api/v1/jobs/eval", json=body)
+        assert resp.status_code == 422
+        assert "judge" in resp.json()["message"]
+        assert probed == []
+        assert await _job_count() == 0
+
+
+class TestMalformedUrls:
+    @pytest.mark.asyncio
+    async def test_malformed_port_is_a_validation_error_not_a_model_check(
+        self, client, real_check
+    ) -> None:
+        # A typo in the URL is an ordinary validation error (not "the endpoint didn't answer"),
+        # and nothing is probed.
+        probed: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            probed.append(str(request.url))
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
+        body = {**EVAL_BODY, "judge": {"base_url": "http://judge:invalid/v1", "model": "j"}}
+        for path in ("/api/v1/jobs/eval/validate", "/api/v1/jobs/eval"):
+            resp = await client.post(path, json=body)
+            assert resp.status_code == 422, (path, resp.text)
+            assert resp.json()["code"] != "model_check_failed"
+            assert "judge.base_url is not a valid URL" in resp.text
+        assert probed == []
+
+
+class TestApprovedDestinations:
+    """A private endpoint (the test hosts resolve to 10.0.0.1) must be operator-approved: the
+    platform sends it requests (the check from the server's network, the job from the compute
+    namespace). Public HTTPS needs no approval (see test_destinations.py)."""
+
+    @pytest.mark.asyncio
+    async def test_unapproved_literal_url_is_rejected_before_any_probe(
+        self, client, real_check, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(config_mod.settings, "approved_model_urls", [])
+        monkeypatch.setattr(config_mod.settings, "gateway_url", "")
+        probed: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            probed.append(str(request.url))
+            return httpx.Response(200, json=OPENAI_OK)
+
+        real_check(handler)
+        for path in ("/api/v1/jobs/eval/validate", "/api/v1/jobs/eval"):
+            resp = await client.post(path, json=EVAL_BODY)
+            assert resp.status_code == 422, (path, resp.text)
+            body = resp.json()
+            assert body["code"] == "model_check_failed"
+            assert "private address that an operator hasn't approved" in body["message"]
+            assert "AMORTIZED_APPROVED_MODEL_URLS" in body["message"]  # what to do about it
+        assert probed == []
+        assert await _job_count() == 0
+
+    @pytest.mark.asyncio
+    async def test_approved_prefix_and_gateway_are_allowed(
+        self, client, real_check, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(config_mod.settings, "approved_model_urls", ["http://judge:8000/v1"])
+        monkeypatch.setattr(config_mod.settings, "gateway_url", "http://tuned:8000/v1")
+        real_check(lambda _r: httpx.Response(200, json=OPENAI_OK))
+        resp = await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)
+        assert resp.status_code == 200, resp.text
+
+
+class TestUnverifiedProceeds:
+    UNVERIFIED_JUDGE = CheckResult(
+        "judge",
+        "gpt-judge",
+        "http://judge:8000/v1",
+        UNVERIFIED,
+        "checker_unavailable",
+        "model check service unreachable (ConnectError)",
+    )
+
+    @pytest.mark.asyncio
+    async def test_created_job_records_and_returns_the_warning(self, client, monkeypatch) -> None:
+        _stub_report(monkeypatch, CheckReport(results=[self.UNVERIFIED_JUDGE]))
+        resp = await client.post("/api/v1/jobs/eval", json=EVAL_BODY)
+        assert resp.status_code == 201
+        checks = resp.json()["model_checks"]
+        assert [(c["label"], c["outcome"], c["reason"]) for c in checks] == [
+            ("judge", "unverified", "checker_unavailable")
+        ]
+        detail = await client.get(f"/api/v1/jobs/{resp.json()['id']}")
+        assert detail.json()["model_checks"][0]["outcome"] == "unverified"  # survives a refresh
+
+    @pytest.mark.asyncio
+    async def test_validate_returns_the_warning_on_the_card(self, client, monkeypatch) -> None:
+        _stub_report(monkeypatch, CheckReport(results=[self.UNVERIFIED_JUDGE]))
+        resp = await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)
+        assert resp.status_code == 200
+        assert resp.json()["model_checks"][0]["reason"] == "checker_unavailable"
+
+
+class TestRetryIsAdmitted:
+    async def _failed_eval(self, client, body: dict[str, Any] | None = None) -> str:
+        resp = await client.post("/api/v1/jobs/eval", json=body or EVAL_BODY)
+        assert resp.status_code == 201, resp.text
+        job_id = resp.json()["id"]
+        import amortized.db.connection as db
+
+        async with db._pool.acquire() as conn:
+            await conn.execute("UPDATE jobs SET status = 'failed' WHERE id = $1", job_id)
+        return job_id
+
+    @pytest.mark.asyncio
+    async def test_retry_is_model_checked(self, client, monkeypatch) -> None:
+        job_id = await self._failed_eval(client)
+        dead = CheckResult("judge", "gpt-judge", "http://judge:8000/v1", FAILED, "unreachable")
+        seen = _stub_report(monkeypatch, CheckReport(results=[dead]))
+        resp = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "model_check_failed"
+        assert seen and seen[0]["job_type"] == "eval"
+
+
+class TestConnectionScoping:
+    @pytest.mark.asyncio
+    async def test_no_pool_connection_is_held_while_checking(self, client, monkeypatch) -> None:
+        from amortized.db.connection import get_pool
+
+        in_use: list[int] = []
+
+        async def fake(job_type: str, config: dict[str, Any]) -> CheckReport:
+            pool = get_pool()
+            in_use.append(pool.get_size() - pool.get_idle_size())
+            return CheckReport()
+
+        monkeypatch.setattr(job_admission, "check_job_models", fake)
+        assert (await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)).status_code == 200
+        assert (await client.post("/api/v1/jobs/eval", json=EVAL_BODY)).status_code == 201
+        assert in_use == [0, 0]
+
+    @pytest.mark.asyncio
+    async def _succeeded_training_job(self) -> str:
+        import amortized.db.connection as db
+        from amortized.db.repository import Repository
+
+        async with db._pool.acquire() as conn:
+            training = await create_job(
+                Repository(conn), job_type=JobType.training, config={"algorithm": "sft"}
+            )
+            # A run id too, so the eval's prechecks pass and admission really reaches the check.
+            await conn.execute(
+                "UPDATE jobs SET status = 'succeeded', mlflow_run_id = 'run-1' WHERE id = $1",
+                training["id"],
+            )
+        return str(training["id"])
+
+    def _flip_during_check(
+        self, monkeypatch: pytest.MonkeyPatch, job_id: str, report: CheckReport
+    ) -> list[int]:
+        import amortized.db.connection as db
+
+        calls: list[int] = []
+
+        async def flip_upstream(job_type: str, config: dict[str, Any]) -> CheckReport:
+            calls.append(1)  # the upstream job changes state while the check runs
+            async with db._pool.acquire() as conn:
+                await conn.execute("UPDATE jobs SET status = 'failed' WHERE id = $1", job_id)
+            return report
+
+        monkeypatch.setattr(job_admission, "check_job_models", flip_upstream)
+        return calls
+
+    @pytest.mark.asyncio
+    async def test_prechecks_rerun_after_the_check(self, client, monkeypatch) -> None:
+        training_id = await self._succeeded_training_job()
+        ok = CheckResult("judge", "gpt-judge", "http://judge:8000/v1", "passed", "ok")
+        calls = self._flip_during_check(monkeypatch, training_id, CheckReport(results=[ok]))
+        body = {**EVAL_BODY, "training_job_id": training_id}
+        resp = await client.post("/api/v1/jobs/eval", json=body)
+        assert calls == [1]  # admission got as far as the check
+        assert resp.status_code == 422, resp.text
+        assert await _job_count() == 1  # only the training job; the eval was not created
+
+    @pytest.mark.asyncio
+    async def test_dependencies_are_rechecked_at_insert_even_with_nothing_probed(
+        self, client, monkeypatch
+    ) -> None:
+        # Nothing probed (e.g. a classification eval), so the full prechecks don't re-run — the
+        # locked dependency check at insert still catches the upstream job's change.
+        training_id = await self._succeeded_training_job()
+        calls = self._flip_during_check(monkeypatch, training_id, CheckReport())
+        body = {**EVAL_BODY, "training_job_id": training_id}
+        resp = await client.post("/api/v1/jobs/eval", json=body)
+        assert calls == [1]
+        assert resp.status_code == 422, resp.text
+        assert "training_job_id" in resp.text
+        assert await _job_count() == 1
+
+
+class TestValidateEvalOrder:
+    @pytest.mark.asyncio
+    async def test_decision_warnings_are_read_after_the_check(self, client, monkeypatch) -> None:
+        # Another eval created while the check runs must be reflected in the drift warning.
+        from amortized.api import jobs as jobs_api
+
+        order: list[str] = []
+
+        async def check(job_type: str, config: dict[str, Any]) -> CheckReport:
+            order.append("check")
+            return CheckReport()
+
+        async def drift(*_a: Any) -> list[str]:
+            order.append("drift")
+            return []
+
+        monkeypatch.setattr(job_admission, "check_job_models", check)
+        monkeypatch.setattr(jobs_api, "_rubric_drift_warning", drift)
+        resp = await client.post("/api/v1/jobs/eval/validate", json=EVAL_BODY)
+        assert resp.status_code == 200, resp.text
+        assert order == ["check", "drift"]
+
+
+class TestAdmissionOrder:
+    @pytest.mark.asyncio
+    async def test_gpu_budget_uses_the_config_the_prechecks_normalized(
+        self, client, monkeypatch
+    ) -> None:
+        # An eval of a CPU classifier: until the prechecks stamp eval_mode, it looks like an
+        # embedded-serving eval (1 GPU) and a zero-GPU deployment would wrongly reject it.
+        monkeypatch.setattr(core_jobs._settings, "gpu_budget", 0)  # the object core.jobs reads
+
+        async def stamp(_repo):  # type: ignore[no-untyped-def]
+            config["eval_mode"] = "classification"
+            return []
+
+        config: dict[str, Any] = {"training_job_id": "t-classifier"}
+        row, _ = await job_admission.admit_job(JobType.eval, config, prechecks=stamp)
+        assert row["status"] == "queued"
+
+    @pytest.mark.asyncio
+    async def test_over_budget_is_rejected_before_any_probe(self, client, monkeypatch) -> None:
+        monkeypatch.setattr(core_jobs._settings, "gpu_budget", 0)  # the object core.jobs reads
+        seen = _stub_report(monkeypatch, CheckReport())
+        with pytest.raises(job_admission.HTTPException) as exc:
+            await job_admission.admit_job(
+                JobType.eval, {"training_job_id": "t"}, prechecks=_no_errors
+            )
+        assert exc.value.status_code == 422
+        assert seen == []
+
+    @pytest.mark.asyncio
+    async def test_prechecks_run_once_when_nothing_was_probed(self, client) -> None:
+        # Training has no endpoints to probe; its prechecks download the dataset from MLflow,
+        # so they must not run a second time for nothing.
+        calls: list[int] = []
+
+        async def counting(_repo):  # type: ignore[no-untyped-def]
+            calls.append(1)
+            return []
+
+        await job_admission.admit_job(JobType.training, {"algorithm": "sft"}, prechecks=counting)
+        assert len(calls) == 1
+
+
+async def _no_errors(_repo: Any) -> list[str]:
+    return []
+
+
+@pytest.mark.asyncio
+async def test_create_job_refuses_hook_types_outside_admission() -> None:
+    with pytest.raises(InvalidJobStateError, match="job admission"):
+        await create_job(object(), job_type=JobType.eval, config={})  # type: ignore[arg-type]

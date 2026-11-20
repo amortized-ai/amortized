@@ -44,6 +44,7 @@ class Repository:
         k8s_namespace: str = "",
         request_config: dict[str, Any] | None = None,
         retry_of: str = "",
+        model_check_report: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         # request_config is the pre-dispatch snapshot the worker never
         # touches (it overwrites jobs.config with resolved/injected
@@ -52,8 +53,9 @@ class Repository:
         await self.conn.execute(
             """INSERT INTO jobs
                (id, type, status, config, recipe, parent_job_id, user_id,
-                created_at, k8s_namespace, request_config, retry_of)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11)""",
+                created_at, k8s_namespace, request_config, retry_of, model_check_report)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11,
+                       $12::jsonb)""",
             job_id,
             job_type.value,
             JobStatus.queued.value,
@@ -65,6 +67,7 @@ class Repository:
             k8s_namespace,
             json.dumps(snapshot),
             retry_of,
+            json.dumps(model_check_report or []),
         )
         result = await self.get_job(job_id)
         assert result is not None
@@ -357,6 +360,11 @@ class Repository:
 def _row_to_job(row: Any) -> dict[str, Any]:
     d = dict(row)
     d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
+    # Exposed as `model_checks` (the Job field); absent on a DB not yet migrated to 0005.
+    report = d.pop("model_check_report", None)
+    if isinstance(report, str):
+        report = json.loads(report)
+    d["model_checks"] = report if isinstance(report, list) else []
     if d.get("error") in ("", "None"):
         d["error"] = None
     for ts_field in ("created_at", "started_at", "completed_at"):

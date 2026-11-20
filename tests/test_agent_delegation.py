@@ -914,3 +914,285 @@ class TestDelegationStallCheck:
         assert redrive and "request_orchestrator_help" in redrive[0]
         fetched = _run(agent._fetch_all_assistant_parts(eval_id))
         assert any(agent._tool_name(p) == "request_orchestrator_help" for p in fetched)
+
+
+class TestConfirmationBlocked:
+    """A confirmed card whose creation was rejected (the model check, or any other check at
+    Confirm time): no job exists, so no job_complete will come. The studio sends a
+    confirmation_blocked event; the proxy steers the owner of the job type to help resolve it
+    and re-validate."""
+
+    FAILURE = (
+        "Eval submission was rejected before a job was created. judge model 'gpt-oss' at"
+        " 'http://gw/v1' did not answer a test request (unreachable: connection refused)"
+    )
+
+    def test_active_subagent_gets_the_steer_on_the_system_channel(self, router: _Router) -> None:
+        state = _make_state(router)
+        sub = router.add_session([[_text_part("The judge endpoint is down — let's fix it.")]])
+        state.subagent_id = sub
+        state.subagent_target = "eval"
+
+        _run(agent._handle_subagent_message(
+            state, "s1", self.FAILURE,
+            _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval"),
+        ))
+
+        (session, text, agent_name, system) = router.sent[-1]
+        assert session == sub and agent_name == "eval"
+        assert text == self.FAILURE  # the user part carries only the sanitized failure
+        assert system is not None
+        assert "NOT created" in system and "validate_eval_job" in system
+        assert state.subagent_id == sub  # still owns the fix
+
+    def test_without_a_subagent_the_orchestrator_delegates_with_resume(
+        self, router: _Router
+    ) -> None:
+        state = _make_state(
+            router,
+            orchestrator_script=[[
+                _tool_part("delegate_to_subagent",
+                           {"target": "eval", "context": "judge unreachable", "resume": True})
+            ]],
+        )
+        eval_session = router.queue_session([[_text_part("Let's pick a working judge.")]])
+
+        _run(agent._handle_orchestrator_message(
+            state, "s1", self.FAILURE,
+            _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval"),
+        ))
+
+        orch_send = router.sent[0]
+        assert orch_send[0] == state.orchestrator_id
+        assert orch_send[3] is not None and "delegate_to_subagent" in orch_send[3]
+        assert 'target "eval"' in orch_send[3] and "resume: true" in orch_send[3]
+        assert state.subagent_target == "eval" and state.subagent_id == eval_session
+
+    def test_notice_for_another_workflow_parks_the_active_one(self, router: _Router) -> None:
+        # The user moved on to SDG before retrying an eval notice: the SDG subagent must not get
+        # the eval repair prompt. It is parked (resumable) and the orchestrator hands the notice
+        # to eval.
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "eval", "context": "judge unreachable", "resume": True},
+                    )
+                ]
+            ],
+        )
+        sdg = router.add_session([[_text_part("unused")]])
+        state.subagent_id = sdg
+        state.subagent_target = "sdg"
+        state.last_signal_step = "teacher-model"
+        eval_session = router.queue_session([[_text_part("Let's pick a working judge.")]])
+        body = _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval")
+
+        agent._park_subagent_for_other_blocked_job(state, body)
+        assert state.subagent_id is None
+        assert state.completed_subagents["sdg"] == sdg  # resumable later
+        assert state.completed_last_step["sdg"] == "teacher-model"
+
+        _run(agent._handle_orchestrator_message(state, "s1", self.FAILURE, body))
+        assert all(s[0] != sdg for s in router.sent)  # SDG never saw the eval notice
+        assert state.subagent_target == "eval" and state.subagent_id == eval_session
+
+    def test_notice_for_the_active_workflow_stays_with_it(self, router: _Router) -> None:
+        state = _make_state(router)
+        state.subagent_id = "eval-sub"
+        state.subagent_target = "eval"
+        body = _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval")
+        agent._park_subagent_for_other_blocked_job(state, body)
+        assert state.subagent_id == "eval-sub" and "eval" not in state.completed_subagents
+
+    def test_unknown_job_type_gets_no_blocked_steer(self, router: _Router) -> None:
+        state = _make_state(router, orchestrator_script=[[_text_part("ok")]])
+        _run(agent._handle_orchestrator_message(
+            state, "s1", "x", _body(text="x", event="confirmation_blocked", job_type="serve"),
+        ))
+        assert router.sent[0][3] is None
+
+    def test_blocked_turn_is_not_re_driven_by_the_stall_nudge(self, router: _Router) -> None:
+        # A prose reply (explain + ask) is the right response; it must not be nudged toward an
+        # "owed" edge such as re-validating before the user fixed anything.
+        state = _make_state(router)
+        sub = router.add_session(
+            [[_text_part("The judge is unreachable. Which judge should we use?")]]
+        )
+        state.subagent_id = sub
+        state.subagent_target = "eval"
+        _run(agent._handle_subagent_message(
+            state, "s1", self.FAILURE,
+            _body(text=self.FAILURE, event="confirmation_blocked", job_type="eval"),
+        ))
+        assert [s for s in router.sent if s[0] == sub] == router.sent[-1:]  # exactly one send
+
+
+class TestEventIdempotency:
+    """A resent system event (same event_id) returns the turn it already started, so a lost POST
+    response can't make Morty process a blocked confirmation twice."""
+
+    @pytest.fixture
+    def session(self, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+        started: list[str] = []
+
+        async def fake_run_turn(state, session_id, turn_id, user_text, body):  # type: ignore[no-untyped-def]
+            started.append(turn_id)
+
+        monkeypatch.setattr(agent, "_run_turn", fake_run_turn)
+        state = agent.SessionState(orchestrator_id="orch")
+        agent._sessions["s-idem"] = state
+        yield state, started
+        agent._sessions.pop("s-idem", None)
+
+    def _send(self, event_id: str | None) -> dict[str, Any]:
+        import asyncio
+
+        body = agent.MessageRequest(
+            parts=[agent.MessagePart(type="text", text="blocked")],
+            event="confirmation_blocked",
+            job_type="eval",
+            event_id=event_id,
+        )
+
+        async def go() -> dict[str, Any]:
+            result = await agent.send_message("s-idem", body)
+            await asyncio.sleep(0)  # let the background turn task start
+            return result
+
+        return asyncio.new_event_loop().run_until_complete(go())
+
+    def test_resend_while_running_or_done_returns_the_same_turn(self, session) -> None:
+        state, _ = session
+        first = self._send("confirmation_blocked:m1")
+        again = self._send("confirmation_blocked:m1")
+        assert again["turn_id"] == first["turn_id"]
+        assert len(state.turns) == 1
+
+        turn = state.turns[first["turn_id"]]
+        turn.active = False  # finished successfully, recording its reply
+        reply = [{"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "fixed"}]}]
+        agent._record_completed_event(state, "confirmation_blocked:m1", reply)
+        done = self._send("confirmation_blocked:m1")
+        assert done == {
+            "turn_id": first["turn_id"],
+            "status": "done",
+            "replayed": True,
+            "messages": reply,  # the event's own reply, for a client that never got it
+        }
+        assert len(state.turns) == 1
+
+    def test_a_delivered_event_stays_deduplicated_after_its_turn_is_evicted(self, session) -> None:
+        # The turn cache drops finished turns; a Retry long after delivery must still not run
+        # the event again.
+        state, started = session
+        first = self._send("confirmation_blocked:m3")
+        agent._record_completed_event(state, "confirmation_blocked:m3")  # the turn succeeded
+        state.turns.pop(first["turn_id"])
+        state.event_turns.pop("confirmation_blocked:m3")
+
+        again = self._send("confirmation_blocked:m3")
+        assert again == {"turn_id": None, "status": "done", "replayed": True, "messages": None}
+        assert len(started) == 1
+
+    def test_turn_messages_are_the_ones_after_the_events_own_user_message(
+        self, session, monkeypatch
+    ) -> None:
+        import asyncio
+
+        state, _ = session
+        history = [
+            {"info": {"role": "user"}, "parts": [{"type": "text", "text": "earlier"}]},
+            {"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "earlier reply"}]},
+            {"info": {"role": "user"}, "parts": [{"type": "text", "text": "blocked"}]},
+            {"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "let's fix it"}]},
+        ]
+
+        async def fake_get(_session_id):  # type: ignore[no-untyped-def]
+            return history
+
+        monkeypatch.setattr(agent, "get_session_messages", fake_get)
+        reply = asyncio.new_event_loop().run_until_complete(agent._turn_messages(state, "s-idem"))
+        assert reply == history[3:]
+
+    def test_an_oversized_reply_is_returned_but_not_kept(self, session, monkeypatch) -> None:
+        # The turn's own result always carries its reply; only a later resend's copy is capped.
+        import asyncio
+
+        state, _ = session
+        big = [{"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "x" * 300_000}]}]
+
+        async def fake_get(_session_id):  # type: ignore[no-untyped-def]
+            return [{"info": {"role": "user"}, "parts": []}, *big]
+
+        monkeypatch.setattr(agent, "get_session_messages", fake_get)
+        reply = asyncio.new_event_loop().run_until_complete(agent._turn_messages(state, "s"))
+        assert reply == big
+        assert agent._fits_retention(big) is False
+
+    def test_completed_events_are_bounded(self, session) -> None:
+        state, _ = session
+        for i in range(agent.MAX_COMPLETED_EVENTS + 5):
+            agent._record_completed_event(state, f"e{i}")
+        assert len(state.completed_events) == agent.MAX_COMPLETED_EVENTS
+        assert "e0" not in state.completed_events  # oldest dropped first
+
+    def test_a_failed_turn_can_run_again(self, session) -> None:
+        state, _ = session
+        first = self._send("confirmation_blocked:m2")
+        turn = state.turns[first["turn_id"]]
+        turn.active = False
+        turn.error = "provider error"
+        retry = self._send("confirmation_blocked:m2")
+        assert retry["turn_id"] != first["turn_id"]
+        assert len(state.turns) == 2
+
+    def test_distinct_or_missing_event_ids_are_separate_turns(self, session) -> None:
+        state, _ = session
+        self._send("confirmation_blocked:a")
+        self._send("confirmation_blocked:b")
+        self._send(None)
+        self._send(None)
+        assert len(state.turns) == 4
+
+
+def test_an_event_turn_result_carries_its_own_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The first send's poll returns them, so the client never renders the session's latest
+    # messages for an event turn; the same reply is kept for a resend.
+    import asyncio
+
+    history = [
+        {"info": {"role": "user"}, "parts": [{"type": "text", "text": "blocked"}]},
+        {"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "let's fix it"}]},
+    ]
+
+    async def orchestrator(state, session_id, user_text, body):  # type: ignore[no-untyped-def]
+        return {"parts": []}
+
+    async def no_parts(_session_id):  # type: ignore[no-untyped-def]
+        return []
+
+    async def messages(_session_id):  # type: ignore[no-untyped-def]
+        return history
+
+    monkeypatch.setattr(agent, "_handle_orchestrator_message", orchestrator)
+    monkeypatch.setattr(agent, "_fetch_all_assistant_parts", no_parts)
+    monkeypatch.setattr(agent, "_ensure_phase_signal", lambda _state, result: result)
+    monkeypatch.setattr(agent, "get_session_messages", messages)
+
+    state = agent.SessionState(orchestrator_id="orch")
+    state.turns["t1"] = agent.TurnState()
+    body = agent.MessageRequest(
+        parts=[agent.MessagePart(type="text", text="blocked")],
+        event="confirmation_blocked",
+        job_type="eval",
+        event_id="confirmation_blocked:m9",
+    )
+    asyncio.new_event_loop().run_until_complete(agent._run_turn(state, "s", "t1", "blocked", body))
+
+    turn = state.turns["t1"]
+    assert turn.error is None
+    assert turn.result is not None and turn.result["event_messages"] == history[1:]
+    assert state.completed_events["confirmation_blocked:m9"] == history[1:]
