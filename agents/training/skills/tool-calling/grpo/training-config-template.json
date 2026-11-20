@@ -15,7 +15,6 @@
     "lora_r": 32,
     "lora_alpha": 64,
     "gpu_memory_utilization": 0.4,
-    "language_model_only": true,
     "nproc_per_node": 1,
     "output_dir": ""
   },

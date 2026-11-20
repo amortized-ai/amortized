@@ -61,8 +61,8 @@ Ask the user, one question per message:
    of instruct models with tool-calling support, sized for GRPO. **Recommend the
    `default` entry first** and present the options with their sizes and descriptions;
    never auto-select. Start at ≤4B — RL on top of a model that already gets some calls
-   right learns fastest. No VRAM comparison card. Set `language_model_only: true` for
-   entries that carry it (Qwen3.5).
+   right learns fastest. No VRAM comparison card. Multimodal checkpoints such as Qwen3.5
+   are handled automatically: the job detects them and sets `language_model_only`.
 
    **If the user wants a model that is NOT in the list**, follow this flow:
 
@@ -131,7 +131,6 @@ starting point:
   "lora_r": 32,
   "lora_alpha": 64,
   "gpu_memory_utilization": 0.4,
-  "language_model_only": true,
   "nproc_per_node": 1,
   "parent_job_id": "<SDG_JOB_ID>",
   "topic": "<1-5 word topic>"
@@ -163,7 +162,7 @@ choice, and GPU count.
 | `n_train` | Cap on training samples (default 5000). Raise it to use a larger dataset fully |
 | `nproc_per_node` | From step 2; rollout and training share the GPUs |
 | `gpu_memory_utilization` | GPU fraction for the vLLM rollout engine (0.4). Lower it on out-of-memory |
-| `language_model_only` | `true` for Qwen3.5 models (vLLM loads only the text model) |
+| `language_model_only` | Leave unset: the job sets it automatically for multimodal checkpoints (e.g. Qwen3.5) so vLLM loads only the text model. Set `false` only to override |
 | `topic` | **Required.** 1–5 word description of what the model does (e.g. "calendar tool calling"). Infer it from the task if not stated |
 
 Only state a value to the user if it is set in the config (the workflow's Phase 3 rule),

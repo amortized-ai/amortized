@@ -300,7 +300,20 @@ async def build(
             resume_parent, resume_run_id
         )
     thub_subcommand = algorithm.replace("_", "-")
-    cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
+    thub_config_path = "/amortized/config.yaml"
+    if algorithm in _GRPO_ALGORITHMS:
+        # Multimodal checkpoints (e.g. Qwen3.5) need language_model_only for the vLLM rollouts;
+        # detect it in the pod from the model's HF config, as OSFT's mini_trainer does. The
+        # mounted config is read-only, so thub reads the patched copy.
+        assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+        with open(os.path.join(assets_dir, "grpo_language_model_only.py")) as f:
+            config_files["grpo_language_model_only.py"] = f.read()
+        thub_config_path = "/amortized/work/config.yaml"
+        model_pre_commands.append(
+            "python3 /amortized/grpo_language_model_only.py"
+            f" /amortized/config.yaml {thub_config_path}"
+        )
+    cmd = ["thub", thub_subcommand, "--config", thub_config_path]
 
     output_dir = config.get("output_dir", "/amortized/work/output")
     post_cmd = (

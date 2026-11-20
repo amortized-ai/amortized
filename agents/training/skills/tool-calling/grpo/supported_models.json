@@ -27,14 +27,12 @@
     "id": "Qwen/Qwen3.5-0.8B",
     "family": "qwen3.5",
     "size": "0.8B",
-    "language_model_only": true,
     "description": "Fastest Qwen3.5, good for prototyping"
   },
   {
     "id": "Qwen/Qwen3.5-2B",
     "family": "qwen3.5",
     "size": "2B",
-    "language_model_only": true,
     "default": true,
     "description": "Small but capable, recommended default (lora_grpo fits one 80 GB GPU)"
   },
@@ -42,14 +40,12 @@
     "id": "Qwen/Qwen3.5-4B",
     "family": "qwen3.5",
     "size": "4B",
-    "language_model_only": true,
     "description": "Better on multi-argument and multi-tool calls"
   },
   {
     "id": "Qwen/Qwen3.5-9B",
     "family": "qwen3.5",
     "size": "9B",
-    "language_model_only": true,
     "description": "Best accuracy in this list; plan for 2+ GPUs"
   }
 ]

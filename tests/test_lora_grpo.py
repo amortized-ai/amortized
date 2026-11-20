@@ -19,11 +19,16 @@ from amortized.jobs import training as training_builder
 from amortized.jobs.training import _training_hub_config_yaml
 from amortized.models import TrainingJobRequest
 
-ASSET = Path(amortized.jobs.__file__).parent / "assets" / "prepare_grpo_data.py"
+ASSETS = Path(amortized.jobs.__file__).parent / "assets"
+ASSET = ASSETS / "prepare_grpo_data.py"
+_LMO_CMD = (
+    "python3 /amortized/grpo_language_model_only.py"
+    " /amortized/config.yaml /amortized/work/config.yaml"
+)
 
 
-def _asset() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("prepare_grpo_data", ASSET)
+def _asset(path: Path = ASSET) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -129,10 +134,11 @@ class TestGRPOBuild:
         }
         files: dict[str, str] = {}
         result = await training_builder.build({"id": "g1", "type": "training"}, config, files)
-        assert result.command == ["thub", "lora-grpo", "--config", "/amortized/config.yaml"]
+        assert result.command == ["thub", "lora-grpo", "--config", "/amortized/work/config.yaml"]
         assert result.resources.gpus == 2
         assert "prepare_grpo_data.py" in files
-        assert result.pre_commands[-1] == (
+        assert result.pre_commands[-1] == _LMO_CMD
+        assert result.pre_commands[-2] == (
             "python3 /amortized/prepare_grpo_data.py math /amortized/work/data/generated_data"
             " /amortized/work/grpo_data.jsonl '' category"
         )
@@ -173,7 +179,7 @@ class TestGRPOBuild:
         files: dict[str, str] = {}
         result = await training_builder.build({"id": "g2", "type": "training"}, config, files)
         assert "prepare_grpo_data.py" in files
-        assert result.pre_commands[-1].startswith(
+        assert result.pre_commands[-2].startswith(
             "python3 /amortized/prepare_grpo_data.py math org/ds "
         )
         parsed = yaml.safe_load(files["config.yaml"])
@@ -192,7 +198,7 @@ class TestGRPOBuild:
         result = await training_builder.build({"id": "g4", "type": "training"}, config, files)
         assert "prepare_grpo_data.py" not in files
         assert yaml.safe_load(files["config.yaml"])["data_path"] == "org/ds"
-        assert not result.pre_commands
+        assert result.pre_commands == [_LMO_CMD]
 
 
 class TestPrepareGRPOData:
@@ -356,7 +362,7 @@ class TestDemoPayload:
         assert parsed["num_iterations"] == 1
         assert parsed["n_train"] == 512
         assert parsed["language_model_only"] is True
-        assert "HuggingFaceH4/MATH-500" in result.pre_commands[-1]
+        assert "HuggingFaceH4/MATH-500" in result.pre_commands[-2]
         assert result.resources.gpus == 1
 
 
@@ -403,7 +409,7 @@ class TestFullGRPO:
         }
         files: dict[str, str] = {}
         result = await training_builder.build({"id": "f1", "type": "training"}, config, files)
-        assert result.command == ["thub", "grpo", "--config", "/amortized/config.yaml"]
+        assert result.command == ["thub", "grpo", "--config", "/amortized/work/config.yaml"]
         assert result.resources.gpus == 2
         assert "prepare_grpo_data.py" in files
         assert yaml.safe_load(files["config.yaml"])["data_path"] == (
@@ -455,3 +461,98 @@ class TestFullGRPO:
             monkeypatch, {"messages": []}, {"algorithm": "grpo"}
         )
         assert errors and errors[0].startswith("training data: grpo needs")
+
+
+class TestGRPOLanguageModelOnly:
+    """Multimodal checkpoints (e.g. Qwen3.5) get language_model_only, detected in the pod."""
+
+    @staticmethod
+    def _fake_transformers(monkeypatch: pytest.MonkeyPatch, model_config: object) -> None:
+        import sys
+        from types import SimpleNamespace
+
+        class LlamaConfig:
+            pass
+
+        class Qwen35TextConfig:
+            pass
+
+        class Qwen35Config:
+            text_config = Qwen35TextConfig()
+
+        class Gemma3Config:
+            text_config = Qwen35TextConfig()
+
+        class Qwen3VLConfig:
+            pass
+
+        def causal(name: str) -> type:
+            return type(name, (), {})
+
+        mapping = {
+            LlamaConfig: causal("LlamaForCausalLM"),
+            Qwen35TextConfig: causal("Qwen3_5ForCausalLM"),
+            Gemma3Config: causal("Gemma3ForConditionalGeneration"),
+        }
+        image_text = {Qwen3VLConfig: causal("Qwen3VLForConditionalGeneration")}
+        configs = {
+            "llama": LlamaConfig(),
+            "qwen3.5": Qwen35Config(),
+            "gemma3": Gemma3Config(),
+            "qwen3-vl": Qwen3VLConfig(),
+        }
+        auto = SimpleNamespace(
+            MODEL_FOR_CAUSAL_LM_MAPPING=mapping,
+            MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING=image_text,
+        )
+        fake = SimpleNamespace(
+            AutoConfig=SimpleNamespace(
+                from_pretrained=lambda path, **_kw: configs[str(model_config or path)]
+            ),
+            models=SimpleNamespace(auto=auto),
+        )
+        monkeypatch.setitem(sys.modules, "transformers", fake)
+        monkeypatch.setitem(sys.modules, "transformers.models", fake.models)
+        monkeypatch.setitem(sys.modules, "transformers.models.auto", auto)
+
+    def _patched(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str, **extra: Any
+    ) -> dict[str, Any]:
+        self._fake_transformers(monkeypatch, None)
+        src, dst = tmp_path / "in.yaml", tmp_path / "out.yaml"
+        src.write_text(yaml.safe_dump({"model_path": model, "reward_type": "math", **extra}))
+        _asset(ASSETS / "grpo_language_model_only.py").patch(str(src), str(dst))
+        return dict(yaml.safe_load(dst.read_text()))
+
+    @pytest.mark.parametrize("model", ["qwen3.5", "gemma3", "qwen3-vl"])
+    def test_multimodal_gets_flag(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str
+    ) -> None:
+        patched = self._patched(tmp_path, monkeypatch, model)
+        assert patched["language_model_only"] is True
+        assert patched["reward_type"] == "math"
+
+    def test_text_model_unchanged(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert "language_model_only" not in self._patched(tmp_path, monkeypatch, "llama")
+
+    def test_explicit_value_kept(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        patched = self._patched(tmp_path, monkeypatch, "qwen3.5", language_model_only=False)
+        assert patched["language_model_only"] is False
+
+    @pytest.mark.asyncio
+    async def test_build_ships_asset_for_both_algorithms(self) -> None:
+        for algorithm in ("lora_grpo", "grpo"):
+            config = {"algorithm": algorithm, "model_name_or_path": "Qwen/Qwen3.5-2B"}
+            files: dict[str, str] = {}
+            result = await training_builder.build({"id": "l1", "type": "training"}, config, files)
+            assert "grpo_language_model_only.py" in files
+            assert result.pre_commands[-1] == _LMO_CMD
+            assert result.command[-1] == "/amortized/work/config.yaml"
+
+    @pytest.mark.asyncio
+    async def test_other_algorithms_untouched(self) -> None:
+        config = {"algorithm": "lora_sft", "model_name_or_path": "Qwen/Qwen3.5-2B"}
+        files: dict[str, str] = {}
+        result = await training_builder.build({"id": "l2", "type": "training"}, config, files)
+        assert "grpo_language_model_only.py" not in files
+        assert result.command[-1] == "/amortized/config.yaml"
