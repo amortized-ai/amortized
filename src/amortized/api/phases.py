@@ -515,6 +515,41 @@ def signal_is_known(role: str, step: str, skill: str | None = None) -> bool:
     return bool(skill) and any(slug == target for slug, _ in _skill_steps(skill))
 
 
+def signal_step_error(role: str, step: str) -> str | None:
+    """The `signal_phase` tool's own check: None when `signal_is_known` would accept `step` for
+    `role` with SOME skill loaded, else the 422 message listing the valid slugs, so the agent can
+    correct the call in the same turn.
+
+    The tool call carries no session, so it can't see which skill is loaded: a step of another
+    skill of the same role passes here and the proxy still treats it as a skipped signal. With no
+    workflow sections to check against (no `agents/` tree) every step passes."""
+    sections = tuple(slug for slug, _ in _sections(role))
+    if not sections:
+        return None
+    skills = tuple(
+        (name, steps)
+        for name, (agent, _reldir) in sorted(_skill_index().items())
+        if agent == role and (steps := tuple(slug for slug, _ in _skill_steps(name)))
+    )
+    if signal_is_known(role, step) or any(
+        signal_is_known(role, step, skill=name) for name, _ in skills
+    ):
+        return None
+    got = f'"{step}"' if step.strip() else "an empty step"
+    if skills:
+        per_skill = "; ".join(f"{name}: {', '.join(steps)}" for name, steps in skills)
+        valid = (
+            f"a workflow phase ({', '.join(sections)}) or, while gathering, the current step of "
+            f"your loaded skill ({per_skill})"
+        )
+    else:
+        valid = f"the slug of the workflow section you are in ({', '.join(sections)})"
+    return (
+        f'signal_phase got {got} for phase "{role}", which is not a step slug. Send {valid}. '
+        "Call signal_phase again with one of these."
+    )
+
+
 def owed_for(
     role: str,
     phase_step: str,

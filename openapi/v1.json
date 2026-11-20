@@ -6448,19 +6448,24 @@
         "properties": {
           "phase": {
             "type": "string",
+            "enum": [
+              "sdg",
+              "training",
+              "eval"
+            ],
             "title": "Phase",
             "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows, 'eval' for model evaluation workflows"
           },
           "step": {
             "type": "string",
             "title": "Step",
-            "description": "Slug of the step you are in now, as shown in its heading in your workflow (or in your loaded skill's `### Step` headings). Send it on every response, including when it is the same step as your previous response.",
-            "default": ""
+            "description": "Slug of the step you are in now, as shown in its heading in your workflow (or in your loaded skill's `### Step` headings). Send it on every response, including when it is the same step as your previous response."
           }
         },
         "type": "object",
         "required": [
-          "phase"
+          "phase",
+          "step"
         ],
         "title": "SignalPhaseRequest"
       },

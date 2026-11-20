@@ -9,9 +9,10 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from amortized.api.phases import signal_step_error
 from amortized.core.placeholders import PROMPT_ID_PREFIX, make_prompt_ref
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
@@ -344,7 +345,7 @@ async def show_vram_estimate(body: ShowVRAMEstimateRequest) -> ShowVRAMEstimateR
 
 
 class SignalPhaseRequest(BaseModel):
-    phase: str = Field(
+    phase: Literal["sdg", "training", "eval"] = Field(
         ...,
         description=(
             "Current workflow phase: 'sdg' for data generation workflows, "
@@ -353,7 +354,7 @@ class SignalPhaseRequest(BaseModel):
         ),
     )
     step: str = Field(
-        "",
+        ...,
         description=(
             "Slug of the step you are in now, as shown in its heading in your workflow "
             "(or in your loaded skill's `### Step` headings). Send it on every response, "
@@ -380,6 +381,9 @@ class SignalPhaseResponse(BaseModel):
     ),
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
+    error = signal_step_error(body.phase, body.step)
+    if error:
+        raise HTTPException(status_code=422, detail=error)
     return SignalPhaseResponse(phase=body.phase, step=body.step)
 
 
