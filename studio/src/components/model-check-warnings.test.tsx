@@ -21,6 +21,14 @@ describe("ModelCheckWarnings", () => {
     ).toBeInTheDocument()
   })
 
+  it.each([
+    ["dns_unresolved", "its host name didn't resolve from the server (the job runs elsewhere and may still reach it)"],
+    ["some_new_reason", "the check couldn't complete"],
+  ])("describes %s in words, never as a reason code", (reason, why) => {
+    render(<ModelCheckWarnings checks={[check({ reason })]} />)
+    expect(screen.getByText(`Judge gpt-oss not verified: ${why}.`)).toBeInTheDocument()
+  })
+
   it("renders only unverified results, one row each (even with a repeated label and model)", () => {
     render(
       <ModelCheckWarnings

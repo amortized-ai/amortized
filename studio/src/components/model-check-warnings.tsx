@@ -8,6 +8,7 @@ const REASONS: Record<string, string> = {
   deadline: "it didn't answer in time (a cold endpoint may still serve the job)",
   server_error: "the endpoint returned server errors",
   unreachable: "it couldn't be reached from the server (the job runs elsewhere and may still reach it)",
+  dns_unresolved: "its host name didn't resolve from the server (the job runs elsewhere and may still reach it)",
   checker_unavailable: "the model check service was unavailable",
   checker_busy: "too many model checks were running",
   budget_exhausted: "the check ran out of time",
@@ -16,7 +17,7 @@ const REASONS: Record<string, string> = {
 
 function describe(check: ModelCheckResult): string {
   const label = check.label.charAt(0).toUpperCase() + check.label.slice(1)
-  const why = REASONS[check.reason] ?? check.reason.replaceAll("_", " ")
+  const why = REASONS[check.reason] ?? "the check couldn't complete"
   return `${label} ${check.model} not verified: ${why}.`
 }
 
