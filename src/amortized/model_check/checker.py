@@ -124,7 +124,7 @@ def _valid_shape(provider_type: str, data: Any) -> bool:
     # message: null and finish_reason: length. The model still answered.
     if isinstance(choice.get("message"), dict):
         return True
-    return choice.get("message") is None and bool(choice.get("finish_reason"))
+    return choice.get("message") is None and choice.get("finish_reason") == "length"
 
 
 def _status_text(resp: httpx.Response) -> str:

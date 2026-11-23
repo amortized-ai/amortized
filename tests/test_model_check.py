@@ -164,6 +164,8 @@ class TestOutcomes:
             httpx.Response(200, text="<html>login</html>"),
             httpx.Response(200, json={"choices": [{"text": "legacy"}]}),
             httpx.Response(200, json={"choices": [{"message": "hi", "finish_reason": "stop"}]}),
+            httpx.Response(200, json={"choices": [{"finish_reason": {"error": "unavailable"}}]}),
+            httpx.Response(200, json={"choices": [{"message": None, "finish_reason": "stop"}]}),
         ],
     )
     def test_malformed_2xx_is_bad_response(self, monkeypatch, seen, response) -> None:
