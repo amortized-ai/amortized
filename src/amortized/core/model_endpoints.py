@@ -107,11 +107,14 @@ def provider_endpoint(
 
 
 def approved_destinations() -> tuple[str, ...]:
-    """URL prefixes an operator has approved for private model services: the configured
-    ``approved_model_urls`` plus the operator's MLflow AI Gateway. Public HTTPS endpoints need
-    no approval; see model_check/destinations.py for the policy."""
+    """URL prefixes approved for private model services: ``approved_model_urls``, the MLflow AI
+    Gateway, and every configured provider's endpoint (e.g. MaaS on a private cluster). Public
+    HTTPS endpoints need no approval; see model_check/destinations.py for the policy."""
+    from amortized.core.model_catalog import enabled_provider_defs
+
     settings = config_mod.settings
-    return tuple(u for u in [*settings.approved_model_urls, settings.gateway_url] if u)
+    providers = [p.get("endpoint", "") for p in enabled_provider_defs()]
+    return tuple(u for u in [*settings.approved_model_urls, settings.gateway_url, *providers] if u)
 
 
 def dedup(endpoints: list[ModelEndpoint]) -> list[ModelEndpoint]:

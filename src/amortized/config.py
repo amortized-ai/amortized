@@ -73,7 +73,8 @@ class Settings(BaseSettings):
         description="URL prefixes of private model services (cluster or RFC 1918 addresses, or "
         "plain HTTP) the platform may send requests to, e.g. "
         "http://vllm.models.svc.cluster.local:8000/v1. Public HTTPS endpoints need no approval, "
-        "and the MLflow AI Gateway (gateway_url) is always approved; loopback, link-local and "
+        "and the MLflow AI Gateway (gateway_url) and configured providers' endpoints (e.g. "
+        "MaaS/EnMaaS) are always approved; loopback, link-local and "
         'cloud-metadata addresses are always refused. "*" approves any private service '
         "(development).",
     )

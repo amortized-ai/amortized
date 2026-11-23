@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 import amortized.config as config_mod
+from amortized.core import model_catalog
 from amortized.core import model_check_client as client
 from amortized.core.model_endpoints import FAILED, UNVERIFIED, ModelEndpoint
 from amortized.jobs import eval as eval_builder
@@ -193,6 +194,7 @@ class TestEnforcedAtAdmission:
         monkeypatch.setattr(config_mod.settings, "gateway_url", "")
         monkeypatch.setattr(config_mod.settings, "model_check_url", "")
         monkeypatch.setattr(eval_builder, "resolve_provider", lambda _n: None)
+        monkeypatch.setattr(model_catalog, "enabled_provider_defs", lambda: [])
 
     def _no_connection(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def refuse(*_a, **_k):  # type: ignore[no-untyped-def]
@@ -219,21 +221,37 @@ class TestEnforcedAtAdmission:
         assert "operator hasn't approved" in exc.value.message
         assert "AMORTIZED_APPROVED_MODEL_URLS" in exc.value.message
 
-    def test_a_resolved_provider_url_is_checked_too(self, monkeypatch) -> None:
-        # A BYOK provider (e.g. MaaS) resolves to a user-supplied URL: same policy.
+    def test_a_configured_providers_private_endpoint_is_approved(self, monkeypatch) -> None:
+        # E.g. MaaS on a private cluster: its configured endpoint is approved like the gateway.
         _resolving_to(monkeypatch, ["10.0.0.5"])
-        self._no_connection(monkeypatch)
         maas = {
             "name": "maas",
             "endpoint": "https://maas.internal.example/v1",
             "provider_type": "openai",
             "api_key": "MAAS_API_KEY",
         }
+        monkeypatch.setenv("MAAS_API_KEY", "sk-maas")
+        monkeypatch.setattr(model_catalog, "enabled_provider_defs", lambda: [maas])
         monkeypatch.setattr(
             eval_builder, "resolve_provider", lambda n: maas if n == "maas" else None
         )
+        real_client = httpx.AsyncClient
+        ok = {"choices": [{"message": {"role": "assistant", "content": "pong"}}]}
+        monkeypatch.setattr(
+            checker.httpx,
+            "AsyncClient",
+            lambda **kw: real_client(
+                **{**kw, "transport": httpx.MockTransport(lambda _r: httpx.Response(200, json=ok))}
+            ),
+        )
         config = {"model_name_or_path": "m", "judge": {"base_url": "maas", "model": "j"}}
         report = asyncio.run(client.check_job_models("eval", config))
+        assert report.config_errors == []
+        assert [r.outcome for r in report.results] == ["passed"]
+
+        # Approval covers that provider's endpoint, not other private services.
+        other = {"model_name_or_path": "m", "judge": dict(_ADMISSION_JUDGE)}
+        report = asyncio.run(client.check_job_models("eval", other))
         assert [e.reason for e in report.config_errors] == ["destination_denied"]
 
     def test_a_denial_does_not_depend_on_the_checker(self, monkeypatch) -> None:

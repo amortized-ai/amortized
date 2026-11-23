@@ -187,11 +187,11 @@ those addresses (TLS still verifies the original host name; no redirects):
 
 - public HTTPS endpoints (every resolved IPv4/IPv6 address public) are allowed;
 - private services (cluster, RFC 1918, or plain HTTP) need operator approval —
-  `server.approvedModelUrls` (URL prefixes; the MLflow AI Gateway is always approved);
+  `server.approvedModelUrls` (URL prefixes; the MLflow AI Gateway and configured providers'
+  endpoints, such as MaaS/EnMaaS, are always approved);
 - loopback, link-local and cloud-metadata addresses are always refused.
 
-This covers BYOK MaaS/EnMaaS URLs entered in Settings. Job pods' own connections (the eval
-runner, Data Designer) are not yet subject to the policy.
+Job pods' own connections (the eval runner, Data Designer) are not yet subject to the policy.
 
 **Standalone checker (opt-in).** By default the check runs in-process in the server.
 `modelCheck.enabled: true` deploys it as a separate service instead (independent scaling,

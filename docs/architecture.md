@@ -561,7 +561,7 @@ Environment variables, `AMORTIZED_` prefix, via pydantic-settings:
 | `AMORTIZED_API_KEY` | Bearer token; empty means no auth |
 | `AMORTIZED_CORS_ORIGINS` | Comma-separated origins |
 | `AMORTIZED_FORWARD_ENV` | Env var names to forward into job containers |
-| `AMORTIZED_APPROVED_MODEL_URLS` | JSON list of URL prefixes of private model services the platform may call (public HTTPS needs no approval; the gateway is always approved; loopback/link-local/metadata always refused; `"*"` approves any private service, for development) |
+| `AMORTIZED_APPROVED_MODEL_URLS` | JSON list of URL prefixes of private model services the platform may call (public HTTPS needs no approval; the gateway and configured providers' endpoints are always approved; loopback/link-local/metadata always refused; `"*"` approves any private service, for development) |
 | `AMORTIZED_MODEL_CHECK_URL` | Opt-in standalone model-check service (`https://` only; `{namespace}` = the server's own); empty runs the check in-process |
 | `AMORTIZED_MODEL_CHECK_CA_BUNDLE` | CA bundle that verifies the model-check service's TLS certificate |
 | `AMORTIZED_RECIPES_DIR` | Override the recipes directory |
