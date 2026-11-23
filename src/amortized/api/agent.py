@@ -1040,8 +1040,8 @@ _STALL_NUDGE_INTRO = "[WORKFLOW STALL] Your last turn did not advance the workfl
 
 
 # Terminal control-transfers a SUBAGENT can emit: the turn is LEAVING its phase (handled by the
-# hand-off / resume path), never working inside one — so it is never a stall and the signalled-guard
-# must not re-drive it (that would intercept the hand-off and strand the resume pointer).
+# hand-off / resume path), never working inside one — so it is never a stall and must not be
+# re-driven (that would intercept the hand-off and strand the resume pointer).
 # `delegate_to_subagent` is orchestrator-only and so excluded.
 _HANDOFF_TOOLS = frozenset({"request_orchestrator_help", "signal_subagent_completion"})
 
@@ -1141,21 +1141,12 @@ def _stall_nudge_text(step: str, verdict: Verdict) -> str | None:
     return None
 
 
-# The signalled-guard nudge: a subagent turn that skips `signal_phase` — or signals an off-vocab
-# slug that resolves to no phase (`signal_is_known` is false) — leaves `last_signal_step` pinned to
-# a PRIOR turn's step or to an unusable key, so the adjudicator would check the wrong phase's
-# obligation (or none). Rather than nudge off a stale/unusable key, re-prompt ONCE to emit a
-# recognized signal — the re-driven turn carries a fresh key the next adjudication can resolve. Same
-# bracketed system-channel convention as _STALL_NUDGE_INTRO.
-_MISSING_SIGNAL_NUDGE = (
-    "[PHASE SIGNAL MISSING] You did not signal a recognized step this turn — you either skipped "
-    "`signal_phase` or sent a slug that is not one of your `## Workflow` section slugs or your "
-    "loaded skill's `### Step` slugs. A valid signal is required on every turn — it stamps which "
-    "step you are in (each heading in your resident workflow / skill carries its slug). Do BOTH "
-    "now, in order: (1) CALL `signal_phase` with your current step's EXACT slug; (2) then carry "
-    "out that step's instructions from your resident workflow — do the action it specifies (ask "
-    "the next gather question, call the tool, surface the card), do not merely describe it in "
-    "prose and do not skip ahead to a later step."
+# A finished turn with no text and no tool call (beyond `signal_phase`) showed the user nothing — a
+# re-prompt here hides nothing, unlike one after a real answer. Same bracketed convention as
+# _STALL_NUDGE_INTRO.
+_EMPTY_REPLY_NUDGE = (
+    "[EMPTY RESPONSE] Your last response had no text and no tool call, so the user saw nothing. "
+    "Respond to the user's last message now, following your current workflow step."
 )
 
 
@@ -1169,11 +1160,10 @@ async def _redrive_subagent(
     """Re-prompt the subagent ONCE on the system channel and return its re-fetched parts; on a send
     failure return `fallback` (the original parts) so one failed nudge never drops the turn.
 
-    This is the card-preserving re-drive helper shared by both nudge paths. The empty-user re-drive
-    advances opencode's message boundary PAST anything the turn already rendered, so a card-bearing
-    turn would be stranded — callers MUST gate it on the card rules (`_maybe_nudge_subagent_stall`:
-    the signalled-guard and every stall verdict except `batching` are skipped when the turn rendered
-    a card). Centralizing the send/refetch keeps that invariant in one place."""
+    The empty-user re-drive advances opencode's message boundary PAST anything the turn already
+    rendered, so a card-bearing turn would be stranded — callers MUST gate it on the card rules
+    (`_maybe_nudge_subagent_stall`: every stall verdict except `batching` is skipped when the turn
+    rendered a card). Centralizing the send/refetch keeps that invariant in one place."""
     assert state.subagent_id is not None  # caller guards this; narrows for the proxy/fetch calls
     try:
         await _proxy_send_message(
@@ -1197,18 +1187,19 @@ async def _maybe_nudge_subagent_stall(
     *,
     guard_missing_signal: bool = True,
 ) -> list[dict[str, Any]]:
-    """If the just-finished subagent turn stalled on an owed tool edge, re-prompt ONCE on the
-    system channel and return the re-fetched parts; otherwise return `latest_parts` unchanged. Runs
+    """If the just-finished subagent turn came back empty or stalled on an owed tool edge, re-prompt
+    ONCE on the system channel and return the re-fetched parts; otherwise return `latest_parts`
+    unchanged. Runs
     BEFORE completion/help detection so a nudged request_orchestrator_help flows through the normal
     hand-off path (not stripped as prose). One nudge per user turn — the re-driven turn is not
     re-adjudicated, so it can never loop. This is the live consumer of the pure `adjudicate`
     library (api/phases.py). Every decision below reads the single `_observe_turn` scan.
 
-    `guard_missing_signal` — whether to apply the signalled-guard (re-drive a turn that stamped
-    no recognized `signal_phase`). Steady-state turns (the ordinary handler) want it; a fresh
-    delegation or RESUME turn (the `_maybe_delegate` exit) does NOT — the subagent is (re)entering,
-    and a first clarifying turn without a signal is legitimate, so only the owed-edge STALL check
-    applies there (the #534 P2c path: a narrated hand-off on a delegate/resume turn)."""
+    `guard_missing_signal` — whether to skip the stall check on a turn that stamped no recognized
+    `signal_phase` (see the comment at the check). Steady-state turns (the ordinary handler) want
+    it; a fresh delegation or RESUME turn (the `_maybe_delegate` exit) does NOT — there the step
+    the server just set (entry or restored) is the right key, so the owed-edge STALL check runs on
+    it (the #534 P2c path: a narrated hand-off on a delegate/resume turn)."""
     if body.event in ("job_complete", "confirmation_blocked"):
         # Both carry their own steer; not a stall
         return latest_parts
@@ -1220,14 +1211,31 @@ async def _maybe_nudge_subagent_stall(
     # The cursor is this turn's OWN signal, falling back to the prior step only when it skipped.
     step = obs.signalled_step or state.last_signal_step
 
-    # Signalled-guard: a subagent must stamp a RECOGNIZED `signal_phase` slug every turn — it is the
-    # KEY the adjudicator (and the per-turn pointer) resolve against. A measured ~33% of GLM-flash
-    # turns skip it, and some signal an off-vocab slug (`signal_is_known` false); either leaves the
-    # key stale/unusable and mis-nudges (false wrong_edge / misdirected stall / missed stall). So
-    # re-prompt ONCE to emit a valid signal — the re-driven turn carries a fresh key for the NEXT
-    # adjudication. A card-bearing turn did its owed work and a handing-off turn is leaving its
-    # phase; both are exempt (re-driving would strand the card / intercept the hand-off). One nudge
-    # per user turn (not re-adjudicated), so it can never loop.
+    # Empty reply: re-prompt on every turn kind past the event return, signalled or not.
+    # `latest_parts` is [] only when the fetch failed (a real reply always carries step markers),
+    # which must not re-prompt.
+    if (
+        latest_parts
+        and not obs.has_text
+        and not (obs.tools - {"signal_phase"})
+        and not obs.hands_off
+    ):
+        logger.info("Empty-reply nudge: session=%s target=%s", session_id, target)
+        # The caller reads the step only from the parts returned here, so a bare signal_phase
+        # would be lost if the retry doesn't signal again.
+        if obs.signalled_step:
+            state.last_signal_step = obs.signalled_step
+        return await _redrive_subagent(state, session_id, body, _EMPTY_REPLY_NUDGE, latest_parts)
+
+    # Missing signal: a turn that skipped `signal_phase` (or sent an off-vocab slug,
+    # `signal_is_known` false) carries no fresh step key — only a PRIOR turn's, which would
+    # mis-judge it (e.g. a stale `validate` owes `validate_eval_job`, so a plain answer to a user
+    # question would be re-driven to re-validate). So it is not adjudicated at all, and NOT
+    # re-prompted for the signal either: the re-prompt is an empty-user hidden turn the user never
+    # sees, and it advanced the reply window past the turn's real answer (a benchmark list the
+    # user asked for vanished — GLM-flash mostly skips the signal on same-step turns: 0/6 on that
+    # turn even with the per-turn pointer asking for it). Batching needs >1 card, so a card-free
+    # turn can't batch; a card-bearing or handing-off turn falls through to the normal checks.
     if (
         guard_missing_signal
         and requires_phase_signal(target)
@@ -1235,8 +1243,10 @@ async def _maybe_nudge_subagent_stall(
         and not obs.hands_off
         and not obs.has_card
     ):
-        logger.info("Phase-signal-missing nudge: session=%s target=%s", session_id, target)
-        return await _redrive_subagent(state, session_id, body, _MISSING_SIGNAL_NUDGE, latest_parts)
+        logger.info(
+            "Phase signal missing (not adjudicated): session=%s target=%s", session_id, target
+        )
+        return latest_parts
 
     verdict = adjudicate(
         target,
@@ -1572,9 +1582,9 @@ async def _maybe_delegate(
     # ordinary handler runs (_handle_subagent_message). Without this, a subagent's FIRST turn (new
     # delegation) or a resumed consumer's turn could signal its owed edge, narrate instead of
     # calling the tool, and stop — with no adjudication or nudge, because _maybe_delegate returned
-    # the response directly (#534 P2c). `guard_missing_signal=False`: on a (re)entering turn an
-    # unsignalled first clarifying turn is legitimate, so only the owed-edge stall check applies
-    # (not the steady-state signalled-guard). The nudge is idempotent per turn (one re-drive, not
+    # the response directly (#534 P2c). `guard_missing_signal=False`: on a (re)entering turn the
+    # step the server just set (entry or restored) is the key, so an unsignalled turn is still
+    # adjudicated against it. The nudge is idempotent per turn (one re-drive, not
     # re-adjudicated) and self-guards on job_complete / missing subagent, so it is safe on every
     # _maybe_delegate exit (fresh, resume, help-producer).
     #
