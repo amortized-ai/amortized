@@ -273,9 +273,7 @@ class TestUpstreamDependencyPrecondition:
         assert "set use_peft=false" in detail
         assert "train_on_gpu=false" not in detail
 
-        resp = await client.post(
-            "/api/v1/jobs/training/validate", json={**body, "use_peft": False}
-        )
+        resp = await client.post("/api/v1/jobs/training/validate", json={**body, "use_peft": False})
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -299,8 +297,12 @@ class TestUpstreamDependencyPrecondition:
     @pytest.mark.asyncio
     async def test_trust_remote_code_requires_revision(self, client: httpx.AsyncClient) -> None:
         # Remote code runs in a pod holding storage/MLflow credentials: require a pinned commit.
-        body = {"algorithm": "classifier_sft", "model_name_or_path": "org/custom-arch",
-                "data_path": "./d.parquet", "trust_remote_code": True}
+        body = {
+            "algorithm": "classifier_sft",
+            "model_name_or_path": "org/custom-arch",
+            "data_path": "./d.parquet",
+            "trust_remote_code": True,
+        }
         resp = await client.post("/api/v1/jobs/training/validate", json=body)
         assert resp.status_code == 422
         assert "requires revision" in str(resp.json())
@@ -588,9 +590,26 @@ class TestEvalEndpointBaseUrl:
         resp = await client.post("/api/v1/jobs/eval/validate", json=body)
         assert resp.status_code == 422
         detail = str(resp.json())
-        assert "endpoint.base_url 'gateway' is neither" in detail
-        assert "judge.base_url 'gateway' is neither" in detail
+        assert "endpoint.base_url is neither" in detail
+        assert "judge.base_url is neither" in detail
         assert "openai" in detail
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_does_not_echo_a_pasted_key(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A key pasted into base_url must not come back in the error: it would land in the
+        # agent's context and the chat.
+        body = {
+            "eval_data_path": "./e.jsonl",
+            "endpoint": {"base_url": "http://tuned:8000/v1", "model": "m"},
+            "judge": {"base_url": "sk-pasted-secret-123", "model": "j"},
+            "rubric": [{"name": "relevance", "description": "stays on topic"}],
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        assert "judge.base_url is neither" in resp.text
+        assert "sk-pasted-secret-123" not in resp.text
 
     @pytest.mark.asyncio
     async def test_validate_eval_accepts_provider_name_and_url(

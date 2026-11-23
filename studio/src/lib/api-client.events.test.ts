@@ -1,0 +1,194 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+
+// A stateful session map, so the tests can see whether a send keeps or abandons its session.
+const sessions = new Map<string, string>()
+const cleared: string[] = []
+
+vi.mock("@/stores/settings-store", () => ({
+  useSettingsStore: { getState: () => ({ apiKey: "" }) },
+}))
+
+vi.mock("@/stores/chat-store", () => ({
+  useChatStore: {
+    getState: () => ({
+      getSessionId: (conv: string) => sessions.get(conv),
+      setSessionId: (conv: string, id: string) => { sessions.set(conv, id) },
+      clearSessionId: (conv: string) => { cleared.push(conv); sessions.delete(conv) },
+      setSessionStatus: () => {},
+      getSessionStatus: () => "unknown",
+      getConversationMessages: () => [],
+    }),
+  },
+}))
+
+import { sendOpenCodeMessage, EventAlreadyDeliveredError } from "@/lib/api-client"
+
+const EVENT = { eventId: "confirmation_blocked:m1" }
+const mockFetch = vi.fn()
+const originalFetch = globalThis.fetch
+let created = 0
+const messagePosts: Array<{ session: string; eventId: unknown }> = []
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status })
+}
+
+// Routes session creation and turn polling; `onMessage` decides each message POST's fate.
+function route(onMessage: (n: number, session: string) => Response | Promise<Response>, onTurn?: (turn: string) => Response) {
+  mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/agent/session") && init?.method === "POST") {
+      created++
+      return json({ id: `ses-${created}` })
+    }
+    const message = url.match(/\/agent\/session\/([^/]+)\/message$/)
+    if (message) {
+      const session = message[1]!
+      messagePosts.push({ session, eventId: JSON.parse(String(init?.body)).event_id })
+      return onMessage(messagePosts.length, session)
+    }
+    const turn = url.match(/\/turn\/([^/]+)$/)
+    if (turn) return onTurn ? onTurn(turn[1]!) : json({ active: false, result: { info: {}, parts: [] } })
+    throw new Error(`unexpected ${url}`)
+  })
+}
+
+function send(options = EVENT) {
+  return sendOpenCodeMessage("conv", "blocked", undefined, "confirmation_blocked", undefined, "eval", undefined, options)
+}
+
+beforeEach(() => {
+  globalThis.fetch = mockFetch
+  mockFetch.mockReset()
+  sessions.clear()
+  cleared.length = 0
+  messagePosts.length = 0
+  created = 0
+})
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+})
+
+describe("sendOpenCodeMessage — idempotent events keep their session", () => {
+  it("a manual retry after exhausted lost responses goes to the original session", async () => {
+    // Every response is lost (the server may have started the turn each time).
+    route(() => { throw new TypeError("fetch failed") })
+    await expect(send()).rejects.toThrow()
+    expect(cleared).toEqual([])
+
+    // The user clicks Retry: it must reach the same session, which dedupes the event.
+    route(() => json({ turn_id: "t1" }))
+    await send()
+
+    expect(created).toBe(1)
+    expect(new Set(messagePosts.map((p) => p.session))).toEqual(new Set(["ses-1"]))
+    expect(new Set(messagePosts.map((p) => p.eventId))).toEqual(new Set(["confirmation_blocked:m1"]))
+  })
+
+  it("retries a failed turn on the same session", async () => {
+    route((n) => json({ turn_id: `t${n}` }), (turn) =>
+      turn === "t1"
+        ? json({ active: false, error: "provider error", error_status: 500 })
+        : json({ active: false, result: { info: {}, parts: [] } }),
+    )
+    await send()
+    expect(created).toBe(1)
+    expect(messagePosts.map((p) => p.session)).toEqual(["ses-1", "ses-1"])
+  })
+
+  it("keeps the session even when a failed turn exhausts the retries", async () => {
+    route((n) => json({ turn_id: `t${n}` }), () => json({ active: false, error: "boom", error_status: 500 }))
+    await expect(send()).rejects.toThrow()
+    expect(cleared).toEqual([])
+    expect(sessions.get("conv")).toBe("ses-1")
+  })
+
+  it("moves to a new session only when the server no longer knows it (404)", async () => {
+    route((_n, session) => (session === "ses-1" ? json({}, 404) : json({ turn_id: "t1" })))
+    await send()
+    expect(messagePosts.map((p) => p.session)).toEqual(["ses-1", "ses-2"])
+  })
+})
+
+describe("sendOpenCodeMessage — a resent event the server already completed", () => {
+  it("signals delivery without polling or returning the earlier turn's reply", async () => {
+    route(() => json({ turn_id: "t1", status: "done", replayed: true }), () => {
+      throw new Error("a completed replay must not be polled")
+    })
+    await expect(send()).rejects.toBeInstanceOf(EventAlreadyDeliveredError)
+    expect(messagePosts).toHaveLength(1)
+    expect(cleared).toEqual([]) // the session that recorded the event stays
+  })
+
+  it("carries the event turn's own reply when the server kept it", async () => {
+    const reply = [{ info: { role: "assistant" }, parts: [{ type: "text", text: "fixed" }] }]
+    route(() => json({ turn_id: "t1", status: "done", replayed: true, messages: reply }))
+    const err = await send().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(EventAlreadyDeliveredError)
+    expect((err as EventAlreadyDeliveredError).messages).toEqual(reply)
+  })
+
+  it("resends to the same session when the polled turn record is gone (evicted)", async () => {
+    const reply = [{ info: { role: "assistant" }, parts: [{ type: "text", text: "fixed" }] }]
+    route(
+      (n) => (n === 1
+        ? json({ turn_id: "t1" })
+        : json({ turn_id: null, status: "done", replayed: true, messages: reply })),
+      () => json({}, 404),
+    )
+    const err = await send().catch((e: unknown) => e)
+    expect((err as EventAlreadyDeliveredError).messages).toEqual(reply)
+    expect(created).toBe(1) // no replacement session
+    expect(messagePosts.map((p) => p.session)).toEqual(["ses-1", "ses-1"])
+  })
+
+  it("also when the server no longer tracks the turn (turn_id null)", async () => {
+    route(() => json({ turn_id: null, status: "done", replayed: true }))
+    await expect(send()).rejects.toBeInstanceOf(EventAlreadyDeliveredError)
+  })
+
+  it("polls a replay whose turn is still running, then reports it as a replay", async () => {
+    // Not returned as a fresh reply: the hook must apply replay rules (no superseded card).
+    const reply = [{ info: { role: "assistant" }, parts: [{ type: "text", text: "fixed" }] }]
+    let polled = 0
+    route(() => json({ turn_id: "t1", status: "processing", replayed: true }), () => {
+      polled++
+      return json({ active: false, result: { info: {}, parts: [], event_messages: reply } })
+    })
+    const err = await send().catch((e: unknown) => e)
+    expect(polled).toBe(1)
+    expect(err).toBeInstanceOf(EventAlreadyDeliveredError)
+    expect((err as EventAlreadyDeliveredError).messages).toEqual(reply)
+  })
+
+  it("a 404 from the old session doesn't drop its replacement", async () => {
+    // ses-1 is gone (404) and ses-2 replaces it; ses-2's turn then fails ambiguously.
+    route(
+      (_n, session) => (session === "ses-1" ? json({}, 404) : json({ turn_id: "t" })),
+      () => json({ active: false, error: "boom", error_status: 500 }),
+    )
+    await expect(send()).rejects.toThrow()
+    expect(sessions.get("conv")).toBe("ses-2")
+    expect(cleared).toEqual(["conv"]) // only the gone ses-1 was cleared
+  })
+
+  it("keeps the session when the polled turn is missing even on the last attempt", async () => {
+    // A missing turn isn't a missing session: clearing it would let a Retry escape dedup.
+    route((n) => json({ turn_id: `t${n}` }), () => json({}, 404))
+    await expect(send()).rejects.toThrow()
+    expect(cleared).toEqual([])
+    expect(sessions.get("conv")).toBe("ses-1")
+  })
+})
+
+describe("sendOpenCodeMessage — ordinary sends are unchanged", () => {
+  it("still resets the session after a network error", async () => {
+    route((n) => {
+      if (n === 1) throw new TypeError("fetch failed")
+      return json({ turn_id: "t1" })
+    })
+    await send({ eventId: undefined } as never)
+    expect(created).toBe(2)
+    expect(messagePosts.map((p) => p.session)).toEqual(["ses-1", "ses-2"])
+  })
+})

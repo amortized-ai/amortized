@@ -20,6 +20,7 @@ gateway that does not exist here), which is why the provider file must be suppli
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -47,6 +48,7 @@ _NON_CHAT_MARKERS = (
     "sdxl",
 )
 _MODELS_TTL_SECONDS = 300
+_MODELS_MAX_BYTES = 4 * 1024 * 1024
 # Anthropic authenticates with x-api-key + this version header (not OpenAI's Bearer).
 _ANTHROPIC_VERSION = "2023-06-01"
 # provider name -> (fetched_at_monotonic, raw model ids). Per-provider so one slow/broken
@@ -267,6 +269,16 @@ async def _fetch_provider_models(pdef: dict[str, str]) -> tuple[list[str], bool]
         return (cached[1] if cached else []), True
 
     url = f"{endpoint}/models"
+    # The endpoint may be user-supplied (BYOK), so it goes through the destination policy too.
+    from amortized.core.model_endpoints import approved_destinations
+    from amortized.model_check import destinations
+
+    decision = await destinations.authorize(url, approved_destinations())
+    if not decision.allowed:
+        logger.warning(
+            "not fetching models for provider %r: its endpoint %s", name, decision.reason
+        )
+        return (cached[1] if cached else []), False
     # Anthropic authenticates with x-api-key + a version header (not OpenAI's Bearer); its
     # /v1/models returns the same {"data": [{"id": ...}]} shape, so only the headers differ.
     if pdef.get("provider_type") == "anthropic":
@@ -276,10 +288,21 @@ async def _fetch_provider_models(pdef: dict[str, str]) -> tuple[list[str], bool]
     try:
         # follow_redirects stays off (httpx's default, made explicit): never replay the bearer
         # key to a redirect target the provider URL points at.
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
-            resp = await client.get(url, headers=headers)
+        async with (
+            httpx.AsyncClient(
+                transport=destinations.pinned_transport(decision),
+                timeout=15.0,
+                follow_redirects=False,
+            ) as client,
+            client.stream(
+                "GET", url, headers={**headers, **destinations.IDENTITY_ENCODING}
+            ) as resp,
+        ):
             resp.raise_for_status()
-            data = resp.json().get("data", [])
+            raw, truncated = await destinations.read_limited(resp, _MODELS_MAX_BYTES)
+        if truncated:
+            raise ValueError(f"model list larger than {_MODELS_MAX_BYTES} bytes")
+        data = json.loads(raw).get("data", [])
         ids = [str(m.get("id", "")) for m in data if m.get("id")]
         _models_cache[name] = (now, ids)
         return ids, True

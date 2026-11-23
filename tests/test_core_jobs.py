@@ -57,6 +57,7 @@ class TestCreateJob:
             repo,
             job_type=JobType.sdg,
             config={"model": "openai/gpt-4o"},
+            models_checked=True,  # core behavior under test; admission is tested separately
         )
         assert row["type"] == "sdg"
 
@@ -157,6 +158,7 @@ class TestCreateJob:
                     "judge": {"base_url": "http://j:8000/v1", "model": "m", "api_key": "sk-1"},
                     "extra": [{"apiKey": "sk-2"}],
                 },
+                models_checked=True,  # the core credential rule, independent of admission
             )
         assert "judge.api_key" in str(exc.value)
         assert "extra[0].apiKey" in str(exc.value)
@@ -177,7 +179,10 @@ class TestCreateJob:
     ) -> None:
         with pytest.raises(InvalidJobStateError, match=r"judge\.base_url") as exc:
             await create_job(
-                repo, job_type=JobType.eval, config={"judge": {"base_url": base_url, "model": "m"}}
+                repo,
+                job_type=JobType.eval,
+                config={"judge": {"base_url": base_url, "model": "m"}},
+                models_checked=True,  # the core credential rule, independent of admission
             )
         assert "sk-1" not in str(exc.value)
         assert await repo.conn.fetchval("SELECT count(*) FROM jobs") == 0
@@ -188,6 +193,7 @@ class TestCreateJob:
             repo,
             job_type=JobType.eval,
             config={"endpoint": {"base_url": "http://e:8000/v1", "model": "m", "api_key": ""}},
+            models_checked=True,  # core behavior; admission is tested separately
         )
         assert row["status"] == "queued"
 
@@ -217,6 +223,7 @@ class TestCreateJob:
                 repo,
                 job_type=JobType.eval,
                 config={"eval_mode": "classification", "training_job_id": "t", "eval_on_gpu": True},
+                models_checked=True,  # the core budget rule, independent of admission
             )
         assert "endpoint" not in str(exc.value)
 
@@ -262,6 +269,7 @@ class TestListJobs:
             repo,
             job_type=JobType.sdg,
             config={"model": "openai/gpt-4o"},
+            models_checked=True,  # core behavior under test; admission is tested separately
         )
 
         training = await list_jobs(repo, job_type=JobType.training)

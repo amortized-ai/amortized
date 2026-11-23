@@ -16,6 +16,12 @@ data:
   AMORTIZED_IMAGE_REGISTRY: {{ .Values.server.imageRegistry | quote }}
   AMORTIZED_EXTERNAL_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
   AMORTIZED_AGENT_SERVER_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
+  AMORTIZED_APPROVED_MODEL_URLS: {{ .Values.server.approvedModelUrls | toJson | quote }}
+  {{- if .Values.modelCheck.enabled }}
+  # The qualified name: the OpenShift serving cert covers amortized-model-check.<ns>.svc.
+  AMORTIZED_MODEL_CHECK_URL: "https://amortized-model-check.{{ include "amortized.namespace" . }}.svc:{{ .Values.modelCheck.port }}"
+  AMORTIZED_MODEL_CHECK_CA_BUNDLE: {{ printf "/etc/model-check-ca/%s" .Values.modelCheck.tls.caConfigMapKey | quote }}
+  {{- end }}
   AMORTIZED_MLFLOW_TRACKING_URI: {{ include "amortized.mlflowTrackingUri" . | quote }}
   {{- if .Values.mlflow.enterprise.enabled }}
   # RHOAI enterprise MLflow auth: bearer token (SA token file, re-read per request for
