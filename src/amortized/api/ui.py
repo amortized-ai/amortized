@@ -9,9 +9,10 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from amortized.api.phases import signal_step_error
 from amortized.core.placeholders import PROMPT_ID_PREFIX, make_prompt_ref
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
@@ -344,7 +345,7 @@ async def show_vram_estimate(body: ShowVRAMEstimateRequest) -> ShowVRAMEstimateR
 
 
 class SignalPhaseRequest(BaseModel):
-    phase: str = Field(
+    phase: Literal["sdg", "training", "eval"] = Field(
         ...,
         description=(
             "Current workflow phase: 'sdg' for data generation workflows, "
@@ -353,17 +354,11 @@ class SignalPhaseRequest(BaseModel):
         ),
     )
     step: str = Field(
-        "",
+        ...,
         description=(
-            "Current step within the phase. Signal transitions in order: "
-            "understand_task (identified what the user wants to build), "
-            "load_skill (read the relevant skill guide), "
-            "gather_requirements (asking user for parameters — signal on first ask), "
-            "estimate_cost (checking models, pricing, or VRAM estimates), "
-            "confirm (presenting the job validation/confirmation card), "
-            "execute (job has been submitted), "
-            "review (checking job results or presenting next steps). "
-            "Signal the step you are currently at. Do not repeat a step already signaled."
+            "Slug of the step you are in now, as shown in its heading in your workflow "
+            "(or in your loaded skill's `### Step` headings). Send it on every response, "
+            "including when it is the same step as your previous response."
         ),
     )
 
@@ -379,12 +374,16 @@ class SignalPhaseResponse(BaseModel):
     operation_id="signal_phase",
     summary=(
         "Update the UI progress bar. You MUST call this once on every response "
-        "during an SDG, training, or eval workflow. Set phase to 'sdg', "
+        "during an SDG, training, or eval workflow, including when the step has not "
+        "changed since your previous response. Set phase to 'sdg', "
         "'training', or 'eval' based on the current workflow. Call once per "
         "response at the current step — do not batch or skip."
     ),
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
+    error = signal_step_error(body.phase, body.step)
+    if error:
+        raise HTTPException(status_code=422, detail=error)
     return SignalPhaseResponse(phase=body.phase, step=body.step)
 
 

@@ -4,8 +4,10 @@ import asyncio
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
+from amortized.api import phases
 from amortized.api.ui import (
     ModelPricingItem,
     OptionItem,
@@ -145,9 +147,70 @@ def test_show_prompt_rejects_empty_prompt() -> None:
 
 
 def test_signal_phase_accepts_eval() -> None:
-    resp = _run(signal_phase(SignalPhaseRequest(phase="eval", step="review")))
+    resp = _run(signal_phase(SignalPhaseRequest(phase="eval", step="metrics")))
     assert resp.phase == "eval"
-    assert resp.step == "review"
+    assert resp.step == "metrics"
+
+
+@pytest.mark.parametrize(
+    ("phase", "step"),
+    [
+        ("sdg", "gather"),  # workflow phase
+        ("sdg", "task"),  # a skill's ### Step (the tool can't see which skill is loaded)
+        ("sdg", "Teacher_Model"),  # normalized like signal_is_known
+        ("training", "validate"),
+        ("eval", "held_out_request_help"),
+    ],
+)
+def test_signal_phase_accepts_known_slugs(phase: str, step: str) -> None:
+    resp = _run(signal_phase(SignalPhaseRequest(phase=phase, step=step)))  # type: ignore[arg-type]
+    assert resp.step == step
+
+
+def test_signal_phase_rejects_unknown_slug_with_valid_list() -> None:
+    # `review` is one of the old progress-bar names; eval's last steps are report/complete.
+    with pytest.raises(HTTPException) as exc:
+        _run(signal_phase(SignalPhaseRequest(phase="eval", step="review")))
+    assert exc.value.status_code == 422
+    msg = str(exc.value.detail)
+    assert '"review"' in msg and '"eval"' in msg
+    assert "understand-task" in msg and "report" in msg and "complete" in msg
+    assert "skill" not in msg  # eval has no skills
+
+
+def test_signal_phase_rejection_lists_skill_steps_for_sdg() -> None:
+    with pytest.raises(HTTPException) as exc:
+        _run(signal_phase(SignalPhaseRequest(phase="sdg", step="gather_requirements")))
+    msg = str(exc.value.detail)
+    assert "route, gather, validate, complete" in msg
+    assert "sdg-task-distillation: task, examples" in msg
+    assert "sdg-classification" not in msg  # a skill with no steps signals `gather`
+
+
+def test_signal_phase_rejects_another_roles_skill_step() -> None:
+    # `task` is an sdg skill step; the training skills have no steps.
+    with pytest.raises(HTTPException) as exc:
+        _run(signal_phase(SignalPhaseRequest(phase="training", step="task")))
+    assert "skill" not in str(exc.value.detail)
+
+
+def test_signal_phase_rejects_empty_step() -> None:
+    with pytest.raises(HTTPException) as exc:
+        _run(signal_phase(SignalPhaseRequest(phase="eval", step="  ")))
+    assert "an empty step" in str(exc.value.detail)
+
+
+def test_signal_phase_request_requires_known_phase_and_a_step() -> None:
+    with pytest.raises(ValidationError):
+        SignalPhaseRequest(phase="evaluation", step="metrics")  # type: ignore[arg-type]
+    with pytest.raises(ValidationError):
+        SignalPhaseRequest(phase="eval")  # type: ignore[call-arg]
+
+
+def test_signal_phase_accepts_anything_without_a_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(phases, "_sections", lambda _agent: ())
+    resp = _run(signal_phase(SignalPhaseRequest(phase="eval", step="anything")))
+    assert resp.step == "anything"
 
 
 def test_show_model_pricing_coerces_formatted_numbers() -> None:
