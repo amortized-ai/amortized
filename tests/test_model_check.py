@@ -163,12 +163,25 @@ class TestOutcomes:
             httpx.Response(200, json={"choices": []}),
             httpx.Response(200, text="<html>login</html>"),
             httpx.Response(200, json={"choices": [{"text": "legacy"}]}),
+            httpx.Response(200, json={"choices": [{"message": "hi", "finish_reason": "stop"}]}),
         ],
     )
     def test_malformed_2xx_is_bad_response(self, monkeypatch, seen, response) -> None:
         _route(monkeypatch, lambda _r: response, seen)
         result = _check(_ep())
         assert (result.outcome, result.reason) == (FAILED, "bad_response")
+
+    @pytest.mark.parametrize(
+        "choice",
+        [
+            {"index": 0, "message": None, "finish_reason": "length"},
+            {"index": 0, "finish_reason": "length"},
+        ],
+    )
+    def test_reasoning_model_out_of_tokens_passes(self, monkeypatch, seen, choice) -> None:
+        _route(monkeypatch, lambda _r: httpx.Response(200, json={"choices": [choice]}), seen)
+        result = _check(_ep())
+        assert (result.outcome, result.reason) == (PASSED, "ok")
 
     def test_rate_limited_is_unverified(self, monkeypatch, seen) -> None:
         _route(monkeypatch, lambda _r: httpx.Response(429), seen)

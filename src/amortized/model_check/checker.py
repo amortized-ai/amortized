@@ -117,12 +117,14 @@ def _valid_shape(provider_type: str, data: Any) -> bool:
     if provider_type == "anthropic":
         return data.get("type") == "message" and isinstance(data.get("content"), list)
     choices = data.get("choices")
-    return (
-        isinstance(choices, list)
-        and bool(choices)
-        and isinstance(choices[0], dict)
-        and isinstance(choices[0].get("message"), dict)
-    )
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return False
+    choice = choices[0]
+    # A reasoning model can spend the whole probe budget thinking and reply with
+    # message: null and finish_reason: length. The model still answered.
+    if isinstance(choice.get("message"), dict):
+        return True
+    return choice.get("message") is None and bool(choice.get("finish_reason"))
 
 
 def _status_text(resp: httpx.Response) -> str:
