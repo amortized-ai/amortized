@@ -1,0 +1,333 @@
+{
+  "_about": "Every GRPO reward function, keyed by name. Built-ins set reward_type to the name; gym entries set reward_type=gym and gym_verifier=<name>. Gym entries summarise NVIDIA NeMo Gym v0.7.0 (the version the gym image ships); doc links to the verifier's source and README. In row_fields, * marks fields the verifier's schema requires. general_purpose=false means it is tied to one benchmark's data format or a niche domain.",
+  "reward_functions": {
+    "tool_call": {
+      "reward_type": "tool_call",
+      "summary": "Checks that the model calls the target tool with the target arguments.",
+      "reward": "1.0 right tool and arguments; 0.5 right tool, wrong arguments; 0 wrong or no call.",
+      "answer_format": "<tool_call>{\"name\": ..., \"arguments\": ...}</tool_call> or a bare {\"name\", \"arguments\"} JSON object; the chat template's tool format covers it, no system prompt needed.",
+      "row_fields": "question, tools (OpenAI function schemas), target_tool_name, target_arguments (object or JSON string). All required.",
+      "good_for": "single-turn tool calling: pick the right tool and fill its arguments",
+      "caveats": "Single-turn only; multi-turn messages traces are not supported. The model must support tools in its chat template.",
+      "general_purpose": true
+    },
+    "math": {
+      "reward_type": "math",
+      "summary": "Reads the final answer from \\boxed{} or <answer></answer> and compares it with the reference, exact or math-equivalent.",
+      "reward": "Binary 1/0.",
+      "answer_format": "\\boxed{X}; the default system prompt already asks for it.",
+      "row_fields": "A prompt column (text_column) and a reference-answer column (label_column).",
+      "good_for": "math and any short checkable answer: numbers, expressions, single words, labels",
+      "caveats": "Short answers only; free-form text or paraphrases score 0.",
+      "general_purpose": true
+    },
+    "arc_agi": {
+      "reward_type": "gym",
+      "summary": "Checks that the predicted ARC output grid (2-D integer list) exactly equals the expected grid.",
+      "reward": "Binary 1/0 on exact grid equality.",
+      "answer_format": "\\boxed{[[1,2],[3,4]]}, integers only; unboxed, the first bare [[...]] is used (may be an echoed input). Needs a system prompt asking for the box.",
+      "row_fields": "expected_output (needed), e.g. [[0,1],[1,0]]. train / test_input only build the prompt; task_id optional.",
+      "good_for": "grid / matrix transformation puzzles with an exact integer-grid answer",
+      "caveats": "Integer 2-D grids only. Schema requires nothing, so a row missing expected_output silently scores 0.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/arc_agi"
+    },
+    "asr_with_pc": {
+      "reward_type": "gym",
+      "summary": "Scores a speech transcript against a reference by word error rate, with punctuation and capitalization.",
+      "reward": "Binary: 1 if WER(-PC) < 0.5 (or no hallucination for that task type).",
+      "answer_format": "Plain transcript text.",
+      "row_fields": "expected_answer (reference transcript); task_type ASR-PC | ASR | ASR_LEADERBOARD | Hallucination.",
+      "good_for": "speech-to-text transcription",
+      "caveats": "Audio input: needs an audio-capable model and audio in the request. Useless for text-only training.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/asr_with_pc"
+    },
+    "assaybench": {
+      "reward_type": "gym",
+      "summary": "Scores a ranked list of human gene symbols predicted as CRISPR-screen hits against graded relevance genes.",
+      "reward": "Continuous [0,1]: adjusted nDCG@100.",
+      "answer_format": "DSPy-style '[[ ## answer ## ]] GENE1, GENE2, ...' (comma-separated HGNC symbols). Needs a system prompt.",
+      "row_fields": "relevance_genes* e.g. [\"TP53\",\"KRAS\"]; relevance_scores* e.g. [1.0,0.5].",
+      "good_for": "ranking genes for a biology screen description",
+      "caveats": "Very niche domain and benchmark-specific metric.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/assaybench"
+    },
+    "bunsenbench_chemistry_mcq": {
+      "reward_type": "gym",
+      "summary": "Lenient multiple-choice grader: extracts the chosen letter or exact option text and compares it with the gold choice.",
+      "reward": "Binary 1/0.",
+      "answer_format": "Very lenient: <answer> tags, \\boxed{}, 'Answer: X', or a bare letter / option text. A short format hint is enough.",
+      "row_fields": "options e.g. [{\"A\":\"OH-\"},{\"B\":\"H2O\"}] (or choices [\"OH-\",\"H2O\"]); expected_answer e.g. \"B\" or the option text.",
+      "good_for": "any multiple-choice task where the model may answer with the letter or the option text",
+      "caveats": "Domain-agnostic despite the chemistry name. Option text must match exactly after normalization.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/bunsenbench_chemistry_mcq"
+    },
+    "calendar": {
+      "reward_type": "gym",
+      "summary": "Checks that a JSON schedule places exactly the expected events with no overlaps, each meeting its duration, window and before/after/between/at constraint.",
+      "reward": "Binary 1/0; any violation, or a <think> tag in the reply, scores 0.",
+      "answer_format": "JSON list of {event_id, event_name, start_time \"HH:MM\", duration}. Needs a system prompt describing it.",
+      "row_fields": "exp_cal_state* e.g. {\"1\":{\"event_id\":1,\"event_name\":\"Gym\",\"duration\":60,\"constraint\":\"before 10am\",\"min_time\":\"8am\",\"max_time\":\"6pm\"}}.",
+      "good_for": "constraint-satisfying scheduling / time-slot planning",
+      "caveats": "Built for multi-turn, but a single prompt listing all events works. Fixed constraint grammar. Thinking models must not emit <think> in the answer.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/calendar"
+    },
+    "equivalence_rule": {
+      "reward_type": "gym",
+      "summary": "Compares the whole reply with expected_answer after lowercasing and collapsing whitespace.",
+      "reward": "Binary 1/0 exact match.",
+      "answer_format": "The entire reply must be only the answer. Needs a system prompt saying 'output only the answer'.",
+      "row_fields": "expected_answer* e.g. \"Paris\".",
+      "good_for": "short exact answers where the model outputs nothing but the answer",
+      "caveats": "Very strict: any extra word scores 0. string_match is usually the better choice.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/equivalence_rule"
+    },
+    "ether0": {
+      "reward_type": "gym",
+      "summary": "Grades a chemistry answer (usually a SMILES molecule) with the ether0 eval function named in the row's solution string.",
+      "reward": "Mostly binary 1/0.",
+      "answer_format": "<answer>SMILES</answer> (\\boxed{} also works). Needs a system prompt.",
+      "row_fields": "verifier_metadata: {\"solution\": \"fxn_name!:!answer_info!:!problem_type\", ...}.",
+      "good_for": "molecule-generation / chemistry reasoning on ether0 data",
+      "caveats": "Needs ether0's encoded solution strings. Very niche.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/ether0"
+    },
+    "format_verification": {
+      "reward_type": "gym",
+      "summary": "Checks format only: enough lines match given regexes, or all expected citation markers appear and no unexpected ones.",
+      "reward": "Binary 1/0; content is not checked.",
+      "answer_format": "Free text in whatever format the prompt asks for (numbered lists, headings, [ref:N] citations, ...).",
+      "row_fields": "verifier* e.g. {\"type\":\"regex\",\"verify_regex\":[\"^\\\\d+\\\\. \"],\"verify_min_matches\":3} or {\"type\":\"string_match\",\"expected_markers\":[\"[ref:1]\"],\"patterns\":[\"\\\\[ref:\\\\d+\\\\]\"]}.",
+      "good_for": "teaching an output format or citation-marker style",
+      "caveats": "Rewards format only, so it can be satisfied with wrong content.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/format_verification"
+    },
+    "fukuyamabench": {
+      "reward_type": "gym",
+      "summary": "Checks that a predicted multi-step organic reaction-mechanism pathway (SMILES steps) matches the gold pathway.",
+      "reward": "Binary 1/0 exact pathway match.",
+      "answer_format": "JSON array of step objects (fenced ```json after '## Result'). Needs the upstream system prompt.",
+      "row_fields": "verifier_metadata: {gt_pathway, checkpoints, case_id, case_set}.",
+      "good_for": "reaction-mechanism prediction benchmarks",
+      "caveats": "Benchmark-specific, expert-level; rewards will be very sparse.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/fukuyamabench"
+    },
+    "generative_reward_model": {
+      "reward_type": "gym",
+      "summary": "Trains a judge: the model scores two responses (1-5 each plus a ranking) per rubric and overall, rewarded for matching gold scores.",
+      "reward": "Negative weighted L1 error, max 0; -100 on a parse failure.",
+      "answer_format": "One JSON object {\"rubric_evaluations\":[...],\"overall\":{score_1,score_2,ranking}}. Needs a system prompt.",
+      "row_fields": "id*; ground_truth_overall e.g. {\"score_1\":4,\"score_2\":2,\"ranking\":2}; ground_truth_rubric_scores optional.",
+      "good_for": "training a pairwise LLM-as-judge / reward model",
+      "caveats": "Unbounded negative reward with a -100 cliff. Needs gold scores for response pairs.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/generative_reward_model"
+    },
+    "gpqa_diamond": {
+      "reward_type": "gym",
+      "summary": "Multiple-choice grader: extracts the final letter from \\boxed{} or 'Answer: X' and compares it with the gold letter.",
+      "reward": "Binary 1/0.",
+      "answer_format": "\\boxed{C} or 'Answer: C' (last one wins). Needs a system prompt.",
+      "row_fields": "expected_answer e.g. \"C\"; options recommended e.g. [{\"A\":\"...\"},{\"B\":\"...\"}] to restrict valid letters.",
+      "good_for": "any multiple-choice task with letter answers, accepting 'Answer: X' as well as \\boxed{}",
+      "caveats": "Generic despite the name. Letters only; option text is not matched.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/gpqa_diamond"
+    },
+    "graphwalks": {
+      "reward_type": "gym",
+      "summary": "Compares the set of items in a final 'Final Answer: [a, b, c]' line with an expected set.",
+      "reward": "Continuous [0,1]: F1 over the sets.",
+      "answer_format": "Last non-empty line 'Final Answer: [item1, item2, ...]'. Needs a system prompt.",
+      "row_fields": "expected_answer* JSON-list string e.g. \"[\\\"n1\\\",\\\"n2\\\"]\"; problem_type* (any tag).",
+      "good_for": "tasks whose answer is an unordered set / list of short items",
+      "caveats": "Items split on commas, so items can't contain commas; exact string match per item.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/graphwalks"
+    },
+    "hotpotqa_qa": {
+      "reward_type": "gym",
+      "summary": "Short-answer QA: checks the gold answer (or a surface variant) appears in the model's answer, with false-positive guards.",
+      "reward": "Binary 1/0.",
+      "answer_format": "Preferably JSON {\"answer\":\"...\"}; otherwise the whole reply. Keep it short.",
+      "row_fields": "expected_answer* e.g. \"Chief of Protocol\".",
+      "good_for": "free-form short factual answers with a known reference, tolerant of wording around the answer",
+      "caveats": "Substring-based: suits short entities / numbers, not long-form. Hedged answers listing candidates may score.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/hotpotqa_qa"
+    },
+    "iheval": {
+      "reward_type": "gym",
+      "summary": "IHEval instruction-hierarchy benchmark: routes each row by task name to an upstream checker (F1, ROUGE-L, exact match, IFEval rules).",
+      "reward": "Task-dependent, [0,1].",
+      "answer_format": "Task-dependent; comes from the benchmark's prompts.",
+      "row_fields": "task* (one of the 8 IHEval names), setting, answer (gold), instruction.",
+      "good_for": "training on IHEval instruction-hierarchy data",
+      "caveats": "Benchmark-specific task names and gold structures.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/iheval"
+    },
+    "imo_gradingbench": {
+      "reward_type": "gym",
+      "summary": "Proof grading: the reply must end with correct / almost / partial / incorrect, matched against the gold grade.",
+      "reward": "Binary 1/0 on the exact 4-class match.",
+      "answer_format": "Last word is correct, almost, partial or incorrect. Needs a system prompt.",
+      "row_fields": "expected_answer* one of \"correct\" | \"almost\" | \"partial\" | \"incorrect\".",
+      "good_for": "4-way solution quality grading",
+      "caveats": "Label set hardcoded to these four words.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/imo_gradingbench"
+    },
+    "instruction_following": {
+      "reward_type": "gym",
+      "summary": "Checks the reply against IFEval / IFBench-style verifiable constraints (word count, paragraphs, keywords, last word, format, ...).",
+      "reward": "Binary 1/0 if all constraints pass; grading_mode fraction gives the fraction passed.",
+      "answer_format": "Free text satisfying the constraints stated in the prompt.",
+      "row_fields": "id* (integer); verifier_metadata e.g. {\"instruction_id_list\":[\"length_constraints:number_words\"],\"kwargs\":[{\"relation\":\"less than\",\"num_words\":200}]}.",
+      "good_for": "open-ended prompts with checkable length / format / keyword constraints",
+      "caveats": "Constraints must come from the IFEval registry with exact kwargs. Content quality is not judged.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/instruction_following"
+    },
+    "lc_niah": {
+      "reward_type": "gym",
+      "summary": "Set-F1 of a 'Final Answer: [..]' list against the expected list, penalised when the reasoning copies chunks of the prompt verbatim.",
+      "reward": "Continuous [0,1]: F1 x (1 - copied fraction).",
+      "answer_format": "Last line 'Final Answer: [a, b, ...]'. Needs a system prompt.",
+      "row_fields": "expected_answer* JSON-list string e.g. \"[\\\"n1\\\",\\\"n2\\\"]\".",
+      "good_for": "long-context retrieval of a set of items",
+      "caveats": "The copy penalty only reads reasoning summaries; otherwise it behaves like graphwalks.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/lc_niah"
+    },
+    "mcqa": {
+      "reward_type": "gym",
+      "summary": "Multiple-choice grader: extracts the answer letter from the last \\boxed{} and compares it with the gold letter.",
+      "reward": "Binary 1/0.",
+      "answer_format": "\\boxed{B}. The platform's default system prompt for mcqa already asks for it.",
+      "row_fields": "options e.g. [{\"A\":\"PCR\"},{\"B\":\"FISH\"}]; expected_answer e.g. \"B\".",
+      "good_for": "any multiple-choice task",
+      "caveats": "Schema marks nothing required, but without options / expected_answer every row scores 0. An unboxed answer scores 0.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/mcqa"
+    },
+    "mrcr": {
+      "reward_type": "gym",
+      "summary": "The reply must start with a given random prefix; then its similarity to the expected text is measured.",
+      "reward": "Continuous [0,1] SequenceMatcher ratio; 0 without the prefix.",
+      "answer_format": "random_string_to_prepend + the reproduced text, nothing before it.",
+      "row_fields": "expected_answer*, random_string_to_prepend*, n_needles* (int), n_tokens* (int).",
+      "good_for": "exact long-text recall from a long context",
+      "caveats": "Benchmark-shaped (multi-round coreference); character similarity rewards copying.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/mrcr"
+    },
+    "proof_genselect": {
+      "reward_type": "gym",
+      "summary": "Pairwise selection: the model compares two candidate solutions and names the better one.",
+      "reward": "Binary 1/0: selected index equals correct_index.",
+      "answer_format": "<best_solution>1</best_solution> or <best_solution>2</best_solution> after any reasoning. Needs a system prompt.",
+      "row_fields": "correct_index* (1 or 2); problem*, proof_1*, proof_2* (strings; the prompt must contain them too).",
+      "good_for": "pick-the-better-of-two tasks (solutions, answers, essays) with a known winner",
+      "caveats": "Exactly 2 candidates.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/proof_genselect"
+    },
+    "ragtruth": {
+      "reward_type": "gym",
+      "summary": "Hallucination detection: the model lists hallucinated spans as JSON; its yes/no verdict is compared with the gold label.",
+      "reward": "Binary 1/0: (non-empty hallucination list) == is_halu.",
+      "answer_format": "One JSON object {\"hallucination list\": [...]}. Needs a system prompt.",
+      "row_fields": "is_halu (true / false); task_type optional.",
+      "good_for": "detecting unsupported claims in a context-grounded answer",
+      "caveats": "Unparseable output counts as 'no hallucination', so garbage scores 1 on is_halu=false rows: balance the labels and always set is_halu.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/ragtruth"
+    },
+    "ruler": {
+      "reward_type": "gym",
+      "summary": "Case-insensitive check that the reference strings appear anywhere in the reply (RULER long-context benchmark).",
+      "reward": "Continuous: fraction of outputs found; subsets qa_1 / qa_2 score 1 if any is found.",
+      "answer_format": "Free text containing the answer string(s).",
+      "row_fields": "outputs* e.g. [\"NRBQA\",\"KMLJX\"]; length* (int, unused); subset* e.g. \"vt\" or \"qa_1\".",
+      "good_for": "answers that must mention all listed keywords / values",
+      "caveats": "Easily gamed by long replies listing many candidates.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/ruler"
+    },
+    "scicodepile": {
+      "reward_type": "gym",
+      "summary": "Runs the Python function from the reply's last code block against the row's check(candidate) test.",
+      "reward": "Binary 1/0: the test passes within 120 s.",
+      "answer_format": "A complete Python function in a ```python block, named entry_point.",
+      "row_fields": "verifier_metadata: {\"test\":\"def check(candidate):\\n    assert candidate(2) == 4\",\"entry_point\":\"square\",\"setup_code\":\"...\"}.",
+      "good_for": "Python function-writing tasks with unit tests",
+      "caveats": "Runs model code in a subprocess (memory limit only, not a sandbox). Libraries limited to the image.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/scicodepile"
+    },
+    "spartqa": {
+      "reward_type": "gym",
+      "summary": "Text-option choice: the 'Final answer:' must resolve to exactly one candidate phrase (or 'both of them' / 'none of them') matching the gold.",
+      "reward": "Binary 1/0; naming two candidates scores 0.",
+      "answer_format": "Ends with 'Final answer: <candidate copied verbatim>'. Needs a system prompt.",
+      "row_fields": "target e.g. \"the red circle\"; options recommended e.g. [\"the red circle\",\"the blue square\"].",
+      "good_for": "choose-one-of-several text answers without letters",
+      "caveats": "Always adds 'both of them' / 'none of them' as valid labels.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/spartqa"
+    },
+    "string_match": {
+      "reward_type": "gym",
+      "summary": "Extracts the final answer and compares it with the reference, normalising case, numbers, LaTeX, lists and units.",
+      "reward": "1.0 normalised match; 0.98 near-numeric match (~1% relative error); else 0.",
+      "answer_format": "'Final answer: X' / 'Answer: X', falling back to \\boxed{X} (extraction_mode can switch to boxed, last_line, full_response). Needs a system prompt.",
+      "row_fields": "expected_answer* e.g. \"3.14\" or \"Paris\"; extraction_mode, case_sensitive optional.",
+      "good_for": "free-form short answers (text or numeric) with a known reference",
+      "caveats": "Short canonical answers only; synonyms and paraphrases score 0.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/string_match"
+    },
+    "structeval": {
+      "reward_type": "gym",
+      "summary": "Checks the reply contains a parseable JSON / YAML / TOML / XML / CSV document with the required key paths.",
+      "reward": "Partial credit [0,1]: 0.2 x parses + 0.8 x fraction of key paths present.",
+      "answer_format": "A fenced code block with the document in output_type.",
+      "row_fields": "output_type* json | yaml | toml | xml | csv; raw_output_metric* e.g. [\"user.name\",\"items[0].id\"]; task_id*, task_name*, input_type* (metadata strings).",
+      "good_for": "generating structured documents with required fields",
+      "caveats": "Checks structure and key presence only, not values.",
+      "general_purpose": true,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/structeval"
+    },
+    "swe_pivot": {
+      "reward_type": "gym",
+      "summary": "PivotRL for SWE agents: checks the model's tool call at a trajectory pivot matches the demonstrated call.",
+      "reward": "Binary 1/0.",
+      "answer_format": "A Responses-API function_call item, not text.",
+      "row_fields": "expected_action e.g. {\"type\":\"function_call\",\"name\":\"str_replace_editor\",\"arguments\":\"{...}\"}.",
+      "good_for": "coding-agent next-action imitation",
+      "caveats": "A text answer always scores 0; not usable with single-turn text GRPO.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/swe_pivot"
+    },
+    "terminal_multi_harness": {
+      "reward_type": "gym",
+      "summary": "Next-step action verifier for agent harnesses: compares the model's message or tool call(s) with the expected action.",
+      "reward": "Binary 1/0.",
+      "answer_format": "Responses-API function_call item(s) matching declared tools; message rows accept any text.",
+      "row_fields": "expected_action* {type: message | function_call | function_call_batch, ...}; harness, declared_tools optional.",
+      "good_for": "terminal-agent next-action imitation",
+      "caveats": "With text answers the reward is trivial (message rows) or impossible (tool-call rows); not usable with single-turn text GRPO.",
+      "general_purpose": false,
+      "doc": "https://github.com/NVIDIA-NeMo/Gym/tree/v0.7.0/resources_servers/terminal_multi_harness"
+    }
+  }
+}

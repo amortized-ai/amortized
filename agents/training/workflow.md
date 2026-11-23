@@ -62,21 +62,23 @@ the config — do not call `validate_training_job` until you have.
 |-------|----------|
 | `training-knowledge-ingestion-osft` | Knowledge ingestion, FAQ bots, doc-grounded QA |
 | `training-classifier` | Text classifiers / decision models, intent routers, topic/sentiment |
-| `training-grpo` | Reinforcement learning (GRPO) against a checkable reference answer — math, short answers, tool calls |
+| `training-verifiable-tasks-grpo` | Verifiable tasks — every answer can be checked automatically (tool calls, short answers, multiple choice, constraint-following, structured output, code with tests) — trained with reinforcement learning (GRPO) |
 
-**How to choose:** Knowledge ingestion / doc-grounded QA → OSFT (default,
-recommended). Classify text into a fixed set of categories (intent routing,
-ticket/topic/sentiment, decision models) → `training-classifier` — it defaults to a
-classification **head** (`classifier_sft`; best accuracy + calibration) and offers an
-embedding router (`embedding_sft`) when the user wants embeddings/semantic routing.
-Every prompt has a short, checkable reference answer and the user wants the model to get
-that answer right (math, short-answer QA, tool calls), or the user asks for GRPO/RL →
-`training-grpo`.
+**How to choose:**
+
+| Pick | When |
+|------|------|
+| `training-classifier` | The output is one label from a fixed set (intent routing, ticket/topic/sentiment, decision models). Defaults to a classification **head** (`classifier_sft`; best accuracy + calibration) and offers an embedding router (`embedding_sft`) when the user wants embeddings/semantic routing |
+| `training-verifiable-tasks-grpo` | The answer can be checked automatically — a tool call against a target call, a short answer or option letter against a reference, text against checkable rules, JSON against required keys, code against tests — and the base model already gets some answers right; or the user asks for GRPO/RL |
+| `training-knowledge-ingestion-osft` | Knowledge ingestion / doc-grounded QA (default, recommended), or imitating full reference responses (chat, style) where no automatic check exists — and as a first step when the base model gets almost no answers right on a verifiable task |
+
+A fixed-label task is verifiable too, but the classifier is faster and better
+calibrated, so it wins there; GRPO is for verifiable outputs a label head can't produce.
 
 Load the matching skill with the `skill` tool —
 `skill({ name: "training-knowledge-ingestion-osft" })` for OSFT,
 `skill({ name: "training-classifier" })` for classifiers, or
-`skill({ name: "training-grpo" })` for GRPO — each has detailed
+`skill({ name: "training-verifiable-tasks-grpo" })` for GRPO — each has detailed
 requirement-gathering steps, tool parameters, and hyperparameter guidance. The OSFT
 skill bundles the supported-model list and a config template.
 
@@ -235,13 +237,14 @@ batching error.
 Determine which training sub-skill to use based on the handoff context:
 knowledge-ingestion/OSFT for doc-grounded QA, `training-classifier` for
 classifying text into a fixed set of categories (decision models, intent routers,
-sentiment/topic), or `training-grpo` for reinforcement learning against a checkable
-reference answer (or when the user asks for GRPO/RL). The classifier skill defaults to a
+sentiment/topic), or `training-verifiable-tasks-grpo` for verifiable tasks — answers a reward function
+can check automatically — trained with reinforcement learning (or when the user asks for
+GRPO/RL); see the How to choose table above. The classifier skill defaults to a
 classification **head**
 (`classifier_sft`) and offers an embedding router (`embedding_sft`) as an option —
 that choice is made inside the skill, not here. Load the matching skill
 (`skill({ name: "training-knowledge-ingestion-osft" })`,
-`skill({ name: "training-classifier" })` or `skill({ name: "training-grpo" })`). You MUST load it before Phase 2 — it
+`skill({ name: "training-classifier" })` or `skill({ name: "training-verifiable-tasks-grpo" })`). You MUST load it before Phase 2 — it
 contains the detailed guidance (the OSFT skill also bundles the supported-model
 list). For the classifier skill, skip the VRAM/model-size/method steps; for the GRPO
 skill, skip the VRAM steps.

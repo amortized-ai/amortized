@@ -496,7 +496,8 @@ class TestGymRecipe:
     def _recipe() -> dict[str, Any]:
         from amortized.core.recipes import list_starter_templates
 
-        [recipe] = [t for t in list_starter_templates() if t["use_case"] == "gym-reward"]
+        use_case = "verifiable-tasks-grpo-multiple-choice"
+        [recipe] = [t for t in list_starter_templates() if t["use_case"] == use_case]
         config: dict[str, Any] = recipe["config"]
         return config
 
@@ -519,3 +520,47 @@ class TestGymRecipe:
         result = await training_builder.build({"id": "r1", "type": "training"}, config, files)
         assert [s.env for s in result.sidecars] == [{"GYM_SERVER": "mcqa"}]
         assert yaml.safe_load(files["config.yaml"])["reward_fn"] == "gym_reward.compute_score"
+
+
+# --- Reward-function map (bundled with the GRPO skill) -----------------------------------
+
+
+class TestRewardFunctionMap:
+    _PATH = (
+        Path(__file__).resolve().parent.parent
+        / "agents/training/skills/verifiable-tasks/grpo/reward-functions.json"
+    )
+    _KEYS = frozenset(
+        {"reward_type", "summary", "reward", "answer_format", "row_fields", "good_for"}
+        | {"caveats", "general_purpose"}
+    )
+
+    def _map(self) -> dict[str, dict[str, Any]]:
+        entries: dict[str, dict[str, Any]] = json.loads(self._PATH.read_text())["reward_functions"]
+        return entries
+
+    def test_covers_every_reward_and_shipped_verifier(self) -> None:
+        entries = self._map()
+        gym = {n for n, e in entries.items() if e["reward_type"] == "gym"}
+        builtin = {n for n, e in entries.items() if e["reward_type"] != "gym"}
+        assert gym == set(GYM_VERIFIERS)
+        assert builtin == {"math", "tool_call"}
+        assert all(e["reward_type"] == n for n, e in entries.items() if n in builtin)
+
+    def test_entries_are_complete(self) -> None:
+        for name, entry in self._map().items():
+            assert entry.keys() >= self._KEYS, name
+            assert isinstance(entry["general_purpose"], bool), name
+            if entry["reward_type"] == "gym":
+                assert entry["doc"].endswith(f"/resources_servers/{name}"), name
+
+    def test_every_map_entry_passes_the_api_schema(self) -> None:
+        for name, entry in self._map().items():
+            extra = {"gym_verifier": name} if entry["reward_type"] == "gym" else {}
+            TrainingJobRequest(
+                algorithm="lora_grpo",
+                model_name_or_path="Qwen/Qwen3-0.6B",
+                reward_type=entry["reward_type"],
+                data_path="/amortized/work/data/x",
+                **extra,
+            )

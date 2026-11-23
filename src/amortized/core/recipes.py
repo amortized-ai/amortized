@@ -20,6 +20,20 @@ def _get_base_dir() -> Path:
     return _RECIPES_DIR
 
 
+def _template(config: dict[str, Any], job_type: str, use_case: str) -> dict[str, Any]:
+    meta = config.pop("_meta", {})
+    return {
+        "name": meta.get("name", use_case),
+        "type": job_type,
+        "use_case": use_case,
+        "description": meta.get("description", ""),
+        # Per-recipe required fields (e.g. Knowledge Ingestion needs document_ids
+        # — optional on the shared SDG schema, so declared on the recipe here).
+        "required": meta.get("required", []),
+        "config": config,
+    }
+
+
 def list_starter_templates() -> list[dict[str, Any]]:
     agents_dir = _get_base_dir() / "agents"
     if not agents_dir.is_dir():
@@ -38,26 +52,24 @@ def list_starter_templates() -> list[dict[str, Any]]:
                 continue
 
             try:
-                config = json.loads(path.read_text())
+                payload = json.loads(path.read_text())
             except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 logger.warning("Skipping invalid template: %s", path)
                 continue
 
-            meta = config.pop("_meta", {})
-            name = meta.get("name", use_case)
-            description = meta.get("description", "")
-            # Per-recipe required fields (e.g. Knowledge Ingestion needs document_ids
-            # — optional on the shared SDG schema, so declared on the recipe here).
-            required = meta.get("required", [])
-
-            results.append(
-                {
-                    "name": name,
-                    "type": job_type,
-                    "use_case": use_case,
-                    "description": description,
-                    "required": required,
-                    "config": config,
-                }
-            )
+            # One recipe per file, or a list of recipes for a skill with several use cases;
+            # each list entry's `_meta.id` is appended to the folder's use case.
+            if isinstance(payload, list):
+                for config in payload:
+                    recipe_id = (
+                        config.get("_meta", {}).get("id") if isinstance(config, dict) else None
+                    )
+                    if not recipe_id:
+                        logger.warning("Skipping template without _meta.id in %s", path)
+                        continue
+                    results.append(_template(config, job_type, f"{use_case}-{recipe_id}"))
+            elif isinstance(payload, dict):
+                results.append(_template(payload, job_type, use_case))
+            else:
+                logger.warning("Skipping invalid template: %s", path)
     return results

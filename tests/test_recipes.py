@@ -90,3 +90,41 @@ class TestListStarterTemplates:
         templates = list_starter_templates()
         names = {t["name"] for t in templates}
         assert "classification" in names
+
+    def test_list_payload_yields_one_template_per_entry(self, skills_dir: Path) -> None:
+        grpo = skills_dir / "agents" / "training" / "skills" / "verifiable-tasks" / "grpo"
+        grpo.mkdir(parents=True)
+        (grpo / "reference-payload.json").write_text(
+            json.dumps(
+                [
+                    {"_meta": {"id": "tool-calling", "name": "TC"}, "reward_type": "tool_call"},
+                    {"_meta": {"id": "multiple-choice", "name": "MC"}, "reward_type": "gym"},
+                ]
+            )
+        )
+        by_name: dict[str, Any] = {t["name"]: t for t in list_starter_templates()}
+        assert by_name["TC"]["use_case"] == "verifiable-tasks-grpo-tool-calling"
+        assert by_name["MC"]["use_case"] == "verifiable-tasks-grpo-multiple-choice"
+        assert by_name["MC"]["type"] == "training"
+        assert by_name["MC"]["config"] == {"reward_type": "gym"}
+
+    def test_list_entries_without_id_are_skipped(self, skills_dir: Path) -> None:
+        multi = skills_dir / "agents" / "training" / "skills" / "multi"
+        multi.mkdir(parents=True)
+        (multi / "reference-payload.json").write_text(
+            json.dumps([{"_meta": {"name": "No id"}}, "not a dict", {"_meta": {"id": "ok"}}])
+        )
+        use_cases = {t["use_case"] for t in list_starter_templates()}
+        assert "multi-ok" in use_cases
+        assert len(use_cases) == 3
+
+    def test_repo_recipes_have_unique_use_cases(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import amortized.config as config_mod
+
+        monkeypatch.setattr(config_mod.settings, "recipes_dir", None)
+        use_cases = [t["use_case"] for t in list_starter_templates()]
+        assert len(use_cases) == len(set(use_cases))
+        assert {
+            "verifiable-tasks-grpo-tool-calling",
+            "verifiable-tasks-grpo-multiple-choice",
+        } <= set(use_cases)
