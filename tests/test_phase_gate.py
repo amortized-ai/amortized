@@ -30,7 +30,7 @@ def test_unknown_slug_is_lenient() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# signal_is_known — the #1a vocabulary predicate (keys the signalled-guard, NOT adjudicate)
+# signal_is_known — the #1a vocabulary predicate (keys the missing-signal skip, NOT adjudicate)
 # --------------------------------------------------------------------------- #
 
 

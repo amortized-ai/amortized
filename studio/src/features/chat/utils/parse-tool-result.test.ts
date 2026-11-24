@@ -114,3 +114,26 @@ describe("extractValidatedJobConfig", () => {
     expect(validated?.prompts.map((p) => p.text)).toEqual(["ASSESS"])
   })
 })
+
+describe("extractValidatedJobConfig — model checks", () => {
+  it("carries model_checks onto the validated config and drops malformed entries", () => {
+    const validated = extractValidatedJobConfig(JSON.stringify({
+      valid: true,
+      job_type: "eval",
+      config: {},
+      model_checks: [
+        { label: "judge", model: "gpt-oss", base_url: "http://gw/v1", outcome: "unverified", reason: "rate_limited", detail: "" },
+        { label: "bad", outcome: "maybe" },
+        "nonsense",
+      ],
+    }))
+    expect(validated?.modelChecks).toEqual([
+      { label: "judge", model: "gpt-oss", base_url: "http://gw/v1", outcome: "unverified", reason: "rate_limited", detail: "" },
+    ])
+  })
+
+  it("defaults to no model checks", () => {
+    const validated = extractValidatedJobConfig(JSON.stringify({ valid: true, job_type: "sdg", config: {} }))
+    expect(validated?.modelChecks).toEqual([])
+  })
+})

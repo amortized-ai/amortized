@@ -1,0 +1,63 @@
+# Opt-in standalone model-liveness check service. By default the server runs the check
+# in-process under a process-wide probe limit; include this component in an overlay where
+# independent scaling or controlled egress justifies a separate deployment:
+#
+#   components:
+#     - ../../components/model-check
+#
+# TLS uses OpenShift's service CA (serving cert via the Service annotation; the server verifies
+# it with the openshift-service-ca.crt bundle present in every namespace). Elsewhere, provide the
+# amortized-model-check-tls Secret and a CA ConfigMap and patch the names below.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: amortized-config
+    patch: |
+      - op: add
+        path: /data/AMORTIZED_MODEL_CHECK_URL
+        # {namespace} is the server's own (POD_NAMESPACE below), filled in at runtime: the
+        # serving cert covers amortized-model-check.<ns>.svc, and an overlay that sets
+        # `namespace:` can't rewrite a namespace inside this string.
+        value: "https://amortized-model-check.{namespace}.svc:7351"
+      - op: add
+        path: /data/AMORTIZED_MODEL_CHECK_CA_BUNDLE
+        value: "/etc/model-check-ca/service-ca.crt"
+  - target:
+      kind: Deployment
+      name: amortized-server
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: amortized-server
+      spec:
+        template:
+          metadata:
+            annotations:
+              # Changes the Pod template, so including this component rolls the server onto
+              # the new configuration (env from a ConfigMap only refreshes on restart).
+              amortized.ai/model-check: standalone
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: POD_NAMESPACE
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.namespace
+                volumeMounts:
+                  - name: model-check-ca
+                    mountPath: /etc/model-check-ca
+                    readOnly: true
+            volumes:
+              - name: model-check-ca
+                configMap:
+                  name: openshift-service-ca.crt

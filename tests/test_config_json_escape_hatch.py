@@ -80,18 +80,17 @@ def test_config_json_equals_flat(model: Any, cfg: dict[str, Any]) -> None:
 def test_config_json_overrides_stray_flat_args(caplog: pytest.LogCaptureFixture) -> None:
     """A weak model that sends config_json AND leftover flat args: config_json wins wholesale,
     so the flat args can't half-populate a corrupted config. The drop is silent to the caller
-    but WARN-logged, naming exactly which keys/values were ignored."""
+    but WARN-logged, naming the keys ignored — never their values, which can be credentials."""
     with caplog.at_level("WARNING"):
-        m = SDGJobRequest(config_json=json.dumps(_SDG), num_records=999, topic="WRONG")
+        m = SDGJobRequest(
+            config_json=json.dumps(_SDG), num_records=999, topic="WRONG", api_key="sk-secret"
+        )
     assert m.num_records == 10
     assert m.topic == "RFE"
-    # the warning names each ignored flat arg and the discarded value
-    assert any(
-        "ignoring 2 flat argument(s)" in r.message
-        and "num_records=999" in r.message
-        and "topic='WRONG'" in r.message
-        for r in caplog.records
-    )
+    warnings = [r.message for r in caplog.records if "ignoring" in r.message]
+    assert warnings and "ignoring 3 flat argument(s)" in warnings[0]
+    assert "api_key, num_records, topic" in warnings[0]
+    assert "sk-secret" not in warnings[0] and "WRONG" not in warnings[0]
 
 
 def test_config_json_only_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:

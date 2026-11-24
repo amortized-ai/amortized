@@ -31,6 +31,7 @@ from amortized.api import (
 from amortized.api import eval as eval_api
 from amortized.api import evals as evaluations_api
 from amortized.api import models as models_api
+from amortized.api.job_admission import ModelCheckFailedError
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
@@ -176,6 +177,17 @@ async def api_key_auth(request: Request, call_next):  # type: ignore[no-untyped-
             content={"code": "unauthorized", "message": "Invalid API key", "details": []},
         )
     return await call_next(request)
+
+
+@app.exception_handler(ModelCheckFailedError)
+async def model_check_failed_handler(_request: Request, exc: ModelCheckFailedError) -> JSONResponse:
+    # A distinct code so the studio can tell a blocked job (an LLM endpoint the job would call
+    # can't answer, or isn't configured) from other validation errors. The message and details
+    # are already redacted.
+    return JSONResponse(
+        status_code=422,
+        content={"code": "model_check_failed", "message": exc.message, "details": exc.details},
+    )
 
 
 @app.exception_handler(StarletteHTTPException)

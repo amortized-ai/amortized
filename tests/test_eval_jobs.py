@@ -1,6 +1,8 @@
 """Tests for eval job API endpoints and builder."""
 
+import json
 import os
+from typing import Any
 
 import httpx
 import pytest
@@ -116,9 +118,7 @@ class TestCreateEvalJob:
 
     @pytest.mark.asyncio
     async def test_create_eval_job_with_model_name(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(
-            client, endpoint=None, model_name_or_path="Qwen/Qwen3.5-4B"
-        )
+        response = await _create_eval(client, endpoint=None, model_name_or_path="Qwen/Qwen3.5-4B")
         assert response.status_code == 201
         data = response.json()
         assert data["config"]["model_name_or_path"] == "Qwen/Qwen3.5-4B"
@@ -139,20 +139,53 @@ class TestCreateEvalJob:
         assert "succeeded" in response.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_api_key_not_echoed_in_response(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(
-            client,
-            endpoint={
-                "base_url": "http://tuned:8000/v1",
-                "model": "qwen-tuned",
-                "api_key": "sk-secret",
+    @pytest.mark.parametrize("path", ["/api/v1/jobs/eval", "/api/v1/jobs/eval/validate"])
+    async def test_inline_api_key_rejected_and_not_stored(
+        self, client: httpx.AsyncClient, path: str
+    ) -> None:
+        response = await client.post(
+            path,
+            json={
+                **EVAL_BODY,
+                "judge": {**JUDGE, "api_key": "sk-judge-secret"},
             },
         )
-        assert response.status_code == 201
-        config = response.json()["config"]
-        assert "api_key" not in config["endpoint"]
+        assert response.status_code == 422
+        body = response.text
+        assert "provider under Settings" in body
+        assert "sk-judge-secret" not in body
 
+        import amortized.db.connection as _db_conn
 
+        async with _db_conn._pool.acquire() as conn:
+            leaked = await conn.fetchval(
+                "SELECT count(*) FROM jobs"
+                " WHERE config::text LIKE '%sk-judge%' OR request_config::text LIKE '%sk-judge%'"
+            )
+        assert leaked == 0
+
+    @pytest.mark.asyncio
+    async def test_literal_url_needs_a_host(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={**EVAL_BODY, "judge": {"base_url": "https://", "model": "gpt-judge"}},
+        )
+        assert response.status_code == 422
+        assert "judge.base_url is not a valid URL" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_api_key_in_untyped_endpoint_rejected(self, client: httpx.AsyncClient) -> None:
+        # Legacy endpoint_* fields are untyped extras, so the schema cannot catch the key;
+        # the config-wide check does.
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={
+                **EVAL_BODY,
+                "endpoint_tuned": {"base_url": "http://t:8000/v1", "model": "m", "api_key": "k"},
+            },
+        )
+        assert response.status_code == 422
+        assert "endpoint_tuned.api_key" in response.json()["message"]
 
 
 class TestClassificationEvalBuilder:
@@ -194,7 +227,10 @@ class TestClassificationEvalBuilder:
         # Runs the self-contained classifier eval in the training image (has
         # sentence-transformers), not the vLLM serve/judge path.
         assert result.command == [
-            "python3", "/amortized/classify_eval.py", "--config", "/amortized/config.json",
+            "python3",
+            "/amortized/classify_eval.py",
+            "--config",
+            "/amortized/config.json",
         ]
         assert result.image == "ghcr.io/amortized-ai/training:latest"
         assert result.resources.gpus == 0
@@ -242,11 +278,20 @@ class TestClassificationEvalFromTrainingJob:
 
         self._patch_parent(
             monkeypatch,
-            {"algorithm": "classifier_sft", "max_length": 128, "trust_remote_code": True,
-             "revision": "abc", "use_peft": True},
+            {
+                "algorithm": "classifier_sft",
+                "max_length": 128,
+                "trust_remote_code": True,
+                "revision": "abc",
+                "use_peft": True,
+            },
         )
-        config = {"eval_mode": "classification", "training_job_id": "t1",
-                  "eval_data_run_id": "r1", "eval_on_gpu": True}
+        config = {
+            "eval_mode": "classification",
+            "training_job_id": "t1",
+            "eval_data_run_id": "r1",
+            "eval_on_gpu": True,
+        }
         result = await eval_builder.build({"id": "e1", "type": "eval"}, config, {})
         runner = json.loads(result.config_files["config.json"])
         assert runner["max_length"] == 128
@@ -547,7 +592,9 @@ class TestEvalBuilder:
         assert runner["endpoints"]["model"]["model"] == "legacy-tuned"
 
     @pytest.mark.asyncio
-    async def test_build_scrubs_api_keys_from_resolved_config(self) -> None:
+    async def test_build_rejects_inline_api_key(self) -> None:
+        from amortized.jobs.base import JobBuildError
+
         config = {
             **EVAL_BODY,
             "judge": JUDGE,
@@ -557,10 +604,8 @@ class TestEvalBuilder:
                 "api_key": "sk-secret",
             },
         }
-        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
-
-        assert result.env["EVAL_MODEL_API_KEY"] == "sk-secret"
-        assert "api_key" not in result.resolved_config["endpoint"]
+        with pytest.raises(JobBuildError, match="provider under Settings"):
+            await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
     @pytest.mark.asyncio
     async def test_build_no_judge_without_rubric(self) -> None:
@@ -584,8 +629,7 @@ class TestEvalBuilder:
                 "mdl-lora",
                 "/amortized/work/served_model/merged",
                 [
-                    "mlflow artifacts download -r run -a model"
-                    " -d /amortized/work/served_model",
+                    "mlflow artifacts download -r run -a model -d /amortized/work/served_model",
                     "python3 /amortized/merge_lora.py"
                     " /amortized/work/served_model/model"
                     " /amortized/work/served_model/merged",
@@ -777,8 +821,6 @@ class TestScoreParsing:
         assert scores == {"a": 10.0, "b": 0.0}
 
 
-
-
 class TestRubricDriftWarning:
     @pytest.mark.asyncio
     async def test_validate_warns_on_paraphrased_rubric(self, client: httpx.AsyncClient) -> None:
@@ -846,9 +888,7 @@ class TestRubricDriftWarning:
         assert response.json()["warnings"] == []
 
     @pytest.mark.asyncio
-    async def test_validate_silent_on_other_dataset(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_validate_silent_on_other_dataset(self, client: httpx.AsyncClient) -> None:
         await _create_eval(
             client,
             rubric=[{"name": "verdict_accuracy", "description": "original text"}],
@@ -858,9 +898,7 @@ class TestRubricDriftWarning:
             json={
                 **EVAL_BODY,
                 "eval_data_run_id": "b" * 32,  # different dataset
-                "rubric": [
-                    {"name": "verdict_accuracy", "description": "paraphrased text"}
-                ],
+                "rubric": [{"name": "verdict_accuracy", "description": "paraphrased text"}],
             },
         )
         assert response.status_code == 200
@@ -887,9 +925,69 @@ class TestRetryEvalJob:
         return job_id
 
     @pytest.mark.asyncio
-    async def test_retry_clones_request_config_verbatim(
+    @pytest.mark.parametrize(
+        ("overrides", "expected"),
+        [
+            # An endpoint replaced with a string.
+            ({"endpoint": "http://tuned:8000/v1"}, "endpoint"),
+            # A judge with no model.
+            ({"judge": {"base_url": "http://judge:8000/v1"}}, "judge.model"),
+            # The judge removed while the rubric still needs one (None drops the key).
+            ({"judge": None}, "a judge endpoint is required"),
+            # A malformed rubric is a schema error, reported without reaching later checks.
+            ({"rubric": [1, 2]}, "rubric.0"),
+            # An empty rubric, rejected for a generative eval exactly as on create.
+            ({"rubric": []}, "at least one rubric criterion"),
+        ],
+    )
+    async def test_retry_validates_the_merged_config_structure(
+        self, client: httpx.AsyncClient, overrides: dict[str, Any], expected: str
+    ) -> None:
+        # Overrides skip request validation; a broken merge must be a 422, not a queued job
+        # that fails in the builder.
+        job_id = await self._seed_failed_eval(client)
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry", json=overrides)
+        assert response.status_code == 422, response.text
+        assert expected in response.text
+
+    @pytest.mark.asyncio
+    async def test_retry_expands_config_json_before_checking_credentials(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A config_json override is normalized first, so credentials inside it are refused
+        # before anything is probed (not only at insert).
+        from amortized.api import job_admission
+
+        job_id = await self._seed_failed_eval(client)
+        probed: list[str] = []
+
+        async def record(job_type: str, config: dict[str, Any]) -> Any:
+            probed.append(job_type)
+            from amortized.core.model_check_client import CheckReport
+
+            return CheckReport()
+
+        monkeypatch.setattr(job_admission, "check_job_models", record)
+        # config_json replaces the whole config: a complete eval whose judge URL carries
+        # credentials.
+        credentialed = {"base_url": "http://user:secret@judge:8000/v1", "model": "j"}
+        override = {"config_json": json.dumps({**EVAL_BODY, "judge": credentialed})}
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry", json=override)
+        assert response.status_code == 422, response.text
+        assert "judge.base_url" in response.text and "secret" not in response.text
+        assert probed == []
+
+    @pytest.mark.asyncio
+    async def test_retry_validates_a_parent_given_through_config_json(
         self, client: httpx.AsyncClient
     ) -> None:
+        job_id = await self._seed_failed_eval(client)
+        override = {"config_json": json.dumps({"parent_job_id": "ghost-parent"})}
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry", json=override)
+        assert response.status_code == 422, response.text
+
+    @pytest.mark.asyncio
+    async def test_retry_clones_request_config_verbatim(self, client: httpx.AsyncClient) -> None:
         job_id = await self._seed_failed_eval(client)
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
         assert response.status_code == 201, response.text
@@ -923,12 +1021,10 @@ class TestRetryEvalJob:
             )
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
         assert response.status_code == 422
-        assert "judge.base_url 'gateway' is neither" in response.text
+        assert "judge.base_url is neither" in response.text
 
     @pytest.mark.asyncio
-    async def test_retry_legacy_row_strips_runtime_keys(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_retry_legacy_row_strips_runtime_keys(self, client: httpx.AsyncClient) -> None:
         """Rows whose snapshot was taken from a resolved config (the
         migration's best-effort backfill) still lose the runtime keys —
         the builder recomputes them."""
@@ -938,9 +1034,7 @@ class TestRetryEvalJob:
         async with _db_conn._pool.acquire() as conn:
             # Simulate the migration backfill: snapshot = resolved config
             # (rubric present, runtime keys present).
-            await conn.execute(
-                "UPDATE jobs SET request_config = config WHERE id = $1", job_id
-            )
+            await conn.execute("UPDATE jobs SET request_config = config WHERE id = $1", job_id)
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
         assert response.status_code == 201, response.text
         config = response.json()["config"]
@@ -992,6 +1086,57 @@ class TestRetryEvalJob:
         assert new_job["config"]["num_records"] == 100
 
     @pytest.mark.asyncio
+    async def test_retry_keeps_supported_legacy_sdg_configs(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Older SDG snapshots name a column's model by model_config_alias and can carry stale
+        # top-level keys; the schema rejects both, so retry translates them first, as build() does.
+        import amortized.db.connection as _db_conn
+
+        legacy = {
+            "topic": "rfe",
+            "num_records": 10,
+            "temperature": 0.7,
+            "model_configs": [{"alias": "t", "model": "gpt-4o-mini", "provider": "openai"}],
+            "columns": [
+                {
+                    "name": "q",
+                    "column_type": "llm-text",
+                    "model_config_alias": "t",
+                    "prompt": "Write a question",
+                }
+            ],
+        }
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, request_config, created_at)
+                   VALUES ('sdg-legacy', 'sdg', 'failed', $1::jsonb, $1::jsonb, now())""",
+                json.dumps(legacy),
+            )
+        response = await client.post("/api/v1/jobs/sdg-legacy/retry")
+        assert response.status_code == 201, response.text
+        config = response.json()["config"]
+        assert config["columns"][0]["model_alias"] == "t"
+        assert "model_config_alias" not in config["columns"][0]
+        assert "temperature" not in config
+
+    @pytest.mark.asyncio
+    async def test_retry_with_malformed_sdg_columns_is_a_field_error(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, request_config, created_at)
+                   VALUES ('sdg-bad-cols', 'sdg', 'failed', '{"topic": "rfe"}'::jsonb,
+                           '{"topic": "rfe"}'::jsonb, now())"""
+            )
+        response = await client.post("/api/v1/jobs/sdg-bad-cols/retry", json={"columns": 1})
+        assert response.status_code == 422, response.text
+        assert "columns" in response.text
+
+    @pytest.mark.asyncio
     async def test_retry_rerun_with_overrides(self, client: httpx.AsyncClient) -> None:
         # "regenerate, 2000 records" — overrides land on the cloned config.
         import amortized.db.connection as _db_conn
@@ -1004,16 +1149,12 @@ class TestRetryEvalJob:
                            '{"topic": "rfe"}'::jsonb,
                            '{"topic": "rfe"}'::jsonb, now())"""
             )
-        response = await client.post(
-            "/api/v1/jobs/sdg-retry-2/retry", json={"num_records": 2000}
-        )
+        response = await client.post("/api/v1/jobs/sdg-retry-2/retry", json={"num_records": 2000})
         assert response.status_code == 201, response.text
         assert response.json()["config"]["num_records"] == 2000
 
     @pytest.mark.asyncio
-    async def test_retry_validates_overridden_parent(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_retry_validates_overridden_parent(self, client: httpx.AsyncClient) -> None:
         # A parent_job_id override must be validated: core_create_job pulls the parent
         # from config when the arg is empty, so an unvalidated override would link the
         # retry to a missing parent. The original job has no parent and a standalone
@@ -1024,9 +1165,15 @@ class TestRetryEvalJob:
             await conn.execute(
                 """INSERT INTO jobs
                        (id, type, status, config, request_config, created_at)
-                   VALUES ('eval-retry-parent', 'eval', 'failed',
-                           '{"eval_data_run_id": "run-x"}'::jsonb,
-                           '{"eval_data_run_id": "run-x"}'::jsonb, now())"""
+                   VALUES ('eval-retry-parent', 'eval', 'failed', $1::jsonb, $1::jsonb, now())""",
+                json.dumps(
+                    {  # a complete eval (retry validates the merged config like a create)
+                        "eval_data_run_id": "run-x",
+                        "endpoint": {"base_url": "http://e:8000/v1", "model": "m"},
+                        "judge": {"base_url": "http://j:8000/v1", "model": "j"},
+                        "rubric": [{"name": "relevance", "description": "on topic"}],
+                    }
+                ),
             )
         response = await client.post(
             "/api/v1/jobs/eval-retry-parent/retry",
@@ -1036,9 +1183,7 @@ class TestRetryEvalJob:
         assert "ghost-parent" in response.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_retry_rejects_unsupported_type(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_retry_rejects_unsupported_type(self, client: httpx.AsyncClient) -> None:
         import amortized.db.connection as _db_conn
 
         async with _db_conn._pool.acquire() as conn:
@@ -1112,6 +1257,8 @@ class TestEvalEndpointSuggestions:
         assert data["known_endpoints"][0]["model_name"] == "gpt-oss"
         assert data["known_endpoints"][0]["provider_model_name"] == "openai/gpt-oss-120b"
         assert data["known_endpoints"][0]["base_url"] == "http://gw:5000/v1"
+        # The gateway routes by endpoint name; model_name would 404 there.
+        assert data["known_endpoints"][0]["model"] == "gpt-oss"
 
     @pytest.mark.asyncio
     async def test_suggestions_unknown_training_job(self, client: httpx.AsyncClient) -> None:
@@ -1126,46 +1273,61 @@ class TestEvalEndpointSuggestions:
 
 class TestJudgeProviderResolution:
     """The judge/endpoint api-key wiring: a base_url naming an enabled provider
-    resolves to that provider's real endpoint + its injected key env-var, so a
-    BYOK-stripped judge authenticates with the forwarded provider key (the same
-    keys SDG forwards). A literal URL with an inline key is left untouched (KIND)."""
+    resolves to its real endpoint + its injected key env-var, so the job authenticates
+    with the forwarded key (the same keys SDG forwards). Any other base_url is a
+    keyless URL."""
 
     def test_provider_name_resolves_to_endpoint_and_injected_key(self, monkeypatch) -> None:
         monkeypatch.setattr(
             eval_builder,
             "resolve_provider",
-            lambda name: {
-                "name": "openai",
-                "endpoint": "https://api.openai.com/v1",
-                "provider_type": "openai",
-                "api_key": "OPENAI_API_KEY",
-            }
-            if name == "openai"
-            else None,
+            lambda name: (
+                {
+                    "name": "openai",
+                    "endpoint": "https://api.openai.com/v1",
+                    "provider_type": "openai",
+                    "api_key": "OPENAI_API_KEY",
+                }
+                if name == "openai"
+                else None
+            ),
         )
-        env: dict[str, str] = {}
         spec = eval_builder._endpoint_spec(
             {"judge": {"base_url": "openai", "model": "gpt-5"}},
             "judge",
-            "EVAL_JUDGE_API_KEY",
-            env,
         )
         assert spec["base_url"] == "https://api.openai.com/v1"
         # points at the injected provider key var, not the bespoke (unset) one
         assert spec["api_key_env"] == "OPENAI_API_KEY"
 
-    def test_literal_url_with_inline_key_unchanged(self, monkeypatch) -> None:
+    def test_literal_url_is_keyless(self, monkeypatch) -> None:
         monkeypatch.setattr(eval_builder, "resolve_provider", lambda name: None)
-        env: dict[str, str] = {}
         spec = eval_builder._endpoint_spec(
-            {"judge": {"base_url": "http://judge:8000/v1", "model": "m", "api_key": "sk-x"}},
+            {"judge": {"base_url": "http://judge:8000/v1", "model": "m"}},
             "judge",
-            "EVAL_JUDGE_API_KEY",
-            env,
         )
         assert spec["base_url"] == "http://judge:8000/v1"
-        assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
-        assert env["EVAL_JUDGE_API_KEY"] == "sk-x"
+        # No key env at all: a key the server forwards to jobs never goes to a URL the config
+        # names (keyed models come from providers configured in Settings).
+        assert spec["api_key_env"] == ""
+
+    @pytest.mark.asyncio
+    async def test_provider_name_delivers_its_key_only_through_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("MAAS_BASE_URL", "https://maas.example.com/v1/")
+        monkeypatch.setenv("MAAS_API_KEY", "sk-maas-secret")
+        config = {**EVAL_BODY, "endpoint": {"base_url": "maas", "model": "qwen"}}
+
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["endpoints"]["model"]["base_url"] == "https://maas.example.com/v1"
+        assert runner["endpoints"]["model"]["api_key_env"] == "MAAS_API_KEY"
+        # the key travels only in the job's env (a per-job Secret), never in its config
+        assert result.env["MAAS_API_KEY"] == "sk-maas-secret"
+        assert "sk-maas-secret" not in result.config_files["config.json"]
+        assert "sk-maas-secret" not in json.dumps(result.resolved_config)
 
 
 class TestAdaptBodyForParamError:
@@ -1432,11 +1594,15 @@ class TestClassificationEvalOnSuccess:
                 pass
 
             async def get_artifact_text(self, _run, _path):
-                return json.dumps({"results": {
-                    "classifier_kind": "head",
-                    "scores": {"accuracy": 0.9, "macro_f1": 0.9},
-                    "model": {"num_samples": 10},
-                }})
+                return json.dumps(
+                    {
+                        "results": {
+                            "classifier_kind": "head",
+                            "scores": {"accuracy": 0.9, "macro_f1": 0.9},
+                            "model": {"num_samples": 10},
+                        }
+                    }
+                )
 
         monkeypatch.setattr(eval_builder, "set_mlflow_run_tag", _tag)
         monkeypatch.setattr(mlflow_client, "MLflowClient", _Client)

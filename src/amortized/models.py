@@ -53,16 +53,16 @@ class _ConfigJsonMixin(BaseModel):
                 # config_json fully replaces the flat args; anything also passed alongside it
                 # is dropped. Keep that behavior (the escape hatch must absorb a weak model's
                 # smeared extra keys, not reject them), but make the drop auditable by naming
-                # exactly which keys were ignored and the values discarded.
-                ignored = {
-                    k: v for k, v in data.items() if k != "config_json" and v not in (None, "")
-                }
+                # the keys ignored. Names only: a value can be a credential.
+                ignored = sorted(
+                    k for k, v in data.items() if k != "config_json" and v not in (None, "")
+                )
                 if ignored:
                     logger.warning(
                         "config_json is set; ignoring %d flat argument(s) in favor of the "
                         "config_json contents: %s",
                         len(ignored),
-                        ", ".join(f"{k}={v!r}" for k, v in sorted(ignored.items())),
+                        ", ".join(ignored),
                     )
                 return parsed
         return data
@@ -290,6 +290,17 @@ class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     )
 
 
+class ModelCheckResult(BaseModel):
+    """Outcome of checking one LLM endpoint a job will call. URLs are redacted."""
+
+    label: str
+    model: str
+    base_url: str
+    outcome: Literal["passed", "failed", "unverified"]
+    reason: str
+    detail: str = ""
+
+
 class Job(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     type: JobType
@@ -307,6 +318,8 @@ class Job(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     retry_of: str = ""
+    # The model-liveness check recorded at creation; `unverified` entries are warnings.
+    model_checks: list[ModelCheckResult] = Field(default_factory=list)
 
 
 class PromptView(BaseModel):
@@ -351,6 +364,9 @@ class ValidatedJobConfig(BaseModel):
     # rendered as "trainer default" on the confirmation card. Kept out of `config` (never
     # re-submitted to the create endpoint). Empty for non-training validate paths.
     trainer_default_fields: list[str] = Field(default_factory=list)
+    # Model-liveness results for the endpoints this job will call. Definite failures are
+    # rejected before a card exists, so these are passed or unverified (shown as warnings).
+    model_checks: list[ModelCheckResult] = Field(default_factory=list)
 
 
 class RecipeSummary(BaseModel):
@@ -579,24 +595,37 @@ class SDGJobRequest(_ConfigJsonMixin):
 # ---------------------------------------------------------------------------
 
 
+INLINE_API_KEY_ERROR = (
+    "API keys are not accepted in job configs, including inside a URL (user:password@ or"
+    " query parameters). Add the model's provider under Settings (MaaS for an"
+    " OpenAI-compatible endpoint, or EnMaaS, OpenAI, Anthropic), or ask your administrator"
+    " to configure it, then set base_url to the provider's name."
+)
+
+
 class EvalEndpoint(BaseModel):
     base_url: str = Field(
         ...,
         min_length=1,
-        description="OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)",
+        description=(
+            "The name of a configured provider (e.g. openai, maas), which supplies the URL"
+            " and key, or the URL of an endpoint that needs no key"
+        ),
     )
     model: str = Field(
         ...,
         min_length=1,
         description="Model name sent as 'model' in chat completion requests",
     )
-    api_key: str = Field(
-        "",
-        description=(
-            "Optional bearer token. Never echoed in API responses;"
-            " scrubbed from the DB once the job is dispatched."
-        ),
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_api_key(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "api_key" in data:
+            if data["api_key"] not in (None, ""):
+                raise ValueError(INLINE_API_KEY_ERROR)
+            return {k: v for k, v in data.items() if k != "api_key"}
+        return data
 
 
 class EvalRubricCriterion(BaseModel):
@@ -627,7 +656,7 @@ class EvalJobConfig(BaseModel):
         None,
         description=(
             "External OpenAI-compatible endpoint serving the model to evaluate"
-            " (e.g. a gateway model). When omitted, set training_job_id or"
+            " (a provider model). When omitted, set training_job_id or"
             " model_name_or_path and the eval job serves the model itself."
         ),
     )
