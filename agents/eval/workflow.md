@@ -366,7 +366,8 @@ named HF model) and go straight to Step 3. If they named a model from one
 of their providers (no endpoint URL), resolve it WITHOUT re-asking which
 model and set the eval's `endpoint` — then go to Step 3. If the model is in
 `known_endpoints` (from `get_eval_endpoint_suggestions`), use the entry's
-`base_url` and `model` exactly; otherwise find it with `list_models` and set
+`base_url` and `model` exactly. Use `provider_model_name` only to display the
+underlying provider model. Otherwise find it with `list_models` and set
 `base_url` = its provider name (e.g. `openai`, `anthropic`) and `model` =
 its id. If validation rejects that name, ask the user how the model is
 reached rather than guessing a URL (option 4 below). Only
@@ -383,9 +384,10 @@ Present the model-source options as clickable choices:
    config gets `model_name_or_path` set.
 3. **A provider model** — a model from the user's configured providers
    (`list_models`), e.g. "gpt-4o-mini (openai)". For a model listed in
-   `known_endpoints` (from `get_eval_endpoint_suggestions`), set the eval's
-   `endpoint` to the entry's `base_url` and `model` exactly; for any other model, set
-   `base_url` = its provider name and `model` = its id — the platform
+   `known_endpoints` (from `get_eval_endpoint_suggestions`), display its
+   `name` and `provider_model_name` and set the eval's `endpoint` as
+   `{base_url: entry.base_url, model: entry.model}`. For any other model,
+   set `base_url` = its provider name and `model` = its id — the platform
    resolves the URL and key. These evals need no GPU.
 4. "My own endpoint" — an OpenAI-compatible endpoint the user runs: they
    add it under Settings as the MaaS provider (its base URL and key;

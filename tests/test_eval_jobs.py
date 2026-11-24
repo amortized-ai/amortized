@@ -1253,7 +1253,9 @@ class TestEvalEndpointSuggestions:
         assert response.status_code == 200
         data = response.json()
         assert data["model"] == "mdl-rfe-scorer"
-        assert data["known_endpoints"][0]["model_name"] == "openai/gpt-oss-120b"
+        assert data["known_endpoints"][0]["name"] == "gpt-oss"
+        assert data["known_endpoints"][0]["model_name"] == "gpt-oss"
+        assert data["known_endpoints"][0]["provider_model_name"] == "openai/gpt-oss-120b"
         assert data["known_endpoints"][0]["base_url"] == "http://gw:5000/v1"
         # The gateway routes by endpoint name; model_name would 404 there.
         assert data["known_endpoints"][0]["model"] == "gpt-oss"

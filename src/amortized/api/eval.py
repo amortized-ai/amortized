@@ -54,7 +54,10 @@ async def get_eval_endpoint_suggestions(
                     # endpoint name, so the underlying model_name 404s there.
                     "model": m.get("name", ""),
                     "provider": m.get("provider", ""),
-                    "model_name": m.get("model_name", ""),
+                    # Gateway requests use the endpoint name; retain the
+                    # underlying provider model as display metadata.
+                    "model_name": m.get("name", ""),
+                    "provider_model_name": m.get("model_name", ""),
                     "base_url": gateway_url,
                     "note": "MLflow AI Gateway",
                 }
