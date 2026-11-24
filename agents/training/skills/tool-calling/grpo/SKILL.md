@@ -127,7 +127,7 @@ starting point:
   "max_prompt_length": 2048,
   "max_tokens": 512,
   "temperature": 1.0,
-  "learning_rate": 5e-06,
+  "learning_rate": 0.0001,
   "lora_r": 32,
   "lora_alpha": 64,
   "gpu_memory_utilization": 0.4,
@@ -139,7 +139,7 @@ starting point:
 
 For the `math` reward, set `"reward_type": "math"`, add `text_column` / `label_column`,
 and raise `max_tokens` to ~1024 for step-by-step answers. For full-weight training, set
-`"algorithm": "grpo"`, drop `lora_r` / `lora_alpha`, and lower `learning_rate`.
+`"algorithm": "grpo"`, drop `lora_r` / `lora_alpha`, and lower `learning_rate` (5e-5 for a ~4B model).
 
 ### Key Parameters — Adjust Based on Model Size, Data, and Compute
 
@@ -152,7 +152,7 @@ choice, and GPU count.
 | `algorithm` | `lora_grpo` (default). `grpo` only when the user asks for full fine-tuning |
 | `reward_type` | `tool_call` for tool-call traces; `math` for short checkable answers. See Reward Functions |
 | `num_train_epochs` | Passes over the data. 1 for a first run or 2000+ samples; 2–3 for <1000 samples |
-| `learning_rate` | 5e-6 for `lora_grpo`; 1e-6 for `grpo`. RL is sensitive to high learning rates |
+| `learning_rate` | For a ~4B model: 1e-4 for `lora_grpo`, 5e-5 for `grpo`. Roughly double for ≤2B, halve for 7–9B; scale by √(rollouts per step ÷ 512) when you change `prompt_batch_size` × `group_size`. Higher than usual GRPO recipes because the verl backend averages a whole batch into one optimizer step (when `prompt_batch_size` ≤ 256) rather than several mini-batch steps. Halve it if the reward collapses |
 | `group_size` | Answers sampled per prompt (8). More gives a steadier signal but costs rollout time |
 | `prompt_batch_size` | Prompts per step (64). `prompt_batch_size × group_size` must be divisible by `4 × nproc_per_node` |
 | `max_prompt_length` | Must fit the longest prompt **including the tool definitions** (they are added to the system prompt); longer prompts are **dropped**. 2048 for a few small tools; raise it for many or large tool schemas |
