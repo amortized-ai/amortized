@@ -331,7 +331,7 @@ _DEMO_CONFIG: dict[str, Any] = {
     "max_prompt_length": 512,
     "max_tokens": 1024,
     "temperature": 1.0,
-    "learning_rate": 5e-06,
+    "learning_rate": 0.0001,
     "lora_r": 32,
     "lora_alpha": 64,
     "gpu_memory_utilization": 0.4,

@@ -514,7 +514,7 @@ class TestGymRecipe:
         if algorithm == "grpo":  # the recipe's documented full fine-tuning switch
             config.pop("lora_r")
             config.pop("lora_alpha")
-            config["learning_rate"] = 1e-06
+            config["learning_rate"] = 5e-05
             TrainingJobRequest(**config)
         files: dict[str, str] = {}
         result = await training_builder.build({"id": "r1", "type": "training"}, config, files)
