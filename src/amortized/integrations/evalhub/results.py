@@ -92,6 +92,9 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
     groups: dict[str, Any] = {}
     store = EvalHubRepository(repo)
     for job in jobs:
+        # Like the native groups: a failed or cancelled run's partial scores are no result.
+        if job.get("status") != "succeeded":
+            continue
         execution = await store.get(job["id"])
         if execution is None:
             continue

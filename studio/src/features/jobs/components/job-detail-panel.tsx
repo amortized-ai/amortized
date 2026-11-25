@@ -251,7 +251,11 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
               fill the remaining height without a double scrollbar.
               Non-logs tabs use overflow-y-auto for their own scrolling. */}
           <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
-            {job.execution_sync_error && <p className="text-sm text-muted-foreground mb-3">{job.execution_sync_error}</p>}
+            {/* Only while the job is active, like the chat card: after it ends, the text is at
+                most a cleanup retry, which isn't the user's concern. */}
+            {job.execution_sync_error && ["queued", "provisioning", "running"].includes(job.status) && (
+              <p className="text-sm text-muted-foreground mb-3">{job.execution_sync_error}</p>
+            )}
             <OverviewTab job={job} onClose={() => onOpenChange(false)} />
           </TabsContent>
 

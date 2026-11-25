@@ -207,8 +207,9 @@ that, go to Step 4 (there are no metrics to design — skip Step 3). Note the
 
 **Generative path:** the default task dataset uses a `messages` column; the trailing
 assistant message is removed before target inference and used as the reference answer.
-Explicit task definitions may map another input/reference column. Confirm
-those mappings with the user.
+When `list_evaluation_providers` returned `enabled: true`, an explicit task definition
+may map another input/reference column; confirm those mappings with the user. With
+`enabled: false` the dataset must use the `messages` column.
 
 **For a tuned model, FIRST offer reusing an existing eval set — do not
 jump to generating a fresh one.** Scoring a model on a set another model

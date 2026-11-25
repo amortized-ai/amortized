@@ -1,5 +1,7 @@
+{{- $provider := .Values.evalhub.taskProvider }}
 {{- if .Values.evalhub.operator.createInstance }}
 {{- $hubNamespace := required "evalhub.operator.namespace is required" .Values.evalhub.operator.namespace }}
+{{- if not $provider }}{{ fail "evalhub.taskProvider is required: the Hub registers the provider the server submits to" }}{{ end }}
 {{- /* A multi-tenant Hub serves the jobs namespace as a tenant, and the operator refuses to
        run one inside a tenant namespace (InvalidPlacement). */}}
 {{- if or (eq $hubNamespace .Values.namespace) (eq $hubNamespace .Values.jobsNamespace) }}
@@ -11,6 +13,9 @@ kind: EvalHub
 metadata:
   name: {{ .Values.evalhub.operator.name }}
   namespace: {{ $hubNamespace }}
+  # Other releases may share this Hub: uninstalling this one leaves it in place.
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   tenancy: multi
   replicas: 1
@@ -18,7 +23,7 @@ spec:
     type: postgresql
     secret: {{ required "evalhub.operator.databaseSecret with db-url is required" .Values.evalhub.operator.databaseSecret }}
   providers:
-    - amortized
+    - {{ $provider }}
   # Absent, the CRD fills in the operator's own collections, which reference providers
   # this Hub doesn't register.
   collections: []
@@ -34,22 +39,25 @@ spec:
 {{- end }}
 {{- if .Values.evalhub.operator.createProviders }}
 {{- $operatorNamespace := required "evalhub.operator.namespaceForProviders is required" .Values.evalhub.operator.namespaceForProviders }}
+{{- if not $provider }}{{ fail "evalhub.taskProvider is required: the Hub registers the provider the server submits to" }}{{ end }}
 {{- $taskImage := required "Pin evalhub.operator.taskAdapterImage to a built image digest" .Values.evalhub.operator.taskAdapterImage }}
-{{- if not (contains "@sha256:" $taskImage) }}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $taskImage) }}
 {{- fail "evalhub.operator.taskAdapterImage must use an immutable digest" }}
 {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: amortized-evalhub-task-provider
+  name: {{ $provider }}-evalhub-task-provider
   namespace: {{ $operatorNamespace }}
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     trustyai.opendatahub.io/evalhub-provider-type: system
-    trustyai.opendatahub.io/evalhub-provider-name: amortized
+    trustyai.opendatahub.io/evalhub-provider-name: {{ $provider }}
 data:
-  amortized.yaml: |
-    id: amortized
+  {{ $provider }}.yaml: |
+    id: {{ $provider }}
     name: Amortized task evaluation v1
     description: Versioned deterministic, rubric and anchor/query task scoring
     runtime:

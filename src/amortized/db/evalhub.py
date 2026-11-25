@@ -1,6 +1,7 @@
 """Durable dispatch intent and last-observed Hub state, separate from request config."""
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from amortized.db.repository import Repository
@@ -60,3 +61,21 @@ class EvalHubRepository:
 
     async def cancel(self, job_id: str) -> None:
         await self.update(job_id, cancel_requested=True)
+
+    async def cancel_unclaimed(self, job_id: str) -> bool:
+        """Cancel a job no worker has claimed yet; False when a worker claimed it first.
+
+        Only the worker's claim takes a Hub job out of `queued`, and the worker prepares and
+        submits only after claiming. So nothing was prepared or sent and nothing needs release.
+        """
+        async with self.conn.transaction():
+            moved = await self.conn.fetchval(
+                """UPDATE jobs SET status = 'cancelled', completed_at = $2
+                   WHERE id = $1 AND status = 'queued' RETURNING id""",
+                job_id,
+                datetime.now(UTC),
+            )
+            if moved is None:
+                return False
+            await self.update(job_id, state="finished", cancel_requested=True)
+        return True

@@ -20,6 +20,7 @@ from amortized.db.evalhub import EvalHubRepository
 from amortized.db.repository import Repository
 from amortized.integrations.evalhub import client, preparation
 from amortized.jobs.base import JobBuildError
+from amortized.models import JobStatus
 
 logger = logging.getLogger(__name__)
 _TERMINAL = {
@@ -265,6 +266,10 @@ async def request_cancel(repo: Repository, job: dict[str, Any]) -> dict[str, Any
     execution = await store.get(job["id"])
     if execution is None:
         raise ValueError("Hub execution mapping is missing")
+    if job["status"] == JobStatus.queued.value and await store.cancel_unclaimed(job["id"]):
+        updated = await repo.get_job(job["id"])
+        assert updated is not None
+        return updated
     await store.cancel(job["id"])
     # The worker persists/forwards this intent even if the service is down or
     # the submit response is lost. Never fabricate a cancelled terminal status.
