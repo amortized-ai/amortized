@@ -14,6 +14,8 @@ The flags passed to estimate() match how amortized runs each method:
 sft/osft use mini_trainer FSDP (count_fsdp_gather), osft runs without Liger kernels, and
 multi-GPU lora/qlora use model splitting (device_map="balanced"), for which training-hub
 returns the busiest GPU's memory, unless the request sets enable_model_splitting false.
+lora_grpo/grpo use training-hub's verl estimator (GRPOEstimator): max_seq_len is the
+longest prompt + response, and vLLM reserves gpu_memory_utilization of the GPU's memory.
 
 Usage: python3 estimate_vram.py '<json list of requests>'
 """
@@ -36,10 +38,18 @@ me.MODEL_STORAGE_PATH = "/tmp/training_hub_model_storage.csv"
 
 
 _REQUIRED_ARGS = {"count_fsdp_gather", "enable_model_splitting"}
+_GRPO_METHODS = ("lora_grpo", "grpo")
 
 
 def estimate_one(req: dict) -> dict:
     method = req["method"]
+    if method in _GRPO_METHODS and (
+        "gpu_memory_utilization" not in inspect.signature(me.estimate).parameters
+    ):
+        raise RuntimeError(
+            f"training-hub {version('training-hub')} in the training image has no GRPO "
+            "estimator; rebuild the training image on a newer training-hub"
+        )
     kwargs = {
         "training_method": method,
         "model_path": req["model"],
@@ -58,6 +68,10 @@ def estimate_one(req: dict) -> dict:
     if method in ("lora", "qlora"):
         kwargs["lora_r"] = req["lora_r"]
         kwargs["enable_model_splitting"] = split
+    if method in _GRPO_METHODS:
+        kwargs["lora_r"] = req["lora_r"]  # estimate() uses 0 for grpo
+        kwargs["gpu_memory_utilization"] = req["gpu_memory_utilization"]
+        kwargs["gpu_memory"] = req["gpu_memory_bytes"]
 
     single_gpu = me.estimate(num_gpus=1, **kwargs)
     # The estimator builds the model on the meta device from config.json (no weight

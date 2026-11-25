@@ -3,7 +3,11 @@ training-hub's estimator (jobs/assets/estimate_vram.py) as a job in the training
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
+import sys
+import types
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
@@ -96,9 +100,45 @@ class TestEndpoint:
         assert req["batch_size"] == 8
         assert (req["max_seq_len"], req["max_tokens_per_gpu"]) == (2048, 4096)
 
+    async def test_grpo_estimates_prompt_plus_response(self, calls: list[dict[str, Any]]) -> None:
+        await self._estimate(
+            model_name_or_path="Qwen/Qwen3-4B",
+            method="lora_grpo",
+            max_prompt_length=4096,
+            max_tokens=1024,
+            gpu_memory_utilization=0.4,
+            lora_r=16,
+            effective_batch_size=64,
+        )
+        assert calls[0] == {
+            "model": "Qwen/Qwen3-4B",
+            "method": "lora_grpo",
+            "batch_size": 1,
+            "max_seq_len": 5120,
+            "lora_r": 16,
+            "gpu_memory_utilization": 0.4,
+            "gpu_memory_bytes": 80 * GIB,
+            "gpu_counts": [1, 2, 4, 8],
+        }
+
+    async def test_grpo_defaults_match_the_job(self, calls: list[dict[str, Any]]) -> None:
+        await self._estimate(model_name_or_path="Qwen/Qwen3-4B", method="GRPO", gpu_memory_gb=40)
+        req = calls[0]
+        assert req["method"] == "grpo"
+        assert req["max_seq_len"] == 2048 + 512
+        assert req["gpu_memory_utilization"] == 0.45
+        assert req["gpu_memory_bytes"] == 40 * GIB
+
     @pytest.mark.parametrize(
         ("method", "expected"),
-        [("sft", "sft"), ("osft", "osft"), ("lora", "lora"), ("qlora_sft", "qlora")],
+        [
+            ("sft", "sft"),
+            ("osft", "osft"),
+            ("lora", "lora"),
+            ("qlora_sft", "qlora"),
+            ("lora_grpo", "lora_grpo"),
+            ("grpo", "grpo"),
+        ],
     )
     async def test_method_aliases(
         self, calls: list[dict[str, Any]], method: str, expected: str
@@ -289,3 +329,86 @@ class TestRunTrainingEstimate:
         self._use(RejectingBackend([]))
         with pytest.raises(TrainingEstimateError, match="could not run: exceeded quota"):
             await run_training_estimates([{}])
+
+
+_SCRIPT = training_estimate._SCRIPT
+
+
+def _load_script(monkeypatch: pytest.MonkeyPatch, estimate: Any) -> tuple[Any, list[dict]]:
+    """Load estimate_vram.py against a stub training_hub memory estimator."""
+    seen: list[dict[str, Any]] = []
+
+    @functools.wraps(estimate)  # the script inspects estimate()'s parameters
+    def _estimate(**kwargs: Any) -> tuple[int, int, int]:
+        seen.append(kwargs)
+        return estimate(**kwargs)
+
+    class _Basic:
+        def __init__(self, **kwargs: Any) -> None:
+            self.num_params = 4_000_000_000
+
+    me = types.ModuleType("training_hub.profiling.memory_estimator")
+    me.estimate = _estimate  # type: ignore[attr-defined]
+    me.BasicEstimator = _Basic  # type: ignore[attr-defined]
+    profiling = types.ModuleType("training_hub.profiling")
+    profiling.memory_estimator = me  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "training_hub", types.ModuleType("training_hub"))
+    monkeypatch.setitem(sys.modules, "training_hub.profiling", profiling)
+    monkeypatch.setitem(sys.modules, "training_hub.profiling.memory_estimator", me)
+    spec = importlib.util.spec_from_file_location("estimate_vram_under_test", _SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "version", lambda name: "9.9.9")
+    return module, seen
+
+
+GRPO_REQUEST = {
+    "model": "Qwen/Qwen3-4B",
+    "method": "lora_grpo",
+    "batch_size": 1,
+    "max_seq_len": 2560,
+    "lora_r": 32,
+    "gpu_memory_utilization": 0.4,
+    "gpu_memory_bytes": 80 * GIB,
+    "gpu_counts": [1, 2],
+}
+
+
+class TestEstimateScript:
+    def test_grpo_passes_the_verl_knobs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def estimate(
+            *,
+            num_gpus: int,
+            gpu_memory_utilization: float = 0.45,
+            gpu_memory: int = 0,
+            **kwargs: Any,
+        ) -> tuple[int, int, int]:
+            return (40 * GIB // num_gpus, 50 * GIB // num_gpus, 55 * GIB // num_gpus)
+
+        script, seen = _load_script(monkeypatch, estimate)
+        result = script.estimate_one(GRPO_REQUEST)
+        assert result["single_gpu"] == [40 * GIB, 50 * GIB, 55 * GIB]
+        assert result["per_gpu"] == {"1": 50 * GIB, "2": 25 * GIB}
+        assert seen[0] == {
+            "training_method": "lora_grpo",
+            "model_path": "Qwen/Qwen3-4B",
+            "batch_size": 1,
+            "max_seq_len": 2560,
+            "verbose": 0,
+            "lora_r": 32,
+            "gpu_memory_utilization": 0.4,
+            "gpu_memory": 80 * GIB,
+            "num_gpus": 1,
+        }
+        assert [call["num_gpus"] for call in seen] == [1, 2]
+
+    def test_grpo_on_old_training_hub_is_a_clear_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def estimate(*, num_gpus: int, **kwargs: Any) -> tuple[int, int, int]:
+            raise AssertionError("must not be called")
+
+        script, _ = _load_script(monkeypatch, estimate)
+        with pytest.raises(RuntimeError, match=r"9\.9\.9 in the training image has no GRPO"):
+            script.estimate_one(GRPO_REQUEST)
