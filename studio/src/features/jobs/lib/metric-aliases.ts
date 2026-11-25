@@ -9,6 +9,36 @@ export const METRIC_ALIASES: Record<string, string[]> = {
 
 export const HISTORY_KEYS = [...new Set(Object.values(METRIC_ALIASES).flat())]
 
+/**
+ * verl (the lora_grpo backend) namespaces its metrics (``actor/…``, ``critic/…``), so none of
+ * the SFT aliases above match. These keys are only fetched when the run actually logged them,
+ * i.e. only for GRPO runs.
+ */
+export const GRPO_METRICS = {
+  reward: "critic/rewards/mean",
+  entropy: "actor/entropy",
+  grad_norm: "actor/grad_norm",
+  learning_rate: "actor/lr",
+  global_step: "training/global_step",
+} as const
+
+export const GRPO_HISTORY_KEYS = [
+  GRPO_METRICS.reward,
+  GRPO_METRICS.entropy,
+  GRPO_METRICS.grad_norm,
+  GRPO_METRICS.learning_rate,
+]
+
+/** Every metric key whose step history the metrics views fetch (when present on the run). */
+export const ALL_HISTORY_KEYS = [...HISTORY_KEYS, ...GRPO_HISTORY_KEYS]
+
+/** True for a GRPO training job's ``config.algorithm`` (``lora_grpo`` / ``lora-grpo`` / ``grpo``). */
+export function isGrpoAlgorithm(algorithm: unknown): boolean {
+  if (typeof algorithm !== "string") return false
+  const algo = algorithm.trim().toLowerCase().replace(/-/g, "_")
+  return algo === "lora_grpo" || algo === "grpo"
+}
+
 export function resolveMetric(
   values: Record<string, number>,
   canonical: string,

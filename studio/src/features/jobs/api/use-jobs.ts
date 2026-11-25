@@ -18,7 +18,7 @@ import {
 import type { Job, JobFilters, PaginationParams, MlflowRun } from "@/types/api"
 import type { EvalResults } from "@/lib/api-client"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
-import { HISTORY_KEYS } from "../lib/metric-aliases"
+import { ALL_HISTORY_KEYS } from "../lib/metric-aliases"
 
 const ACTIVE_STATUSES = new Set(["queued", "provisioning", "running"])
 
@@ -182,7 +182,7 @@ export function useJobMlflowMetrics(runId: string | null) {
 
       // 2. Fetch step-level history for each relevant key (in parallel)
       const available = new Set(run.data.metrics.map((m) => m.key))
-      const keysToFetch = HISTORY_KEYS.filter((k) => available.has(k))
+      const keysToFetch = ALL_HISTORY_KEYS.filter((k) => available.has(k))
 
       const results = await Promise.all(
         keysToFetch.map(async (key) => {

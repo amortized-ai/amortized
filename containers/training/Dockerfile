@@ -1,5 +1,5 @@
 # Training container — universal (all algorithms, CUDA-enabled)
-# Supports: lora_sft, lora_grpo, sft, osft, dpo, kto, gkd, gepa, embedding_sft, classifier_sft
+# Supports: lora_sft, lora_grpo (verl), sft, osft, dpo, kto, gkd, gepa, embedding_sft, classifier_sft
 #
 # Built from the official training-hub v0.12.0 release (PyPI) — ships the CLI (#103),
 # parquet/CSV support (#151), the embedding-sft subcommand (#152), the embedding_sft
@@ -9,13 +9,17 @@
 # The [embedding] extra pulls sentence-transformers, which both `thub embedding-sft`
 # training and the classification eval (classify_eval.py) import at runtime.
 #
-# The torch/CUDA stack is pinned to a reproducible, CUDA-13-aligned set (torch 2.13.0+cu130,
-# the versions vLLM 0.32.0 pins) via a pip constraints file + the cu130 extra index applied to
+# The torch/CUDA stack is pinned to a reproducible, CUDA-13-aligned set (torch 2.11.0+cu130,
+# the versions vLLM 0.24.0 pins) via a pip constraints file + the cu130 extra index applied to
 # EVERY pip call below (see PIP_CONSTRAINT / PIP_EXTRA_INDEX_URL). Without this, `torch` is
 # unbounded (training-hub needs only >=2.6.0) and drifts to the newest PyPI wheel — currently
 # 2.14.x, whose c10 headers require C++20 (std::strong_ordering), which breaks the flash-attn /
-# mamba-ssm / causal-conv1d source compiles. torch 2.13.0 is the last C++17-compatible line, so
-# the CUDA extensions build without C++20 gymnastics.
+# mamba-ssm / causal-conv1d source compiles (2.11 is a C++17 line, so they build as-is).
+#
+# vLLM / torch / verl / trl match verl 0.9.1's own tested [vllm] stack (vLLM 0.24, torch 2.11;
+# transformers 5.10.4, inside verl's <5.11): verl's FSDP->vLLM weight sync is tied to vLLM internals, and
+# on vLLM 0.32 it broke (removed FusedMoE import; Qwen3.5 tied lm_head/embed_tokens rejected by
+# 0.32's _check_skipped_aliases). Eval serving uses the separate eval image, not this vLLM.
 FROM docker.io/nvidia/cuda:13.0.1-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -31,8 +35,13 @@ WORKDIR /build
 
 # Pin the torch/CUDA stack for every pip call in this stage: the constraints file forces the
 # exact CUDA-13-aligned wheels (so nothing — not even --ignore-installed / --force-reinstall —
-# drifts torch off 2.13.0), and the extra index makes the +cu130 local builds resolvable.
-RUN printf 'torch==2.13.0+cu130\ntorchvision==0.28.0+cu130\ntorchaudio==2.11.0+cu130\n' \
+# drifts torch off 2.11.0), and the extra index makes the +cu130 local builds resolvable.
+# cutlass-dsl is pinned to vLLM 0.24.0's 4.5.2 from the start: otherwise mamba-ssm pulls the newest
+# quack-kernels (needs cutlass-dsl >=4.7), and vLLM's --ignore-installed later lays 4.5.2 over 4.8.x,
+# a mixed install on which quack fails (cutlass.cute.core has no ThrMma). transformers' Qwen3.5 model
+# imports fla -> mamba_ssm -> quack, so every Qwen3.5 job then fails with "Could not import module
+# 'Qwen3_5ForCausalLM'". quack-kernels 0.5.0 needs cutlass-dsl >=4.5.2 (0.6.5 needs >=4.7).
+RUN printf 'torch==2.11.0+cu130\ntorchvision==0.26.0+cu130\ntorchaudio==2.11.0+cu130\nnvidia-cutlass-dsl==4.5.2\nquack-kernels==0.5.0\n' \
     > /build/constraints.txt
 ENV PIP_CONSTRAINT=/build/constraints.txt
 ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu130
@@ -54,16 +63,22 @@ RUN pip install --no-cache-dir --force-reinstall --no-deps --break-system-packag
 
 # Extend the constraints file for the HF/NLP stack. vLLM below installs with --ignore-installed,
 # which re-resolves transformers/huggingface-hub against vLLM's own (looser) ranges; without these
-# constraints it pulls transformers 5.19.x → huggingface-hub 2.x → breaks sentence-transformers
+# constraints it can pull a newer transformers → huggingface-hub 2.x → breaks sentence-transformers
 # (needs hub<2.0.0). Appended here (after the cached CUDA-extensions compile) so it doesn't bust
-# that layer. vLLM only needs hub>=1.31.0 and transformers<5.20.0, so 5.17.0 / hub<2.0 satisfy it.
-RUN printf 'transformers==5.17.0\nhuggingface-hub<2.0\n' >> /build/constraints.txt
+# that layer.
+# peft is pinned to 0.20.0: with 0.21.x, get_peft_model_state_dict() on an FSDP-wrapped PeftModel
+# (inside summon_full_params) returns no tensors, so verl syncs an empty LoRA adapter to vLLM and
+# rollouts crash in add_lora (StopIteration). 0.20.0 returns them (and satisfies unsloth >=0.18).
+# tokenizers and kernels follow transformers 5.10.4 (see the transformers install below).
+RUN printf 'transformers==5.10.4\ntokenizers==0.22.2\nkernels==0.12.3\nhuggingface-hub<2.0\npeft==0.20.0\n' \
+    >> /build/constraints.txt
 
 # Install lora deps manually — xformers (unsloth's caps don't apply at --no-deps below).
-# trl is the newest release that still satisfies unsloth 2026.10.7's trl<=1.15.0 cap (and is
-# newer than the GA lockfile's 1.13.0). unsloth's cap is a real runtime constraint here because
-# unsloth IS installed (lora path), unlike its spurious datasets/transformers<5 caps.
-RUN pip install --no-cache-dir --break-system-packages "trl==1.15.0" "xformers==0.0.35"
+# trl is pinned to 1.12.0: the last release with trl.experimental.ppo's value-head models, which
+# verl (lora_grpo) imports whenever trl is installed — trl>=1.13 removed them and verl crashes at
+# model init. It satisfies unsloth 2026.10.7's trl<=1.15.0 cap, and its GRPOTrainer imports on
+# vLLM 0.24 (vllm...nccl_engine.NCCLTrainerSendWeightsArgs), which unsloth patches on import.
+RUN pip install --no-cache-dir --break-system-packages "trl==1.12.0" "xformers==0.0.35"
 
 # Install modern unsloth with --no-deps — its pyproject artificially caps `datasets` (and
 # transformers<5), but the code works fine with the current datasets>=5 / transformers 5.x,
@@ -73,15 +88,31 @@ RUN pip install --no-cache-dir --no-deps --break-system-packages "unsloth==2026.
 # Qwen3.5 attention kernels: flash-linear-attention (pure triton, no CUDA ext)
 RUN pip install --no-cache-dir --break-system-packages "flash-linear-attention[cuda]"
 
-# Pin transformers to 5.17.0 (the training-hub GA lockfile version, also what v0.12.0's classifier_sft
-# was validated on): it satisfies vLLM
-# 0.32.0 (>=5.16.1,<5.20.0) AND unsloth 2026.10.7 (<=5.17.0), and crucially requires
-# huggingface-hub<2.0 — newer transformers (5.19.x) allow hub<3.0, pulling hub 2.x, which breaks
-# sentence-transformers (needs hub<2.0.0), the embedding-router path. Also covers Qwen3.5.
-RUN pip install --no-cache-dir --upgrade --break-system-packages "transformers==5.17.0"
+# Pin transformers to 5.10.4, the version the verl GRPO runs use: inside verl 0.9.1's
+# transformers<5.11, and satisfies vLLM 0.24.0 (>=5.5.3), unsloth 2026.10.7 (<=5.17.0),
+# flash-linear-attention (>=5.6.2) and sentence-transformers (>=5.0.0), with huggingface-hub<2.0
+# (hub 2.x breaks sentence-transformers). Covers Qwen3.5 and Gemma4. It needs two downgrades:
+#   tokenizers<=0.23.0: 0.23.0 was never released, so 0.22.2 (newest stable below it).
+#   kernels<0.13 (training-hub's [cuda] extra installs the newest, 0.18+): newer kernels' LayerRepository
+#     requires a revision, so `import transformers.modeling_layers` raises at import time.
+RUN pip install --no-cache-dir --upgrade --break-system-packages \
+    "transformers==5.10.4" "tokenizers==0.22.2" "kernels==0.12.3" "peft==0.20.0"
 
-# vLLM (for GRPO online RL) — 0.32.0 hard-pins torch==2.13.0, matched by our constraints file
-RUN pip install --no-cache-dir --break-system-packages --ignore-installed "vllm==0.32.0"
+# vLLM (for GRPO online RL) — 0.24.0 hard-pins torch==2.11.0, matched by our constraints file
+RUN pip install --no-cache-dir --break-system-packages --ignore-installed "vllm==0.24.0"
+
+# verl + ray for `thub lora-grpo` (training-hub's default GRPO backend; the [grpo-verl] extra).
+# verl (pure Python) is installed --no-deps, so its own pins can't move the stack above,
+# and its runtime deps are added explicitly under the constraints: its base deps plus
+# its [verl-core] runtime extras (minus pytest plugins) — the v1 PPO trainer imports
+# transfer_queue (TransferQueue) unconditionally.
+RUN printf 'vllm==0.24.0\nnumpy>=2\n' >> /build/constraints.txt \
+    && pip install --no-cache-dir --break-system-packages --no-deps "verl==0.9.1" \
+    && pip install --no-cache-dir --break-system-packages \
+       codetiming dill hydra-core pybind11 pylatexenc "ray[default]>=2.41.0" torchdata \
+       "tensordict>=0.8.0,<=0.10.0,!=0.9.0" tensorboard wandb \
+       "TransferQueue>=0.1.10" pyzmq msgspec fastapi uvicorn mathruler qwen_vl_utils \
+       cachetools nvtx
 
 # S3/MinIO support for reading datasets and writing artifacts
 RUN pip install --no-cache-dir --break-system-packages s3fs fsspec mlflow boto3
@@ -94,17 +125,29 @@ RUN pip install --no-cache-dir --no-build-isolation --no-deps --no-binary causal
 # Verify key versions — hard gate (build fails if any of these are missing,
 # incl. sentence-transformers from the [embedding] extra)
 RUN python3 -c "\
-import transformers, trl, torch, sentence_transformers, training_hub, huggingface_hub; \
+import transformers, trl, torch, sentence_transformers, training_hub, huggingface_hub, verl, ray, pyarrow, datasets, transfer_queue; \
+import verl.trainer.main_ppo, verl.trainer.ppo.v1, verl.workers.engine_workers, verl.workers.rollout.vllm_rollout; \
+from trl.experimental.ppo import AutoModelForCausalLMWithValueHead; \
+import transformers.modeling_layers; \
+import fla, mamba_ssm; \
+from transformers import Qwen3_5ForCausalLM; \
 from importlib.metadata import version; \
 thv = version('training-hub'); \
 print(f'training-hub {thv}'); \
 print(f'transformers {transformers.__version__}'); \
 print(f'trl {trl.__version__}'); \
 print(f'torch {torch.__version__}'); \
+print(f'vllm {version('vllm')}'); \
+print(f'verl {verl.__version__}'); \
 print(f'sentence-transformers {sentence_transformers.__version__}'); \
 print(f'huggingface-hub {huggingface_hub.__version__}'); \
 assert thv == '0.12.0', f'expected training-hub 0.12.0, got {thv}'; \
-assert torch.__version__.startswith('2.13.0'), f'expected torch 2.13.0, got {torch.__version__}'; \
+assert torch.__version__.startswith('2.11.0'), f'expected torch 2.11.0, got {torch.__version__}'; \
+assert version('vllm') == '0.24.0', f'expected vllm 0.24.0, got {version('vllm')}'; \
+assert transformers.__version__ == '5.10.4', f'expected transformers 5.10.4 (verl 0.9.1 needs <5.11), got {transformers.__version__}'; \
+assert version('tokenizers') == '0.22.2', f'expected tokenizers 0.22.2 (transformers 5.10.4 needs <=0.23.0), got {version('tokenizers')}'; \
+assert version('kernels') == '0.12.3', f'expected kernels 0.12.3 (transformers 5.10.4 needs <0.13), got {version('kernels')}'; \
+assert version('peft') == '0.20.0', f'expected peft 0.20.0 (0.21 breaks verl LoRA sync under FSDP), got {version('peft')}'; \
 assert '+cu13' in torch.__version__, f'expected a cu13 torch build, got {torch.__version__}'; \
 assert int(huggingface_hub.__version__.split('.')[0]) < 2, f'sentence-transformers needs huggingface-hub<2.0, got {huggingface_hub.__version__}'; \
 assert version('litellm') != '1.107.0', 'litellm 1.107.0 is compromised (credential stealer + backdoor)'; \

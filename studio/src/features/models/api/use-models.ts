@@ -10,7 +10,7 @@ import {
 } from "@/lib/api-client"
 import type { ModelRecord, MlflowRegisteredModel, MlflowRun, Job } from "@/types/api"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
-import { HISTORY_KEYS } from "@/features/jobs/lib/metric-aliases"
+import { ALL_HISTORY_KEYS } from "@/features/jobs/lib/metric-aliases"
 
 function registeredModelToRecord(m: MlflowRegisteredModel): ModelRecord {
   const latest = m.latest_versions?.[0]
@@ -92,7 +92,7 @@ export function useModelRunData(runId: string | null) {
       for (const t of run.data.tags ?? []) tags[t.key] = t.value
 
       const available = new Set((run.data.metrics ?? []).map((m) => m.key))
-      const keysToFetch = HISTORY_KEYS.filter((k) => available.has(k))
+      const keysToFetch = ALL_HISTORY_KEYS.filter((k) => available.has(k))
 
       const historyResults = await Promise.all(
         keysToFetch.map(async (key) => {

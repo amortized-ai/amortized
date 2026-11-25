@@ -92,6 +92,10 @@ async def get_model_pricing(
 _DEFAULT_EFFECTIVE_BATCH_SIZE = 8
 _DEFAULT_MAX_TOKENS_PER_GPU = 4096
 _DEFAULT_MAX_SEQ_LEN = 2048
+# lora_grpo/grpo job defaults when the config leaves these unset (training.py, training-hub).
+_DEFAULT_MAX_PROMPT_LENGTH = 2048
+_DEFAULT_MAX_TOKENS = 512
+_DEFAULT_GPU_MEMORY_UTILIZATION = 0.45
 
 _GPU_COUNTS = (1, 2, 4, 8)
 
@@ -102,7 +106,10 @@ _METHODS = {
     "lora_sft": "lora",
     "qlora": "qlora",
     "qlora_sft": "qlora",
+    "lora_grpo": "lora_grpo",
+    "grpo": "grpo",
 }
+_GRPO_METHODS = ("lora_grpo", "grpo")
 
 
 class TrainingEstimateRequest(BaseModel):
@@ -112,7 +119,9 @@ class TrainingEstimateRequest(BaseModel):
         description="HuggingFace model id (e.g. 'Qwen/Qwen3.5-4B'); its config is read for "
         "the architecture",
     )
-    method: str = Field("lora", description="Training method: sft, osft, lora, qlora")
+    method: str = Field(
+        "lora", description="Training method: sft, osft, lora, qlora, lora_grpo, grpo"
+    )
     effective_batch_size: int = Field(
         _DEFAULT_EFFECTIVE_BATCH_SIZE,
         ge=1,
@@ -131,7 +140,7 @@ class TrainingEstimateRequest(BaseModel):
         description="lora/qlora only: same value as the job config (default 1); each step "
         "runs effective_batch_size // gradient_accumulation_steps samples",
     )
-    lora_r: int = Field(32, ge=1, description="LoRA rank (lora/qlora only)")
+    lora_r: int = Field(32, ge=1, description="LoRA rank (lora/qlora/lora_grpo only)")
     enable_model_splitting: bool = Field(
         True,
         description="lora/qlora only: same value as the job config (default true). If false, "
@@ -139,6 +148,27 @@ class TrainingEstimateRequest(BaseModel):
     )
     unfreeze_rank_ratio: float = Field(
         0.2, ge=0.0, le=1.0, description="OSFT unfreeze ratio (osft only)"
+    )
+    max_prompt_length: int | None = Field(
+        None,
+        ge=1,
+        description="lora_grpo/grpo only: same value as the job config (default 2048)",
+    )
+    max_tokens: int | None = Field(
+        None, ge=1, description="lora_grpo/grpo only: same value as the job config (default 512)"
+    )
+    gpu_memory_utilization: float | None = Field(
+        None,
+        gt=0.0,
+        lt=1.0,
+        description="lora_grpo/grpo only: same value as the job config (default 0.45); vLLM "
+        "reserves this share of every GPU",
+    )
+    gpu_memory_gb: float = Field(
+        80,
+        gt=0,
+        description="lora_grpo/grpo only: memory of one GPU (80 for an H100). vLLM reserves "
+        "gpu_memory_utilization of it, so the estimate depends on the GPU type",
     )
 
 
@@ -169,9 +199,10 @@ class TrainingEstimateResponse(BaseModel):
     response_model=TrainingEstimateResponse,
     operation_id="estimate_training_resources",
     summary=(
-        "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the "
-        "HuggingFace model id and method. Returns the single-GPU need and the per-GPU need "
-        "for 1/2/4/8 GPUs, to suggest nproc_per_node. To compare several models or methods, "
+        "Estimate the VRAM a training job (sft, osft, lora, qlora, lora_grpo, grpo) needs, "
+        "from the HuggingFace model id and method. Returns the single-GPU need and the "
+        "per-GPU need for 1/2/4/8 GPUs, to suggest nproc_per_node. For lora_grpo/grpo the "
+        "need includes vLLM's gpu_memory_utilization share. To compare several models or methods, "
         "use estimate_training_resources_batch (one call for the whole card)."
     ),
 )
@@ -242,6 +273,21 @@ def _build_request(body: TrainingEstimateRequest) -> dict[str, Any]:
     batch_size = body.effective_batch_size
     if method in ("lora", "qlora"):
         batch_size = max(1, batch_size // body.gradient_accumulation_steps)
+    if method in _GRPO_METHODS:
+        # verl trains one sequence (prompt + response) per GPU at a time; the batch sizes and
+        # group_size don't change the per-GPU memory.
+        return {
+            "model": body.model_name_or_path.strip(),
+            "method": method,
+            "batch_size": 1,
+            "max_seq_len": (body.max_prompt_length or _DEFAULT_MAX_PROMPT_LENGTH)
+            + (body.max_tokens or _DEFAULT_MAX_TOKENS),
+            "lora_r": body.lora_r,
+            "gpu_memory_utilization": body.gpu_memory_utilization
+            or _DEFAULT_GPU_MEMORY_UTILIZATION,
+            "gpu_memory_bytes": int(body.gpu_memory_gb * 1024**3),
+            "gpu_counts": list(_GPU_COUNTS),
+        }
     return {
         "model": body.model_name_or_path.strip(),
         "method": method,

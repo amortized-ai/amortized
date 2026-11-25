@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "name": "Tool Calling GRPO (LoRA)",
+    "description": "Teach a model to call the right tool with the right arguments using LoRA GRPO (training-hub, verl backend) with the built-in tool_call reward. The dataset must hold single-turn tool calls: question, tools, target_tool_name, target_arguments. Multi-turn tool calling is not supported yet.",
+    "required": ["model_name_or_path", "parent_job_id"]
+  },
+  "algorithm": "lora_grpo",
+  "model_name_or_path": "Qwen/Qwen3.5-2B",
+  "reward_type": "tool_call",
+  "num_train_epochs": 1,
+  "group_size": 8,
+  "prompt_batch_size": 64,
+  "max_prompt_length": 2048,
+  "max_tokens": 512,
+  "temperature": 1.0,
+  "learning_rate": 0.0001,
+  "lora_r": 32,
+  "lora_alpha": 64,
+  "gpu_memory_utilization": 0.4,
+  "nproc_per_node": 1,
+  "parent_job_id": "<SDG_JOB_ID>"
+}

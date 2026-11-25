@@ -62,16 +62,21 @@ the config — do not call `validate_training_job` until you have.
 |-------|----------|
 | `training-knowledge-ingestion-osft` | Knowledge ingestion, FAQ bots, doc-grounded QA |
 | `training-classifier` | Text classifiers / decision models, intent routers, topic/sentiment |
+| `training-grpo` | Reinforcement learning (GRPO) against a checkable reference answer — math, short answers, tool calls |
 
 **How to choose:** Knowledge ingestion / doc-grounded QA → OSFT (default,
 recommended). Classify text into a fixed set of categories (intent routing,
 ticket/topic/sentiment, decision models) → `training-classifier` — it defaults to a
 classification **head** (`classifier_sft`; best accuracy + calibration) and offers an
 embedding router (`embedding_sft`) when the user wants embeddings/semantic routing.
+Every prompt has a short, checkable reference answer and the user wants the model to get
+that answer right (math, short-answer QA, tool calls), or the user asks for GRPO/RL →
+`training-grpo`.
 
 Load the matching skill with the `skill` tool —
-`skill({ name: "training-knowledge-ingestion-osft" })` for OSFT, or
-`skill({ name: "training-classifier" })` for classifiers — each has detailed
+`skill({ name: "training-knowledge-ingestion-osft" })` for OSFT,
+`skill({ name: "training-classifier" })` for classifiers, or
+`skill({ name: "training-grpo" })` for GRPO — each has detailed
 requirement-gathering steps, tool parameters, and hyperparameter guidance. The OSFT
 skill bundles the supported-model list and a config template.
 
@@ -115,13 +120,14 @@ You MUST show VRAM estimates before presenting method options.
 Before submitting, estimate training resources with the final model,
 method, and the same `effective_batch_size`,
 `max_length` (as `max_seq_len`), `max_tokens_per_gpu` and (lora/qlora)
-`gradient_accumulation_steps` and `enable_model_splitting` (if set) as the config,
-then show the VRAM card so the user sees what they
+`gradient_accumulation_steps` and `enable_model_splitting` (if set) as the config —
+for GRPO, the config's `max_prompt_length`, `max_tokens`, `gpu_memory_utilization` and
+`lora_r`, plus `gpu_memory_gb` for the GPU type — then show the VRAM card so the user sees what they
 are committing to.
 
 ## When the Config Doesn't Fit
 
-LLM methods (lora/qlora/osft/sft) only.
+LLM methods (lora/qlora/osft/sft) and GRPO (lora_grpo/grpo).
 
 It doesn't fit when no GPU count within the compute budget brings per-GPU
 VRAM under ~110% of one GPU's memory. Between ~90% and ~110% it is
@@ -146,6 +152,15 @@ the user (alongside the "any method" options):
   - lower `effective_batch_size` — only when
     `effective_batch_size × max_length / nproc_per_node` <
     `max_tokens_per_gpu`; otherwise it saves nothing, so don't offer it
+- **If lora_grpo/grpo** (instead of the "any method" options; batch sizes and
+  `group_size` don't change the per-GPU need):
+  - more GPUs (`nproc_per_node`) — keep `prompt_batch_size × group_size`
+    divisible by `4 × nproc_per_node`
+  - lower `gpu_memory_utilization` — shrinks vLLM's reservation; not below 0.3,
+    or rollouts run short of KV cache
+  - lower `max_prompt_length` / `max_tokens` — only if the longest prompt and
+    answer still fit
+  - switch `grpo` → `lora_grpo`, or pick a smaller model
 - **Any method:**
   - lower `max_length` — only if the longest example still fits
   - switch to a lighter method (osft/sft → lora → qlora)
@@ -222,13 +237,15 @@ batching error.
 ### Phase 1 — Route to Sub-Skill <!--signal:route owed:skill,present_options-->
 
 Determine which training sub-skill to use based on the handoff context:
-knowledge-ingestion/OSFT for doc-grounded QA, or `training-classifier` for
+knowledge-ingestion/OSFT for doc-grounded QA, `training-classifier` for
 classifying text into a fixed set of categories (decision models, intent routers,
-sentiment/topic). The classifier skill defaults to a classification **head**
+sentiment/topic), or `training-grpo` for reinforcement learning against a checkable
+reference answer (or when the user asks for GRPO/RL). The classifier skill defaults to a
+classification **head**
 (`classifier_sft`) and offers an embedding router (`embedding_sft`) as an option —
 that choice is made inside the skill, not here. Load the matching skill
-(`skill({ name: "training-knowledge-ingestion-osft" })` or
-`skill({ name: "training-classifier" })`). You MUST load it before Phase 2 — it
+(`skill({ name: "training-knowledge-ingestion-osft" })`,
+`skill({ name: "training-classifier" })` or `skill({ name: "training-grpo" })`). You MUST load it before Phase 2 — it
 contains the detailed guidance (the OSFT skill also bundles the supported-model
 list). For the classifier skill, skip the VRAM/model-size/method steps.
 
@@ -245,8 +262,8 @@ Key decisions to gather:
 - **Compute budget** (ask first, LLM sub-skills only) — silently call
   `get_config` and read `gpu_budget`, before any VRAM estimate.
   If `gpu_budget` is 0, only CPU training is possible: don't ask about
-  GPUs or run estimates; explain that LLM methods (lora/qlora/osft/sft)
-  need a GPU, and offer CPU classifier training if it fits the task or
+  GPUs or run estimates; explain that LLM methods (lora/qlora/osft/sft and
+  GRPO) need a GPU, and offer CPU classifier training if it fits the task or
   ask the user to get a GPU budget — don't suggest config changes.
   Otherwise ask which GPU type and how many GPUs the job may use. If the
   user doesn't know or skips, assume H100 (80 GB) and up to `gpu_budget`

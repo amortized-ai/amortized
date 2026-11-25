@@ -158,7 +158,8 @@ class TrainingJobConfig(BaseModel):
         None,
         description=(
             "classifier_sft/embedding_sft: text column name in the dataset"
-            " (default 'text')"
+            " (default 'text'). lora_grpo/grpo: prompt column (default: first of question,"
+            " problem, prompt, input, text)"
         ),
     )
     label_column: str | None = Field(
@@ -166,6 +167,8 @@ class TrainingJobConfig(BaseModel):
         description=(
             "classifier_sft/embedding_sft: label/category column name (default"
             " 'label'). Set to 'category' for the classification SDG datasets."
+            " lora_grpo/grpo: reference-answer column (default: first of ground_truth, answer,"
+            " label, category, output)"
         ),
     )
     loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = (
@@ -223,6 +226,52 @@ class TrainingJobConfig(BaseModel):
             " be the full 40-character commit hash"
         ),
     )
+    # --- lora_grpo / grpo (verl backend) ---
+    reward_type: Literal["math", "tool_call"] | None = Field(
+        None,
+        description=(
+            "lora_grpo/grpo reward (training-hub). math (default): answer verification — the"
+            " answer is read from \\boxed{} or <answer></answer> and scored 1.0 on an exact or"
+            " math-equivalent match with the reference answer (works for short labels too)."
+            " tool_call: tool-call verification; the dataset must hold tool-call traces"
+            " (question/tools/target_tool_name/target_arguments, or multi-turn messages)."
+        ),
+    )
+    system_prompt: str | None = Field(
+        None,
+        description=(
+            "lora_grpo/grpo: system prompt for every rollout. The math reward defaults to asking"
+            " for the final answer inside \\boxed{}."
+        ),
+    )
+    group_size: int | None = Field(
+        None, ge=2, description="lora_grpo/grpo: rollouts sampled per prompt (default 8)"
+    )
+    prompt_batch_size: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "lora_grpo/grpo: unique prompts per step (default 100). prompt_batch_size x group_size"
+            " must be divisible by 4 x nproc_per_node."
+        ),
+    )
+    max_tokens: int | None = Field(
+        None, ge=1, description="lora_grpo/grpo: max response tokens per rollout (default 512)"
+    )
+    max_prompt_length: int | None = Field(
+        None,
+        ge=1,
+        description="lora_grpo/grpo: max prompt tokens; longer prompts are dropped (2048)",
+    )
+    temperature: float | None = Field(
+        None, gt=0.0, description="lora_grpo/grpo: rollout sampling temperature (default 0.7)"
+    )
+    gpu_memory_utilization: float | None = Field(
+        None,
+        gt=0.0,
+        lt=1.0,
+        description="lora_grpo/grpo: fraction of GPU memory for the vLLM rollout engine (0.45)",
+    )
     nproc_per_node: int = Field(
         1,
         ge=1,
@@ -269,6 +318,22 @@ class TrainingJobConfig(BaseModel):
     def check_osft_requires_urr(self) -> "TrainingJobConfig":
         if self.algorithm == "osft" and self.unfreeze_rank_ratio is None:
             msg = "unfreeze_rank_ratio is required for OSFT (e.g. 0.2)"
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def check_grpo_rollout_split(self) -> "TrainingJobConfig":
+        if self.algorithm.strip().replace("-", "_") not in ("lora_grpo", "grpo"):
+            return self
+        group = self.group_size or 8
+        prompts = self.prompt_batch_size or 100
+        workers = 4 * self.nproc_per_node
+        if (group * prompts) % workers:
+            msg = (
+                f"prompt_batch_size ({prompts}) x group_size ({group}) must be divisible by"
+                f" 4 x nproc_per_node ({workers}) — verl splits rollouts across that many"
+                " workers"
+            )
             raise ValueError(msg)
         return self
 
