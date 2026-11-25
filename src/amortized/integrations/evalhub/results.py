@@ -2,11 +2,16 @@
 
 import hashlib
 import json
+import logging
 import math
 from typing import Any
 
+from pydantic import ValidationError
+
 from amortized.db.evalhub import EvalHubRepository
 from amortized.db.repository import Repository
+
+logger = logging.getLogger(__name__)
 
 
 def _runtime_image(provider: dict[str, Any]) -> str:
@@ -103,7 +108,16 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
             continue
         from amortized.models import EvalJobConfig
 
-        config = EvalJobConfig(**(job.get("config") or {})).model_dump(exclude_none=True)
+        stored = job.get("config") or {}
+        try:
+            config = EvalJobConfig(**stored).model_dump(exclude_none=True)
+        except ValidationError:
+            # Written by a build with other rules, e.g. a benchmark eval read after a rollback.
+            # Hiding the run would tell Morty the model was never evaluated.
+            logger.warning(
+                "Eval %s: config doesn't parse in this version; compared as stored", job["id"]
+            )
+            config = stored
         dataset = str((execution.get("inputs") or {}).get("dataset_identity") or "")
         if not dataset:
             continue

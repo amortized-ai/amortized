@@ -823,9 +823,7 @@ async def test_cancel_api_ends_an_unclaimed_job_at_once(hub_http_client, monkeyp
     assert cancelled.json()["status"] == "cancelled"
     assert cancelled.json()["completed_at"]
     async with get_pool().acquire() as conn:
-        intent = await conn.fetchrow(
-            "SELECT * FROM evalhub_executions WHERE job_id = $1", job_id
-        )
+        intent = await conn.fetchrow("SELECT * FROM evalhub_executions WHERE job_id = $1", job_id)
         # No worker resumes a finished execution, and nothing was prepared to release.
         assert intent["state"] == "finished"
         assert intent["cancel_requested"] is True
@@ -858,9 +856,7 @@ async def test_cancel_api_records_intent_without_inventing_terminal_outcome(hub_
     assert cancelled.json()["status"] == "provisioning"
     assert cancelled.json()["cancel_requested"] is True
     async with get_pool().acquire() as conn:
-        intent = await conn.fetchrow(
-            "SELECT * FROM evalhub_executions WHERE job_id = $1", job_id
-        )
+        intent = await conn.fetchrow("SELECT * FROM evalhub_executions WHERE job_id = $1", job_id)
         assert intent["state"] == "preparing"
 
 
@@ -1271,6 +1267,30 @@ async def test_only_succeeded_hub_runs_are_compared(monkeypatch, status):
     assert await results.comparison_groups(MagicMock(), [job]) == []
     job["status"] = "succeeded"
     assert len(await results.comparison_groups(MagicMock(), [job])) == 1
+
+
+async def test_a_config_this_version_cannot_parse_is_compared_as_stored(monkeypatch):
+    from amortized.integrations.evalhub import results
+
+    execution = {
+        "snapshot": snapshot("completed", metrics={"mae": 3.5}),
+        "request": {},
+        "inputs": {"dataset_identity": "sha256:dataset", "dataset_run_id": "run-a"},
+    }
+    store = MagicMock()
+    store.get = AsyncMock(return_value=execution)
+    monkeypatch.setattr(results, "EvalHubRepository", lambda _: store)
+    benchmark = {"kind": "benchmark", "provider_id": "lm-eval", "benchmark_id": "arc_easy"}
+    newer = {**TASK, "evaluation": benchmark}
+    jobs = [
+        {"id": "a", "config": newer, "status": "succeeded", "created_at": "now"},
+        {"id": "b", "config": TASK, "status": "succeeded", "created_at": "now"},
+    ]
+    groups = await results.comparison_groups(MagicMock(), jobs)
+    assert sorted(len(g["evals"]) for g in groups) == [1, 1]
+    stored = next(g for g in groups if g["evals"][0]["job_id"] == "a")
+    assert stored["evals"][0]["model"] == "test"
+    assert stored["evals"][0]["scores"]
 
 
 def test_task_adapter_generates_scores_and_artifacts_using_sdk_contract(tmp_path, monkeypatch):
