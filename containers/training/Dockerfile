@@ -36,7 +36,12 @@ WORKDIR /build
 # Pin the torch/CUDA stack for every pip call in this stage: the constraints file forces the
 # exact CUDA-13-aligned wheels (so nothing — not even --ignore-installed / --force-reinstall —
 # drifts torch off 2.11.0), and the extra index makes the +cu130 local builds resolvable.
-RUN printf 'torch==2.11.0+cu130\ntorchvision==0.26.0+cu130\ntorchaudio==2.11.0+cu130\n' \
+# cutlass-dsl is pinned to vLLM 0.24.0's 4.5.2 from the start: otherwise mamba-ssm pulls the newest
+# quack-kernels (needs cutlass-dsl >=4.7), and vLLM's --ignore-installed later lays 4.5.2 over 4.8.x,
+# a mixed install on which quack fails (cutlass.cute.core has no ThrMma). transformers' Qwen3.5 model
+# imports fla -> mamba_ssm -> quack, so every Qwen3.5 job then fails with "Could not import module
+# 'Qwen3_5ForCausalLM'". quack-kernels 0.5.0 needs cutlass-dsl >=4.5.2 (0.6.5 needs >=4.7).
+RUN printf 'torch==2.11.0+cu130\ntorchvision==0.26.0+cu130\ntorchaudio==2.11.0+cu130\nnvidia-cutlass-dsl==4.5.2\nquack-kernels==0.5.0\n' \
     > /build/constraints.txt
 ENV PIP_CONSTRAINT=/build/constraints.txt
 ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu130
@@ -124,6 +129,8 @@ import transformers, trl, torch, sentence_transformers, training_hub, huggingfac
 import verl.trainer.main_ppo, verl.trainer.ppo.v1, verl.workers.engine_workers, verl.workers.rollout.vllm_rollout; \
 from trl.experimental.ppo import AutoModelForCausalLMWithValueHead; \
 import transformers.modeling_layers; \
+import fla, mamba_ssm; \
+from transformers import Qwen3_5ForCausalLM; \
 from importlib.metadata import version; \
 thv = version('training-hub'); \
 print(f'training-hub {thv}'); \
