@@ -32,6 +32,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     fetchPendingMessages: vi.fn(async () => []),
     generateChatTitle: vi.fn(async (msg: string) => msg.slice(0, 40)),
     createJob: vi.fn(async () => ({ id: "job-1", status: "queued" })),
+    getJob: vi.fn(async (id: string) => ({ id, status: "running" })),
     getBaseUrl: vi.fn(() => ""),
   }
 })
@@ -46,6 +47,7 @@ function resetStore() {
     sessionStatus: {},
     notifiedJobs: {},
     jobInFlight: {},
+    runningJob: {},
     activeRequests: {},
     requestErrors: {},
     drafts: {},
@@ -994,5 +996,638 @@ describe("useChat — per-conversation model", () => {
     const returned = renderHook(() => useChat())
     expect(returned.result.current.chatState).toBe("done")
     expect(returned.result.current.error).toBeNull()
+  })
+})
+
+describe("useChat — blocked confirmation (model check)", () => {
+  const SANITIZED =
+    "judge model 'gpt-oss' at 'http://gw/v1' did not answer a test request (unreachable: refused)"
+
+  async function modelCheckError() {
+    const { ApiError } = await import("@/lib/api-client")
+    return new ApiError(
+      422,
+      "Unprocessable Entity",
+      { code: "model_check_failed", message: SANITIZED, details: [{ field: "judge", error: "gpt-oss at http://gw/v1: unreachable" }] },
+      "model_check_failed",
+    )
+  }
+
+  function seedCard(convId = "confirm") {
+    seedConversation(convId, [{ id: "action", role: "assistant", content: "Confirm?", timestamp: "2026-01-01" }])
+    useChatStore.getState().updateMessageFields(convId, "action", {
+      proposedAction: { action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" },
+    })
+  }
+
+  const actionMessage = (convId = "confirm") =>
+    useChatStore.getState().getConversationMessages(convId).find((m) => m.id === "action")!
+
+  afterEach(async () => {
+    const { createJob, sendOpenCodeMessage, fetchSessionMessages } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockReset().mockImplementation(async () => ({ id: "job-1", status: "queued" }) as never)
+    vi.mocked(sendOpenCodeMessage).mockReset().mockImplementation(async () => mockResponse)
+    vi.mocked(fetchSessionMessages).mockReset().mockImplementation(async () => [])
+  })
+
+  it("invalidates the card and tells Morty once, with the sanitized failure and no banner", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction() })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    expect(actionMessage().proposedAction).toBeNull()
+    expect(actionMessage().actionBlocked?.message).toBe(SANITIZED) // envelope message, not the detail bullets
+    expect(result.current.error).toBeNull()
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    const [convId, text, , event, , jobType] = vi.mocked(sendOpenCodeMessage).mock.calls[0]!
+    expect(convId).toBe("confirm")
+    expect(event).toBe("confirmation_blocked")
+    expect(jobType).toBe("eval")
+    expect(text).toBe(`Eval submission was rejected before a job was created. ${SANITIZED}`)
+  })
+
+  it("renders a new confirmation card when Morty re-validates in the event turn", async () => {
+    const { createJob, sendOpenCodeMessage, fetchSessionMessages } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    // The event turn's own messages (the server's result), never the session's latest.
+    vi.mocked(sendOpenCodeMessage).mockResolvedValueOnce({
+      ...mockResponse,
+      parts: [],
+      event_messages: [
+        {
+          info: { role: "assistant" },
+          parts: [{
+            type: "tool",
+            tool: "amortized_validate_eval_job",
+            output: JSON.stringify({ valid: true, job_type: "eval", config: { judge: { model: "gpt-5" } } }),
+          }],
+        },
+      ],
+    } as never)
+    vi.mocked(fetchSessionMessages).mockResolvedValue([
+      { info: { role: "user" }, parts: [{ type: "text", text: "later turn" }] },
+    ] as never)
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction() })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    const last = result.current.messages.at(-1)!
+    expect(last.proposedAction?.jobType).toBe("eval")
+    expect(last.proposedAction?.endpoint).toBe("/api/v1/jobs/eval")
+  })
+
+  it("a Retry the server already ran renders nothing from later turns and counts as delivered", async () => {
+    const { createJob, sendOpenCodeMessage, fetchSessionMessages, EventAlreadyDeliveredError } =
+      await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(new Error("Cannot reach Morty"))
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction() })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("failed"))
+    const before = useChatStore.getState().getConversationMessages("confirm").length
+
+    // The first send did reach the server; later turns have since added a validate card to the
+    // session. The replay must not resurrect it.
+    vi.mocked(fetchSessionMessages).mockResolvedValue([
+      { info: { role: "user" }, parts: [{ type: "text", text: "later turn" }] },
+      {
+        info: { role: "assistant" },
+        parts: [{
+          type: "tool",
+          tool: "amortized_validate_eval_job",
+          output: JSON.stringify({ valid: true, job_type: "eval", config: {} }),
+        }],
+      },
+    ] as never)
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(
+      new EventAlreadyDeliveredError("confirmation_blocked:action"),
+    )
+    act(() => { result.current.retryBlockedNotice("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    const messages = useChatStore.getState().getConversationMessages("confirm")
+    expect(messages).toHaveLength(before) // the placeholder was removed, no reply rendered
+    expect(messages.some((m) => m.proposedAction)).toBe(false)
+    expect(fetchSessionMessages).not.toHaveBeenCalled()
+  })
+
+  it("a replayed event renders that turn's own reply, including its corrected card", async () => {
+    const { createJob, sendOpenCodeMessage, fetchSessionMessages, EventAlreadyDeliveredError } =
+      await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    // The first send got through but its response was lost; the resend comes back as a replay.
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(
+      new EventAlreadyDeliveredError("confirmation_blocked:action", [
+        {
+          info: { role: "assistant" },
+          parts: [
+            { type: "text", text: "Switched the judge to a working model." },
+            {
+              type: "tool",
+              tool: "amortized_validate_eval_job",
+              output: JSON.stringify({ valid: true, job_type: "eval", config: { judge: { model: "gpt-5" } } }),
+            },
+          ],
+        },
+      ] as never),
+    )
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    const last = result.current.messages.at(-1)!
+    expect(last.content).toBe("Switched the judge to a working model.")
+    expect(last.proposedAction?.jobType).toBe("eval")
+    expect(fetchSessionMessages).not.toHaveBeenCalled() // never the session's latest messages
+  })
+
+  it("a replay after the conversation moved on shows the reply without a card", async () => {
+    const { createJob, sendOpenCodeMessage, EventAlreadyDeliveredError } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(new Error("Cannot reach Morty"))
+    seedCard()
+    const { result } = renderHook(() => useChat())
+    await act(async () => { await result.current.confirmAction("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("failed"))
+
+    // The user carries on before retrying.
+    useChatStore.getState().addMessage("confirm", { id: "later", role: "user", content: "never mind", timestamp: "2026-01-02" })
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(
+      new EventAlreadyDeliveredError("confirmation_blocked:action", [
+        {
+          info: { role: "assistant" },
+          parts: [
+            { type: "text", text: "Here's a corrected config." },
+            {
+              type: "tool",
+              tool: "amortized_validate_eval_job",
+              output: JSON.stringify({ valid: true, job_type: "eval", config: {} }),
+            },
+          ],
+        },
+      ] as never),
+    )
+    act(() => { result.current.retryBlockedNotice("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    const last = useChatStore.getState().getConversationMessages("confirm").at(-1)!
+    expect(last.content).toBe("Here's a corrected config.")
+    expect(last.proposedAction).toBeNull()
+  })
+
+  it("Confirm submits the card that was clicked, not the newest one", async () => {
+    const { createJob } = await import("@/lib/api-client")
+    seedConversation("confirm", [
+      { id: "older", role: "assistant", content: "Older card", timestamp: "2026-01-01" },
+      { id: "newer", role: "assistant", content: "Newer card", timestamp: "2026-01-02" },
+    ])
+    const card = (model: string) => ({
+      action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval",
+      config: { judge: { model } }, jobType: "eval" as const,
+    })
+    useChatStore.getState().updateMessageFields("confirm", "older", { proposedAction: card("older-judge") })
+    useChatStore.getState().updateMessageFields("confirm", "newer", { proposedAction: card("newer-judge") })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("older") })
+
+    expect(createJob).toHaveBeenCalledWith("/api/v1/jobs/eval", { judge: { model: "older-judge" } })
+    const msgs = useChatStore.getState().getConversationMessages("confirm")
+    expect(msgs.find((m) => m.id === "older")!.proposedAction).toBeNull()
+    expect(msgs.find((m) => m.id === "newer")!.proposedAction).not.toBeNull()
+  })
+
+  it("defers an older card's notice while a newer card is pending, then sends it", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    seedConversation("confirm", [
+      { id: "action", role: "assistant", content: "Older card", timestamp: "2026-01-01" },
+      { id: "newer", role: "assistant", content: "Newer card", timestamp: "2026-01-02" },
+    ])
+    const card = { action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" as const }
+    useChatStore.getState().updateMessageFields("confirm", "action", { proposedAction: card })
+    useChatStore.getState().updateMessageFields("confirm", "newer", { proposedAction: card })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("deferred"))
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled() // no recovery turn beside the pending card
+
+    await act(async () => { await result.current.rejectAction() }) // the newer card is dismissed
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it("re-checks under the request lock: a card that appeared while waiting defers the notice", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    vi.mocked(sendOpenCodeMessage).mockRejectedValueOnce(new Error("Cannot reach Morty"))
+    seedCard()
+    const { result } = renderHook(() => useChat())
+    await act(async () => { await result.current.confirmAction("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("failed"))
+    vi.mocked(sendOpenCodeMessage).mockClear()
+
+    // Another request holds the lock; while the Retry waits for it, a new card arrives.
+    expect(useChatStore.getState().tryStartRequest("confirm")).toBe(true)
+    act(() => { result.current.retryBlockedNotice("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("sending"))
+    act(() => {
+      useChatStore.getState().addMessage("confirm", { id: "newer", role: "assistant", content: "New card", timestamp: "2026-01-03" })
+      useChatStore.getState().updateMessageFields("confirm", "newer", {
+        proposedAction: { action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" },
+      })
+      useChatStore.getState().finishRequest("confirm")
+    })
+
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("deferred"))
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+  })
+
+  it("a successful Confirm keeps older notices deferred until the job completes", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    seedConversation("confirm", [
+      { id: "action", role: "assistant", content: "Older card", timestamp: "2026-01-01" },
+      { id: "newer", role: "assistant", content: "Newer card", timestamp: "2026-01-02" },
+    ])
+    const card = { action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" as const }
+    useChatStore.getState().updateMessageFields("confirm", "action", { proposedAction: card })
+    useChatStore.getState().updateMessageFields("confirm", "newer", { proposedAction: card })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") }) // rejected
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("deferred"))
+    await act(async () => { await result.current.confirmAction("newer") }) // created: a job runs
+
+    expect(useChatStore.getState().jobInFlight.confirm).toBe(true)
+    expect(actionMessage().actionBlocked?.notify).toBe("deferred") // no mid-job wakeup
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+
+    await act(async () => { await result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+    const events = vi.mocked(sendOpenCodeMessage).mock.calls.map((call) => call[3])
+    expect(events).toEqual(["job_complete", "confirmation_blocked"]) // the job's wakeup first
+  })
+
+  it("keeps a schema rejection's field details for the card and Morty", async () => {
+    const { ApiError, createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(
+      new ApiError(422, "Unprocessable Entity", {
+        code: "validation_error",
+        message: "Request validation failed",
+        details: [{ loc: ["body", "rubric", 0, "name"], msg: "Field required", type: "missing" }],
+      }, "validation_error"),
+    )
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    const expected = "Request validation failed\n- rubric.0.name: Field required"
+    expect(actionMessage().actionBlocked?.message).toBe(expected)
+    expect(vi.mocked(sendOpenCodeMessage).mock.calls[0]![1]).toContain("- rubric.0.name: Field required")
+  })
+
+  it("a finished job releases the running-job flag even while Morty's notification waits", async () => {
+    seedCard()
+    useChatStore.getState().setJobInFlight("confirm", true)
+    expect(useChatStore.getState().tryStartRequest("confirm")).toBe(true) // the lock is busy
+    const { result } = renderHook(() => useChat())
+
+    // Not awaited: the notification waits for the lock (and the pending card) to clear.
+    act(() => { void result.current.notifyJobComplete("job-9", "eval", "succeeded") })
+
+    expect(useChatStore.getState().jobInFlight.confirm ?? false).toBe(false)
+    act(() => {
+      useChatStore.getState().updateMessageFields("confirm", "action", { proposedAction: null })
+      useChatStore.getState().finishRequest("confirm")
+    })
+    await vi.waitFor(() => expect(useChatStore.getState().getNotifiedJobs("confirm")).toContain("job-9"))
+  })
+
+  it("an older job's completion doesn't unlock or wake Morty during a newer job", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedConversation("confirm", [
+      { id: "action", role: "assistant", content: "Card A", timestamp: "2026-01-01" },
+      { id: "newer", role: "assistant", content: "Card B", timestamp: "2026-01-02" },
+    ])
+    const card = { action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" as const }
+    useChatStore.getState().updateMessageFields("confirm", "action", { proposedAction: card })
+    useChatStore.getState().updateMessageFields("confirm", "newer", { proposedAction: card })
+    vi.mocked(createJob).mockResolvedValueOnce({ id: "job-A", status: "queued" } as never)
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") }) // job A runs
+    // A finishes; its notification waits behind the still-pending card B.
+    act(() => { void result.current.notifyJobComplete("job-A", "eval", "succeeded") })
+    vi.mocked(createJob).mockResolvedValueOnce({ id: "job-B", status: "queued" } as never)
+    await act(async () => { await result.current.confirmAction("newer") }) // job B runs
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(useChatStore.getState().jobInFlight.confirm).toBe(true) // still B's
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled() // A's wakeup waits for B
+
+    await act(async () => { await result.current.notifyJobComplete("job-B", "eval", "succeeded") })
+    await vi.waitFor(() => expect(useChatStore.getState().getNotifiedJobs("confirm")).toEqual(
+      expect.arrayContaining(["job-A", "job-B"]),
+    ))
+    expect(useChatStore.getState().jobInFlight.confirm ?? false).toBe(false)
+  })
+
+  it("refocusing unlocks the composer but keeps the running job until it is verified terminal", async () => {
+    const { createJob, getJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedConversation("confirm", [
+      { id: "action", role: "assistant", content: "Card A", timestamp: "2026-01-01" },
+      { id: "newer", role: "assistant", content: "Card B", timestamp: "2026-01-02" },
+    ])
+    const card = { action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" as const }
+    useChatStore.getState().updateMessageFields("confirm", "action", { proposedAction: card })
+    useChatStore.getState().updateMessageFields("confirm", "newer", { proposedAction: card })
+    vi.mocked(createJob).mockResolvedValueOnce({ id: "job-A", status: "queued" } as never)
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") })
+    act(() => { void result.current.notifyJobComplete("job-A", "eval", "succeeded") })
+    vi.mocked(createJob).mockResolvedValueOnce({ id: "job-B", status: "queued" } as never)
+    await act(async () => { await result.current.confirmAction("newer") })
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"))
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    expect(getJob).toHaveBeenCalledWith("job-B")
+    expect(result.current.jobInFlight).toBe(false) // the composer is usable again
+    expect(useChatStore.getState().runningJob.confirm).toBe("job-B")
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled() // A's wakeup still waits for B
+
+    await act(async () => { await result.current.notifyJobComplete("job-B", "eval", "succeeded") })
+    await vi.waitFor(() => expect(useChatStore.getState().getNotifiedJobs("confirm")).toEqual(
+      expect.arrayContaining(["job-A", "job-B"]),
+    ))
+  })
+
+  it.each(["finished", "gone"])("refocusing releases a running job that is %s", async (state) => {
+    const { getJob, ApiError } = await import("@/lib/api-client")
+    if (state === "finished") vi.mocked(getJob).mockResolvedValueOnce({ id: "job-9", status: "succeeded" } as never)
+    else vi.mocked(getJob).mockRejectedValueOnce(new ApiError(404, "Not Found", null))
+    seedConversation("confirm", [])
+    useChatStore.getState().setRunningJob("confirm", "job-9")
+    useChatStore.getState().setJobInFlight("confirm", true)
+    renderHook(() => useChat())
+
+    act(() => { window.dispatchEvent(new Event("focus")) })
+
+    await vi.waitFor(() => expect(useChatStore.getState().runningJob.confirm).toBeUndefined())
+    expect(useChatStore.getState().jobInFlight.confirm ?? false).toBe(false)
+  })
+
+  it("refocusing keeps the running job when its status can't be checked", async () => {
+    const { getJob } = await import("@/lib/api-client")
+    vi.mocked(getJob).mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    seedConversation("confirm", [])
+    useChatStore.getState().setRunningJob("confirm", "job-9")
+    useChatStore.getState().setJobInFlight("confirm", true)
+    renderHook(() => useChat())
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"))
+      await new Promise((r) => setTimeout(r, 20))
+    })
+
+    expect(useChatStore.getState().runningJob.confirm).toBe("job-9")
+    expect(useChatStore.getState().jobInFlight.confirm ?? false).toBe(false)
+  })
+
+  it("Confirm is still refused after refocus while the job is running", async () => {
+    const { createJob } = await import("@/lib/api-client")
+    seedCard()
+    useChatStore.getState().setRunningJob("confirm", "job-9")
+    useChatStore.getState().setJobInFlight("confirm", true)
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"))
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    expect(result.current.jobInFlight).toBe(false)
+    await act(async () => { await result.current.confirmAction("action") })
+
+    expect(createJob).not.toHaveBeenCalled()
+    expect(actionMessage().proposedAction).not.toBeNull()
+    expect(result.current.error).toMatch(/already running/)
+  })
+
+  it("won't start a second job while one is running in the conversation", async () => {
+    const { createJob } = await import("@/lib/api-client")
+    seedCard()
+    useChatStore.getState().setJobInFlight("confirm", true)
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") })
+
+    expect(createJob).not.toHaveBeenCalled()
+    expect(actionMessage().proposedAction).not.toBeNull() // the card stays
+    expect(useChatStore.getState().jobInFlight.confirm).toBe(true) // the running job's flag
+    expect(result.current.error).toMatch(/already running/)
+  })
+
+  it("an ordinary reply that dismisses the pending card resumes the deferred notice", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    seedConversation("confirm", [
+      { id: "action", role: "assistant", content: "Older card", timestamp: "2026-01-01" },
+      { id: "newer", role: "assistant", content: "Newer card", timestamp: "2026-01-02" },
+    ])
+    const card = { action: "Create EVAL Job", description: "Submit?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" as const }
+    useChatStore.getState().updateMessageFields("confirm", "action", { proposedAction: card })
+    useChatStore.getState().updateMessageFields("confirm", "newer", { proposedAction: card })
+    const { result } = renderHook(() => useChat())
+    await act(async () => { await result.current.confirmAction("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("deferred"))
+
+    // The user types instead of confirming the newer card; sending dismisses it.
+    await act(async () => { await result.current.sendMessage("never mind, use another judge") })
+
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+    const events = vi.mocked(sendOpenCodeMessage).mock.calls.map((call) => call[3])
+    expect(events.at(-1)).toBe("confirmation_blocked")
+  })
+
+  it("an event send never renders the session's latest messages", async () => {
+    const { createJob, fetchSessionMessages } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    vi.mocked(fetchSessionMessages).mockResolvedValue([
+      { info: { role: "user" }, parts: [{ type: "text", text: "another turn" }] },
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "tool", tool: "amortized_validate_eval_job", output: JSON.stringify({ valid: true, job_type: "eval", config: {} }) }],
+      },
+    ] as never)
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    expect(fetchSessionMessages).not.toHaveBeenCalled()
+    const msgs = useChatStore.getState().getConversationMessages("confirm")
+    expect(msgs.some((m) => m.proposedAction)).toBe(false)
+  })
+
+  it("makes one automatic delivery, then offers Retry that resends the same event", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    vi.mocked(sendOpenCodeMessage).mockRejectedValue(new Error("Cannot reach Morty"))
+    seedCard()
+    const { result } = renderHook(() => useChat())
+    const before = useChatStore.getState().getConversationMessages("confirm").length
+
+    await act(async () => { await result.current.confirmAction() })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("failed"))
+
+    // sendOpenCodeMessage owns transport retries (idempotent via the event id); the hook doesn't
+    // add another layer on top.
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    expect(actionMessage().actionBlocked?.message).toBe(SANITIZED)
+    // a failed delivery leaves no error turn behind
+    expect(useChatStore.getState().getConversationMessages("confirm")).toHaveLength(before)
+
+    vi.mocked(sendOpenCodeMessage).mockImplementation(async () => mockResponse)
+    act(() => { result.current.retryBlockedNotice("action") })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(2)
+    const eventIds = vi.mocked(sendOpenCodeMessage).mock.calls.map((call) => call[7]?.eventId)
+    expect(eventIds).toEqual(["confirmation_blocked:action", "confirmation_blocked:action"])
+  })
+
+  it("delivers to the conversation the card was confirmed in, even after switching away", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(await modelCheckError())
+    let release!: () => void
+    vi.mocked(sendOpenCodeMessage).mockImplementationOnce(
+      () => new Promise((resolve) => { release = () => resolve(mockResponse) }),
+    )
+    seedCard()
+    useChatStore.getState().addConversation({
+      id: "other", title: "Other", created_at: "2026-01-01", updated_at: "2026-01-01", messages: [],
+    })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction() })
+    await vi.waitFor(() => expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1))
+    act(() => { useChatStore.getState().setCurrentConversationId("other") })
+    await act(async () => { release() })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    expect(vi.mocked(sendOpenCodeMessage).mock.calls[0]![0]).toBe("confirm")
+    expect(useChatStore.getState().getConversationMessages("other")).toHaveLength(0)
+    expect(useChatStore.getState().getConversationMessages("confirm").at(-1)!.role).toBe("assistant")
+  })
+
+  it("does not resend a notice interrupted by a reload; it offers Retry instead", async () => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedCard()
+    useChatStore.getState().updateMessageFields("confirm", "action", {
+      proposedAction: null,
+      actionBlocked: { message: SANITIZED, jobType: "eval", notify: "sending" },
+    })
+
+    renderHook(() => useChat())
+
+    expect(actionMessage().actionBlocked?.notify).toBe("failed")
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+  })
+
+  it("any other rejection of the create (a 4xx) is handled the same way, with the server's reason", async () => {
+    // e.g. an upstream job that failed or was deleted after validation — only possible at Confirm.
+    const { ApiError, createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    const reason = "parent_job_id: job 'sdg-1' has status 'failed' (must be 'succeeded')"
+    vi.mocked(createJob).mockRejectedValueOnce(
+      new ApiError(422, "Unprocessable Entity", { code: "http_422", message: reason, details: [] }, "http_422"),
+    )
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction() })
+    await vi.waitFor(() => expect(actionMessage().actionBlocked?.notify).toBe("delivered"))
+
+    expect(result.current.error).toBeNull()
+    expect(actionMessage().proposedAction).toBeNull()
+    expect(actionMessage().actionBlocked?.message).toBe(reason)
+    const [, text, , event] = vi.mocked(sendOpenCodeMessage).mock.calls[0]!
+    expect(event).toBe("confirmation_blocked")
+    expect(text).toBe(`Eval submission was rejected before a job was created. ${reason}`)
+  })
+
+  it.each([
+    ["a server error", 500],
+    ["an auth failure", 401],
+    ["rate limiting", 429],
+  ])("keeps the banner for %s: not about the job, and the card stays", async (_label, status) => {
+    const { ApiError, createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(
+      new ApiError(status, "Error", { code: `http_${status}`, message: "try again" }, `http_${status}`),
+    )
+    seedCard()
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => { await result.current.confirmAction() })
+
+    expect(result.current.error).toBe("try again")
+    expect(actionMessage().proposedAction).not.toBeNull()
+    expect(actionMessage().actionBlocked).toBeUndefined()
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe("useChat — session warmup keeps a session through transient failures", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  function seedWithSession() {
+    seedConversation("warm", [{ id: "m1", role: "user", content: "hi", timestamp: "2026-01-01" }])
+    useChatStore.getState().setSessionId("warm", "ses-1")
+  }
+
+  it.each([
+    ["a gateway error", async () => new Response("", { status: 502 })],
+    ["a network failure", async () => { throw new TypeError("fetch failed") }],
+  ])("keeps the session on %s (it also holds the server's delivered-event record)", async (_label, health) => {
+    const fetchMock = vi.fn(health)
+    globalThis.fetch = fetchMock as never
+    seedWithSession()
+    renderHook(() => useChat())
+
+    await vi.waitFor(() => expect(useChatStore.getState().sessionStatus.warm).toBe("unknown"))
+    expect(useChatStore.getState().getSessionId("warm")).toBe("ses-1")
+    expect(fetchMock).toHaveBeenCalledTimes(1) // no replacement session was created
+  })
+
+  it("rebuilds only when the server no longer knows the session (404)", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && url.endsWith("/agent/session")) return new Response(JSON.stringify({ id: "ses-2" }))
+      if (init?.method === "POST") return new Response("{}")
+      return new Response("", { status: 404 })
+    })
+    globalThis.fetch = fetchMock as never
+    seedWithSession()
+    renderHook(() => useChat())
+
+    await vi.waitFor(() => expect(useChatStore.getState().getSessionId("warm")).toBe("ses-2"))
   })
 })

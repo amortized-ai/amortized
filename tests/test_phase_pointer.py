@@ -122,6 +122,34 @@ class TestSubagentPointer:
         assert "current step is" not in p
         assert "skill loaded" not in p
 
+    def test_signal_sentence_names_the_current_slug(self) -> None:
+        p = phases.subagent_pointer("eval", "metrics")
+        assert p is not None
+        assert p.endswith(
+            " Call `signal_phase` in this response: with `metrics` if you are still on this "
+            "step, or with the new step's name if you move on."
+        )
+
+    def test_signal_sentence_uses_the_canonical_slug(self) -> None:
+        # A separator/prefix variant resolves to the section; the sentence names its real slug,
+        # never the variant the driver sent.
+        p = phases.subagent_pointer("eval", "eval_dataset")
+        assert p is not None
+        assert "with `eval-dataset` if you are still on this step" in p
+        p = phases.subagent_pointer("eval", "")  # fresh delegation → the entry section's slug
+        assert p is not None
+        assert "with `understand-task` if you are still on this step" in p
+
+    def test_signal_sentence_names_a_skill_step_slug(self) -> None:
+        p = phases.subagent_pointer("sdg", "samples", "sdg-knowledge-ingestion")
+        assert p is not None
+        assert "with `samples` if you are still on this step" in p
+
+    def test_signal_sentence_without_a_known_step_is_generic(self) -> None:
+        p = phases.subagent_pointer("eval", "gather_requirements")
+        assert p is not None
+        assert p.endswith(" Call `signal_phase` in this response with your current step's slug.")
+
     def test_skill_clause_suppressed_after_gathering(self) -> None:
         # Once the subagent signals validate/complete, those resolve as workflow sections (rung 1),
         # so the skill clause falls away even though the loaded skill is still tracked — no

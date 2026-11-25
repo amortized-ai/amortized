@@ -19,6 +19,11 @@ spec:
       labels:
         app: amortized
         component: server
+      annotations:
+        # The server reads amortized-config as env vars, which only refresh on a Pod restart.
+        # Hashing it into the Pod template rolls the server on any change (e.g. turning the
+        # standalone model check on or off, or changing its port).
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: amortized-server
       {{- with .Values.server.hostAliases }}
@@ -99,6 +104,11 @@ spec:
               mountPath: /etc/mlflow-ca
               readOnly: true
             {{- end }}
+            {{- if .Values.modelCheck.enabled }}
+            - name: model-check-ca
+              mountPath: /etc/model-check-ca
+              readOnly: true
+            {{- end }}
             {{- with .Values.server.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -136,6 +146,12 @@ spec:
         - name: mlflow-ca
           configMap:
             name: {{ .Values.mlflow.enterprise.caConfigMap }}
+        {{- end }}
+        {{- if .Values.modelCheck.enabled }}
+        # CA that verifies the model-check service's TLS cert (it receives provider keys).
+        - name: model-check-ca
+          configMap:
+            name: {{ .Values.modelCheck.tls.caConfigMap }}
         {{- end }}
         {{- with .Values.server.extraVolumes }}
         {{- toYaml . | nindent 8 }}

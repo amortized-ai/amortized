@@ -994,7 +994,9 @@ async def test_create_routes_a_new_eval_by_the_same_rule(monkeypatch, accept, ex
     monkeypatch.setattr(core_jobs, "_settings", settings)  # read by the GPU budget check
     repo = _create_repo()
     config = {"training_job_id": "train-1", "eval_data_run_id": "a" * 32, **extra}
-    row = await core_jobs.create_job(repo, job_type=JobType.eval, config=config)
+    row = await core_jobs.create_job(
+        repo, job_type=JobType.eval, config=config, models_checked=True
+    )
     assert row["execution_owner"] == owner
     # Only a Hub-owned job gets a Hub execution record.
     assert repo.conn.execute.await_count == (1 if owner == "evalhub" else 0)
@@ -1022,7 +1024,9 @@ async def test_a_use_peft_head_is_validated_estimated_and_created_as_a_native_gp
     assert await client.validate_definition(config) == []
     assert core_jobs.estimate_gpu_demand({"type": "eval", "config": config}) == 1
     assert core_jobs.gpu_budget_error(JobType.eval, config) is None
-    row = await core_jobs.create_job(_create_repo(), job_type=JobType.eval, config=config)
+    row = await core_jobs.create_job(
+        _create_repo(), job_type=JobType.eval, config=config, models_checked=True
+    )
     assert row["execution_owner"] == "native"
 
     # The stamp is the server's: a client sending it can't move an eval off Hub.
@@ -1330,7 +1334,7 @@ async def test_embedding_download_secret_obeys_forward_env_policy(monkeypatch):
     settings = preparation.config_mod.settings
     monkeypatch.setattr(settings, "forward_env", [])
     endpoint = {"base_url": "http://model/v1", "model": "private-embedding"}
-    model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+    model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint")
     await preparation._credential_secret(store.job, store, model, None)
     assert "hf-token" not in api.create_namespaced_secret.call_args.args[1].string_data
     monkeypatch.setattr(settings, "forward_env", ["HF_TOKEN"])
@@ -1411,7 +1415,7 @@ async def test_https_model_secret_carries_cluster_ca(monkeypatch, tmp_path):
 
     async def secret_for(url: str, judge_url: str = "") -> dict[str, str]:
         endpoint = {"base_url": url, "model": "granite"}
-        model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+        model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint")
         judge = {"base_url": judge_url, "model": "judge"} if judge_url else None
         await preparation._credential_secret(store.job, store, model, judge)
         return api.create_namespaced_secret.call_args.args[1].string_data

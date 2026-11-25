@@ -55,16 +55,16 @@ class _ConfigJsonMixin(BaseModel):
                 # config_json fully replaces the flat args; anything also passed alongside it
                 # is dropped. Keep that behavior (the escape hatch must absorb a weak model's
                 # smeared extra keys, not reject them), but make the drop auditable by naming
-                # exactly which keys were ignored and the values discarded.
-                ignored = {
-                    k: v for k, v in data.items() if k != "config_json" and v not in (None, "")
-                }
+                # the keys ignored. Names only: a value can be a credential.
+                ignored = sorted(
+                    k for k, v in data.items() if k != "config_json" and v not in (None, "")
+                )
                 if ignored:
                     logger.warning(
                         "config_json is set; ignoring %d flat argument(s) in favor of the "
                         "config_json contents: %s",
                         len(ignored),
-                        ", ".join(f"{k}={v!r}" for k, v in sorted(ignored.items())),
+                        ", ".join(ignored),
                     )
                 return parsed
         return data
@@ -287,6 +287,17 @@ class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     )
 
 
+class ModelCheckResult(BaseModel):
+    """Outcome of checking one LLM endpoint a job will call. URLs are redacted."""
+
+    label: str
+    model: str
+    base_url: str
+    outcome: Literal["passed", "failed", "unverified"]
+    reason: str
+    detail: str = ""
+
+
 class Job(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     type: JobType
@@ -309,6 +320,8 @@ class Job(BaseModel):
     execution_sync_error: str = ""
     execution_observed_at: str | None = None
     execution_phase: str = ""
+    # The model-liveness check recorded at creation; `unverified` entries are warnings.
+    model_checks: list[ModelCheckResult] = Field(default_factory=list)
 
 
 class PromptView(BaseModel):
@@ -353,6 +366,9 @@ class ValidatedJobConfig(BaseModel):
     # rendered as "trainer default" on the confirmation card. Kept out of `config` (never
     # re-submitted to the create endpoint). Empty for non-training validate paths.
     trainer_default_fields: list[str] = Field(default_factory=list)
+    # Model-liveness results for the endpoints this job will call. Definite failures are
+    # rejected before a card exists, so these are passed or unverified (shown as warnings).
+    model_checks: list[ModelCheckResult] = Field(default_factory=list)
 
 
 class RecipeSummary(BaseModel):

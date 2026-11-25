@@ -151,13 +151,11 @@ def test_lenient_phase_is_not_nudged(router: _Router) -> None:
     assert not any(sid == sub for sid, *_ in router.sent)
 
 
-def test_skipped_signal_is_nudged_to_signal_not_off_the_stale_key(router: _Router) -> None:
+def test_skipped_signal_is_not_judged_off_the_stale_key(router: _Router) -> None:
     # A NON-CARD work turn that skips signal_phase, so last_signal_step ("validate") is a PRIOR
-    # turn's step. The signalled-guard must re-prompt for the signal rather than adjudicate off the
-    # stale key (which would wrongly owe `validate_eval_job`). A card-bearing skip is exempt (it did
-    # its owed work) — see test_card_turn_missing_signal_is_not_nudged_away.
-    corrected = [[_signal("report"), _tool_part("present_options", {"step": "report"})]]
-    sub = router.add(corrected)
+    # turn's step. Adjudicating off that stale key would wrongly owe `validate_eval_job` and
+    # re-drive the turn to re-validate; it is left exactly as-is instead.
+    sub = router.add([[_signal("validate"), _tool_part("validate_eval_job", {})]])
     state = _state(router, sub, "validate")
     skipped = [
         _text_part("Let me check the memory footprint."),
@@ -166,11 +164,8 @@ def test_skipped_signal_is_nudged_to_signal_not_off_the_stale_key(router: _Route
 
     out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), skipped))
 
-    system = router.system_to(sub)
-    assert "PHASE SIGNAL MISSING" in system
-    assert "signal_phase" in system
-    assert "validate_eval_job" not in system  # not nudged off the stale phase's owed tool
-    assert any(agent._tool_name(p) == "signal_phase" for p in out)  # re-fetched corrected turn
+    assert out is skipped  # the turn the user sees is the turn GLM wrote
+    assert not any(sid == sub for sid, *_ in router.sent)  # no hidden re-prompt
 
 
 def test_orchestrator_missing_signal_is_not_guarded(router: _Router) -> None:
@@ -238,9 +233,9 @@ def test_two_distinct_option_cards_in_one_turn_is_still_batching(router: _Router
 
 def test_card_turn_missing_signal_is_not_nudged_away(router: _Router) -> None:
     # Regression (live): a review revision turn emitted show_prompt + present_options (the owed
-    # cards) but skipped signal_phase. The signalled-guard fired, re-drove the turn, and stranded
-    # the rendered prompt card ("where is the prompt card?"). A card-bearing turn did its owed
-    # work and is exempt from the guard — the card must survive.
+    # cards) but skipped signal_phase. The missing-signal re-prompt fired, re-drove the turn, and
+    # stranded the rendered prompt card ("where is the prompt card?"). A card-bearing turn did its
+    # owed work — the card must survive.
     sub = router.add()
     state = _state(router, sub, "report")  # prior-turn cursor (owes present_options)
     turn = [
@@ -254,23 +249,29 @@ def test_card_turn_missing_signal_is_not_nudged_away(router: _Router) -> None:
     assert not any(sid == sub for sid, *_ in router.sent)  # no guard/stall nudge
 
 
-def test_prose_only_missing_signal_is_still_nudged(router: _Router) -> None:
-    # The signalled-guard still fires for an UNPRODUCTIVE skip (prose, no card) — that is its real
-    # target (a bare turn that leaves the phase key stale).
-    sub = router.add([[_signal("report"), _tool_part("present_options", {"step": "report"})]])
-    state = _state(router, sub, "report")
-    prose = [_text_part("Here is a summary of the results so far.")]  # no signal, no card
+def test_prose_only_missing_signal_is_not_reprompted(router: _Router) -> None:
+    # Regression (live): GLM-flash answered "Software" at `metrics` with find_benchmarks + the
+    # benchmark list, skipping signal_phase (same step). A re-prompt for the signal ran a hidden
+    # turn whose reply replaced the list, so the user never saw it. A prose answer that skips the
+    # signal is shown as written.
+    sub = router.add([[_signal("metrics"), _text_part("Which one should I run?")]])
+    state = _state(router, sub, "metrics")
+    prose = [
+        _tool_part("find_benchmarks", {"query": "software"}),
+        _text_part("Here are the software benchmarks: HumanEval, MBPP, ..."),
+    ]
 
-    _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), prose))
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), prose))
 
-    assert "PHASE SIGNAL MISSING" in router.system_to(sub)  # guard nudged
+    assert out is prose
+    assert not any(sid == sub for sid, *_ in router.sent)
 
 
-def test_off_vocab_signal_prose_only_is_nudged_like_a_skip(router: _Router) -> None:
+def test_off_vocab_signal_prose_only_is_treated_like_a_skip(router: _Router) -> None:
     # #1a: a prose-only turn that signals a slug which is NOT a recognized `## Workflow` section or
     # skill `### Step` (here "gather-requirements" vs a real eval slug) keys to no obligation and
-    # names no section — the adjudicator is as blind to it as to a skipped signal — so the
-    # signalled-guard re-drives it ONCE to the exact vocabulary.
+    # names no section — the adjudicator is as blind to it as to a skipped signal — so it gets the
+    # same treatment: shown as written, no re-prompt.
     sub = router.add(
         [[_signal("eval-dataset"), _tool_part("present_options", {"step": "eval-dataset"})]]
     )
@@ -280,9 +281,125 @@ def test_off_vocab_signal_prose_only_is_nudged_like_a_skip(router: _Router) -> N
         _signal("gather-requirements"),  # off-vocab: not an eval section slug
     ]
 
-    _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), prose))
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), prose))
 
-    assert "PHASE SIGNAL MISSING" in router.system_to(sub)  # guard nudged, like a skip
+    assert out is prose
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
+_STEP_MARKERS = [
+    {"type": "step-start"},
+    {"type": "reasoning", "text": "..."},
+    {"type": "step-finish"},
+]
+
+
+def test_empty_reply_is_reprompted(router: _Router) -> None:
+    # Live: GLM-flash sometimes ends a turn with reasoning only — no text, no tool call — so the
+    # user sees an empty reply. Nothing is shown, so a re-prompt hides nothing.
+    sub = router.add([[_signal("validate"), _tool_part("validate_eval_job", {})]])
+    state = _state(router, sub, "metrics")
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), list(_STEP_MARKERS)))
+
+    assert "EMPTY RESPONSE" in router.system_to(sub)
+    assert any(agent._tool_name(p) == "validate_eval_job" for p in out)  # re-fetched reply
+
+
+def test_signal_only_reply_is_reprompted_as_empty(router: _Router) -> None:
+    # A bare signal_phase renders nothing either — still an empty reply, even at a lenient step.
+    sub = router.add([[_text_part("Which area should the benchmark cover?")]])
+    state = _state(router, sub, "metrics")
+
+    _run(
+        agent._maybe_nudge_subagent_stall(state, "s", _body(), [*_STEP_MARKERS, _signal("metrics")])
+    )
+
+    assert "EMPTY RESPONSE" in router.system_to(sub)
+
+
+def test_signal_only_reply_keeps_its_step_when_the_retry_does_not_signal(router: _Router) -> None:
+    # The caller records the step from the returned (retry) parts only; without this, the bare
+    # `metrics` signal is lost and the cursor stays on `eval-dataset`.
+    sub = router.add([[_text_part("Which area should the benchmark cover?")]])
+    state = _state(router, sub, "eval-dataset")
+
+    _run(
+        agent._maybe_nudge_subagent_stall(state, "s", _body(), [*_STEP_MARKERS, _signal("metrics")])
+    )
+
+    assert "EMPTY RESPONSE" in router.system_to(sub)
+    assert state.last_signal_step == "metrics"
+
+
+def test_empty_reply_on_a_resume_turn_is_reprompted(router: _Router) -> None:
+    sub = router.add([[_text_part("Welcome back — here is where we are.")]])
+    state = _state(router, sub, "metrics")
+
+    _run(
+        agent._maybe_nudge_subagent_stall(
+            state, "s", _body(), list(_STEP_MARKERS), guard_missing_signal=False
+        )
+    )
+
+    assert "EMPTY RESPONSE" in router.system_to(sub)
+
+
+def test_failed_fetch_is_not_mistaken_for_an_empty_reply(router: _Router) -> None:
+    # `_fetch_all_assistant_parts` returns [] when the GET fails; a real reply always carries step
+    # markers. Re-prompting on [] would send GLM an extra message after a turn it may have answered.
+    sub = router.add()
+    state = _state(router, sub, "metrics")
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), []))
+
+    assert out == []
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
+def test_tool_only_reply_is_not_empty(router: _Router) -> None:
+    # A card with no prose is a real reply (the user acts on the card).
+    sub = router.add()
+    state = _state(router, sub, "eval-dataset")
+    turn = [
+        *_STEP_MARKERS,
+        _signal("eval-dataset"),
+        _tool_part("present_options", {"step": "eval-dataset"}),
+    ]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), turn))
+
+    assert out is turn
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
+def test_signalled_stall_is_still_nudged_after_an_unsignalled_turn(router: _Router) -> None:
+    # Dropping the missing-signal re-prompt leaves the stall re-prompt intact: a turn that DOES
+    # signal `validate` but narrates instead of calling validate_eval_job is still re-driven.
+    sub = router.add([[_signal("validate"), _tool_part("validate_eval_job", {})]])
+    state = _state(router, sub, "metrics")
+    stalled = [_signal("validate"), _text_part("I'll validate the config now.")]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), stalled))
+
+    assert "validate_eval_job" in router.system_to(sub)
+    assert any(agent._tool_name(p) == "validate_eval_job" for p in out)
+
+
+def test_resume_turn_without_signal_is_judged_on_the_restored_step(router: _Router) -> None:
+    # On a delegate/resume turn (`guard_missing_signal=False`) the step the server just set is the
+    # key, so an unsignalled narrated hand-off is still caught (#534 P2c) — only the steady-state
+    # skip changed.
+    sub = router.add(_CORRECTED)
+    state = _state(router, sub, "held-out-request-help")
+    stalled = [_text_part("I'll hand this off to get a held-out set.")]
+
+    out = _run(
+        agent._maybe_nudge_subagent_stall(state, "s", _body(), stalled, guard_missing_signal=False)
+    )
+
+    assert "request_orchestrator_help" in router.system_to(sub)
+    assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out)
 
 
 def test_off_vocab_signal_with_a_card_is_preserved(router: _Router) -> None:

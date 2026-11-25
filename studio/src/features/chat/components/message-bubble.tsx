@@ -62,8 +62,10 @@ interface MessageBubbleProps {
   isLatest?: boolean
   thinkingStep?: string | null
   onOptionSelect?: (value: string, messageId?: string) => void
-  onConfirmAction?: () => void
+  onConfirmAction?: (messageId: string) => void
   onRejectAction?: () => void
+  // Resend a blocked-confirmation notice to Morty after automatic delivery failed.
+  onRetryBlockedNotice?: (messageId: string) => void
   onJobComplete?: (jobId: string, jobType: string, status: string, mode?: string) => void
 }
 
@@ -74,6 +76,7 @@ export function MessageBubble({
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
+  onRetryBlockedNotice,
   onJobComplete,
 }: MessageBubbleProps) {
   const isUser = message.role === "user"
@@ -194,7 +197,8 @@ export function MessageBubble({
     !!modelPricing ||
     !!vramEstimate ||
     promptReviews.length > 0 ||
-    (!!message.proposedAction && !!onConfirmAction && !!onRejectAction)
+    (!!message.proposedAction && !!onConfirmAction && !!onRejectAction) ||
+    !!message.actionBlocked
 
   return (
     <div
@@ -270,9 +274,41 @@ export function MessageBubble({
           <div className="mt-3">
             <ActionCard
               action={message.proposedAction}
-              onConfirm={onConfirmAction}
+              onConfirm={() => onConfirmAction(message.id)}
               onReject={onRejectAction}
             />
+          </div>
+        )}
+
+        {message.actionBlocked && (
+          // Shown regardless of whether Morty could be told: the user can always see why the job
+          // wasn't created and fix the configuration.
+          <div
+            className="mt-3 rounded-lg border border-rh-danger/40 bg-rh-danger-light/60 p-3 text-xs dark:bg-rh-danger-dark/30"
+            data-testid="action-blocked"
+          >
+            <p className="font-medium text-rh-danger">Not submitted</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{message.actionBlocked.message}</p>
+            {message.actionBlocked.notify === "sending" && (
+              <p className="mt-1 text-muted-foreground">Letting Morty know…</p>
+            )}
+            {message.actionBlocked.notify === "deferred" && (
+              <p className="mt-1 text-muted-foreground">
+                Morty will be told once the pending job card is confirmed or dismissed.
+              </p>
+            )}
+            {message.actionBlocked.notify === "failed" && onRetryBlockedNotice && (
+              <p className="mt-1 text-muted-foreground">
+                Morty couldn&apos;t be reached.{" "}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                  onClick={() => onRetryBlockedNotice(message.id)}
+                >
+                  Retry
+                </button>
+              </p>
+            )}
           </div>
         )}
 

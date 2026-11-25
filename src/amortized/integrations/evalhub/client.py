@@ -120,7 +120,7 @@ async def validate_definition(config: dict[str, Any]) -> list[str]:
         if not config.get(key):
             continue
         try:
-            spec = _endpoint_spec(config, key, "UNUSED")
+            spec = _endpoint_spec(config, key)
         except JobBuildError as exc:
             return [str(exc)]
         if spec["provider_type"] != "openai":

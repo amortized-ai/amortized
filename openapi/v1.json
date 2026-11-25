@@ -36,11 +36,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "The job was not created: a request validation error, a rejected configuration, or model_check_failed (an endpoint the job would call rejected a test request or is not an allowed destination).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -78,11 +78,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "The job was not created: a request validation error, a rejected configuration, or model_check_failed (an endpoint the job would call rejected a test request or is not an allowed destination).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -120,11 +120,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "The job was not created: a request validation error, a rejected configuration, or model_check_failed (an endpoint the job would call rejected a test request or is not an allowed destination).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -138,7 +138,7 @@
           "jobs"
         ],
         "summary": "Retry/rerun a FAILED or cancelled job (SDG, training, or eval) by cloning its original request config. With no overrides it re-runs the job UNCHANGED (for eval the new scores land in the same Evaluation tab comparison group); pass `overrides` to change specific knobs (e.g. num_train_epochs, num_records). The caller confirms before this creates the job \u2014 it is not a silent dispatch.",
-        "description": "Clone a failed/cancelled job's original config into a new job of the same type.\n\nGeneralized from the former eval-only path: the shared mirror.clone drops each\ntype's runtime/lineage fields from the pre-dispatch snapshot and applies any\ncaller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind\na confirmation step, so re-running an expensive training/SDG job is never a\nsingle misclick.",
+        "description": "Clone a failed/cancelled job's original config into a new job of the same type.\n\nGeneralized from the former eval-only path: the shared mirror.clone drops each\ntype's runtime/lineage fields from the pre-dispatch snapshot and applies any\ncaller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind\na confirmation step, so re-running an expensive training/SDG job is never a\nsingle misclick. Goes through job admission, so the retried job's LLM endpoints are\nchecked exactly like a fresh create.",
         "operationId": "retry_job",
         "parameters": [
           {
@@ -181,11 +181,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "The job was not created: a request validation error, a rejected configuration, or model_check_failed (an endpoint the job would call rejected a test request or is not an allowed destination).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -222,11 +222,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "The job was not created: a request validation error, a rejected configuration, or model_check_failed (an endpoint the job would call rejected a test request or is not an allowed destination).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -306,11 +306,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "The job was not created: a request validation error, a rejected configuration, or model_check_failed (an endpoint the job would call rejected a test request or is not an allowed destination).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -373,11 +373,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "The job was not created: a request validation error, a rejected configuration, or model_check_failed (an endpoint the job would call rejected a test request or is not an allowed destination).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1654,7 +1654,7 @@
         "tags": [
           "eval"
         ],
-        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and any pre-registered serving endpoints (known_endpoints; empty when none are configured). A model from list_models is evaluated with endpoint.base_url set to its provider name. Eval jobs with a training_job_id or model_name_or_path serve the model themselves.",
+        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and any pre-registered serving endpoints (known_endpoints; empty when none are configured; use an entry's base_url and model as-is). A model from list_models is evaluated with endpoint.base_url set to its provider name. Eval jobs with a training_job_id or model_name_or_path serve the model themselves.",
         "operationId": "get_eval_endpoint_suggestions",
         "parameters": [
           {
@@ -2002,7 +2002,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG, training, or eval workflow. Set phase to 'sdg', 'training', or 'eval' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
+        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG, training, or eval workflow, including when the step has not changed since your previous response. Set phase to 'sdg', 'training', or 'eval' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
         "operationId": "signal_phase",
         "requestBody": {
           "content": {
@@ -3652,6 +3652,34 @@
         "title": "EmbeddingInferenceParams",
         "description": "Configuration for embedding generation parameters.\n\nAttributes:\n    generation_type: Type of generation, always \"embedding\" for this class.\n    encoding_format: Format of the embedding encoding (\"float\" or \"base64\").\n    dimensions: Number of dimensions for the embedding."
       },
+      "ErrorResponse": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Machine-readable error code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable error message"
+          },
+          "details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorResponse"
+      },
       "EvalEndpoint": {
         "properties": {
           "base_url": {
@@ -4402,6 +4430,13 @@
             "type": "string",
             "title": "Execution Phase",
             "default": ""
+          },
+          "model_checks": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCheckResult"
+            },
+            "type": "array",
+            "title": "Model Checks"
           }
         },
         "type": "object",
@@ -5166,6 +5201,18 @@
               }
             ],
             "title": "Job Mode"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
           }
         },
         "type": "object",
@@ -5182,6 +5229,50 @@
         ],
         "title": "ModalityDataType",
         "description": "Data type formats for multimodal data."
+      },
+      "ModelCheckResult": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unverified"
+            ],
+            "title": "Outcome"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "model",
+          "base_url",
+          "outcome",
+          "reason"
+        ],
+        "title": "ModelCheckResult",
+        "description": "Outcome of checking one LLM endpoint a job will call. URLs are redacted."
       },
       "ModelConfig": {
         "properties": {
@@ -6513,19 +6604,24 @@
         "properties": {
           "phase": {
             "type": "string",
+            "enum": [
+              "sdg",
+              "training",
+              "eval"
+            ],
             "title": "Phase",
             "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows, 'eval' for model evaluation workflows"
           },
           "step": {
             "type": "string",
             "title": "Step",
-            "description": "Current step within the phase. Signal transitions in order: understand_task (identified what the user wants to build), load_skill (read the relevant skill guide), gather_requirements (asking user for parameters \u2014 signal on first ask), estimate_cost (checking models, pricing, or VRAM estimates), confirm (presenting the job validation/confirmation card), execute (job has been submitted), review (checking job results or presenting next steps). Signal the step you are currently at. Do not repeat a step already signaled.",
-            "default": ""
+            "description": "Slug of the step you are in now, as shown in its heading in your workflow (or in your loaded skill's `### Step` headings). Send it on every response, including when it is the same step as your previous response."
           }
         },
         "type": "object",
         "required": [
-          "phase"
+          "phase",
+          "step"
         ],
         "title": "SignalPhaseRequest"
       },
@@ -7636,6 +7732,13 @@
             },
             "type": "array",
             "title": "Trainer Default Fields"
+          },
+          "model_checks": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCheckResult"
+            },
+            "type": "array",
+            "title": "Model Checks"
           }
         },
         "type": "object",

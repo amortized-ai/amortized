@@ -23,6 +23,7 @@ function SidebarChatContent() {
     isStreaming,
     confirmAction,
     rejectAction,
+    retryBlockedNotice,
     notifyJobComplete,
   } = useChat()
 
@@ -50,6 +51,7 @@ function SidebarChatContent() {
         onOptionSelect={handleSend}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
+        onRetryBlockedNotice={retryBlockedNotice}
         onJobComplete={notifyJobComplete}
       />
       <ChatInput onSend={handleSend} disabled={isStreaming} />

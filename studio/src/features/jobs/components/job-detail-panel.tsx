@@ -23,6 +23,7 @@ import { Link, useNavigate } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogViewer } from "@/components/log-viewer"
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
+import { ModelCheckWarnings } from "@/components/model-check-warnings"
 import { StatusBadge } from "./status-badge"
 import { JobTypeBadge } from "./job-type-badge"
 import { TrainingMetricsChart } from "./training-metrics-chart"
@@ -398,6 +399,8 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
       {job.mlflow_run_id && <MetadataRow label="MLflow Run" value={job.mlflow_run_id} mono />}
       {job.parent_job_id && <MetadataRow label="Parent Job" value={job.parent_job_id} mono />}
       {job.k8s_namespace && <MetadataRow label="Namespace" value={job.k8s_namespace} />}
+      {/* Endpoints the job calls that couldn't be verified when it was created */}
+      <ModelCheckWarnings checks={job.model_checks} />
       {job.error && <ErrorSection job={job} />}
     </div>
   )

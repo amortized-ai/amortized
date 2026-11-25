@@ -5,15 +5,16 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlsplit
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 
+from amortized.api.job_admission import admit_job, check_models_or_raise
 from amortized.core import lineage, mirror
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
@@ -27,9 +28,6 @@ from amortized.core.jobs import (
     cancel_job as core_cancel_job,
 )
 from amortized.core.jobs import (
-    create_job as core_create_job,
-)
-from amortized.core.jobs import (
     delete_job as core_delete_job,
 )
 from amortized.core.jobs import (
@@ -39,6 +37,7 @@ from amortized.core.jobs import (
     list_jobs as core_list_jobs,
 )
 from amortized.core.model_catalog import enabled_provider_defs, resolve_provider
+from amortized.core.model_endpoints import CheckResult, is_valid_http_url
 from amortized.core.placeholders import (
     PROMPT_ID_PREFIX,
     find_prompt_refs,
@@ -48,13 +47,16 @@ from amortized.core.placeholders import (
     resolve_prompt_refs,
 )
 from amortized.db import get_db as _get_db
+from amortized.db.connection import get_pool
 from amortized.db.repository import Repository
 from amortized.jobs.training import ALGO_ALIASES
 from amortized.models import (
+    ErrorResponse,
     EvalJobRequest,
     Job,
     JobStatus,
     JobType,
+    ModelCheckResult,
     PromptView,
     SDGJobRequest,
     TrainingJobRequest,
@@ -228,6 +230,31 @@ async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[st
     for field, job_id, _label in lineage.present_gated_fields(refs):
         errors += await _require_dependency_succeeded(repo, job_id, field)
     return errors
+
+
+def _locked_dependency_check(
+    config: dict[str, Any], parent_job_id: str, run_field: str = "", *, training: bool = False
+) -> Callable[[Repository], Awaitable[list[str]]]:
+    """Lock the upstream job rows this config references (FOR SHARE, until the insert commits)
+    and gate them, plus the producer of a referenced data run (``run_field``). For training, a
+    ``data_path`` replaces ``parent_job_id`` as the data source, as in _validate_training_data."""
+
+    async def check(repo: Repository) -> list[str]:
+        parent = "" if training and config.get("data_path") else parent_job_id
+        refs = {**config, "parent_job_id": parent}
+        ids = [job_id for _field, job_id, _label in lineage.present_gated_fields(refs)]
+        if ids:
+            await repo.conn.execute(
+                "SELECT 1 FROM jobs WHERE id = ANY($1::text[]) FOR SHARE", ids
+            )
+        errors = await _gate_upstream_refs(repo, refs)
+        if run_field:
+            errors += await _gate_data_run_producer(
+                repo, str(config.get(run_field) or ""), run_field
+            )
+        return errors
+
+    return check
 
 
 # An immutable Hugging Face revision: a full git commit hash.
@@ -485,6 +512,39 @@ def _validate_eval_rubric_judge(config: dict[str, Any]) -> list[str]:
     return []
 
 
+# Each retryable type's create request model and the dump its create route stores.
+_RETRY_REQUEST_MODELS: dict[str, tuple[type[BaseModel], bool]] = {
+    JobType.sdg.value: (SDGJobRequest, False),
+    JobType.training.value: (TrainingJobRequest, True),
+    JobType.eval.value: (EvalJobRequest, True),
+}
+
+
+def _normalize_retry_config(job_type: str, config: dict[str, Any]) -> list[str]:
+    """Validate a retry's merged config against its type's create request model and, if valid,
+    replace it in place with what that create route stores. Errors carry field locations and
+    messages only, never submitted values."""
+    model = _RETRY_REQUEST_MODELS.get(job_type)
+    if model is None:
+        return []
+    if job_type == JobType.sdg.value:
+        from amortized.jobs.sdg import normalize_legacy_config
+
+        normalize_legacy_config(config)  # the schema rejects fields older SDG configs carry
+    request_model, exclude_unset = model
+    try:
+        request = request_model.model_validate(config)
+    except ValidationError as exc:
+        return [
+            f"{'.'.join(str(part) for part in err['loc']) or 'config'}: {err['msg']}"
+            for err in exc.errors()
+        ]
+    normalized = request.model_dump(exclude_none=True, exclude_unset=exclude_unset)
+    config.clear()
+    config.update(normalized)
+    return []
+
+
 def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
     """Each endpoint's base_url must be an http(s) URL or a configured provider's name.
 
@@ -498,18 +558,16 @@ def _validate_eval_endpoints(config: dict[str, Any]) -> list[str]:
         if not base_url:
             continue
         if base_url.lower().startswith(("http://", "https://")):
-            try:
-                host = urlsplit(base_url).hostname
-            except ValueError:
-                host = None
-            if not host:
-                # The value isn't echoed: it may carry credentials (rejected separately).
-                errors.append(f"{key}.base_url is not a valid URL (it has no host)")
+            # The value isn't echoed: it may carry credentials (rejected separately).
+            if not is_valid_http_url(base_url):
+                errors.append(f"{key}.base_url is not a valid URL (check the host and port)")
             continue
         if resolve_provider(base_url) is None:
             names = ", ".join(p["name"] for p in enabled_provider_defs()) or "none configured"
             errors.append(
-                f"{key}.base_url {base_url!r} is neither an http(s) URL nor a configured"
+                # The value isn't echoed: a key pasted into the field would otherwise land
+                # in the agent's context and the chat.
+                f"{key}.base_url is neither an http(s) URL nor a configured"
                 f" provider — set it to one of: {names}, or to the URL of an endpoint that"
                 " needs no key (get_eval_endpoint_suggestions lists the URLs of pre-registered"
                 " endpoints in known_endpoints). A model that needs an API key must come from"
@@ -555,7 +613,11 @@ async def _validate_eval_definition(config: dict[str, Any]) -> list[str]:
     if config.get("eval_mode") != "classification" and not [
         c for c in config.get("rubric", []) if isinstance(c, dict) and c.get("name")
     ]:
-        errors.append("eval jobs require at least one rubric criterion")
+        errors.append(
+            "eval jobs require at least one rubric criterion (custom"
+            " judge-scored metrics — the built-in structural metrics"
+            " exact_match/format_validity were removed)"
+        )
     return errors
 
 
@@ -692,47 +754,57 @@ async def _apply_classification_eval_mode(
 # ---------------------------------------------------------------------------
 
 
+# These routes' 422s are all main.py's error envelope; declaring it lets clients branch on `code`.
+_ADMISSION_422: dict[int | str, dict[str, Any]] = {
+    422: {
+        "model": ErrorResponse,
+        "description": "The job was not created: a request validation error, a rejected"
+        " configuration, or model_check_failed (an endpoint the job would call rejected a test"
+        " request or is not an allowed destination).",
+    }
+}
+
+
 @router.post(
     "/sdg",
     status_code=201,
     response_model=Job,
     operation_id="create_sdg_job",
+    responses=_ADMISSION_422,
     summary="Create and submit an SDG job. Called by the frontend on user confirmation.",
 )
 async def create_sdg_job(
     request: SDGJobRequest,
     http_request: Request,
-    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     """Create a synthetic data generation job using Data Designer."""
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
-
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
-    repo = Repository(db)
-    # Prompt store (#541): store prompt text once and keep only <prompt:...> refs in
-    # the persisted config, so it stays small and clone-safe. The agent path already
-    # emits refs (show_prompt returned them) — those pass through unchanged; the recipe
-    # form path sends inline text, which is refified here deterministically. Either way
-    # this also claims ownership of the referenced rows for the submitting user.
-    await _refify_and_own_prompts(repo, config, user_id=user_id)
-    # Fail-closed dependency gate (same invariant as training/eval): any upstream job
-    # this SDG chains from (e.g. a dataset-producing parent) must have succeeded before
-    # it can be used. Field-driven, so it no-ops for a fresh SDG with no parent.
-    gate_errors = await _gate_upstream_refs(repo, {**config, "parent_job_id": parent_job_id})
-    if gate_errors:
-        raise HTTPException(status_code=422, detail=gate_errors)
-    try:
-        row = await core_create_job(
-            repo,
-            job_type=JobType.sdg,
-            config=config,
-            parent_job_id=parent_job_id,
-            user_id=user_id,
-        )
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    async def prechecks(repo: Repository) -> list[str]:
+        # Fail-closed dependency gate (same invariant as training/eval): any upstream job
+        # this SDG chains from (e.g. a dataset-producing parent) must have succeeded before
+        # it can be used. Field-driven, so it no-ops for a fresh SDG with no parent.
+        return await _gate_upstream_refs(repo, {**config, "parent_job_id": parent_job_id})
+
+    async def before_insert(repo: Repository) -> None:
+        # Prompt store: store prompt text once and keep only <prompt:...> refs in
+        # the persisted config, so it stays small and clone-safe. The agent path already
+        # emits refs (show_prompt returned them) — those pass through unchanged; the recipe
+        # form path sends inline text, which is refified here deterministically. Either way
+        # this also claims ownership of the referenced rows for the submitting user.
+        await _refify_and_own_prompts(repo, config, user_id=user_id)
+
+    row, _ = await admit_job(
+        JobType.sdg,
+        config,
+        parent_job_id=parent_job_id,
+        user_id=user_id,
+        prechecks=prechecks,
+        dependencies=_locked_dependency_check(config, parent_job_id),
+        before_insert=before_insert,
+    )
     return _job_response(row)
 
 
@@ -741,38 +813,37 @@ async def create_sdg_job(
     status_code=201,
     response_model=Job,
     operation_id="create_training_job",
+    responses=_ADMISSION_422,
     summary="Create and submit a training job. Called by the frontend on user confirmation.",
 )
 async def create_training_job(
     request: TrainingJobRequest,
     http_request: Request,
-    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     """Create a model training job."""
     config = request.model_dump(exclude_none=True, exclude_unset=True)
     parent_job_id = config.pop("parent_job_id", "")
+    model_warnings: list[str] = []
 
-    errors = await _validate_training_data(config, parent_job_id, db)
-    model_errors, model_warnings = await _validate_model_source(config, db)
-    errors.extend(model_errors)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
-    for w in model_warnings:
-        logger.warning("training job validation: %s", w)
+    async def prechecks(repo: Repository) -> list[str]:
+        errors = await _validate_training_data(config, parent_job_id, repo.conn)
+        model_errors, warnings = await _validate_model_source(config, repo.conn)
+        model_warnings[:] = warnings
+        return [*errors, *model_errors]
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
-
-    repo = Repository(db)
-    try:
-        row = await core_create_job(
-            repo,
-            job_type=JobType.training,
-            config=config,
-            parent_job_id=parent_job_id,
-            user_id=user_id,
-        )
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    row, _ = await admit_job(
+        JobType.training,
+        config,
+        parent_job_id=parent_job_id,
+        user_id=user_id,
+        prechecks=prechecks,
+        dependencies=_locked_dependency_check(
+            config, parent_job_id, "data_run_id", training=True
+        ),
+    )
+    for w in model_warnings:
+        logger.warning("training job validation: %s", w)
     return _job_response(row)
 
 
@@ -840,6 +911,7 @@ async def _persist_metric_set(
     status_code=201,
     response_model=Job,
     operation_id="create_eval_job",
+    responses=_ADMISSION_422,
     summary=(
         "Create and submit an eval job. Compares a base model endpoint against"
         " a tuned model endpoint on an eval dataset."
@@ -848,41 +920,45 @@ async def _persist_metric_set(
 async def create_eval_job(
     request: EvalJobRequest,
     http_request: Request,
-    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     """Create a model evaluation job."""
     config = request.model_dump(exclude_none=True, exclude_unset=True)
     parent_job_id = config.pop("parent_job_id", "")
 
+    async def prechecks(repo: Repository) -> list[str]:
+        return await _eval_static_errors(config, parent_job_id, repo.conn)
+
+    async def before_insert(repo: Repository) -> None:
+        # Persist the metric set on the dataset's MLflow run so every later
+        # eval on the same dataset (any session) reuses the same metrics.
+        await _persist_metric_set(config, parent_job_id, repo.conn)
+
+    user_id = http_request.headers.get("X-Forwarded-User", "")
+    row, _ = await admit_job(
+        JobType.eval,
+        config,
+        parent_job_id=parent_job_id,
+        user_id=user_id,
+        prechecks=prechecks,
+        dependencies=_locked_dependency_check(config, parent_job_id, "eval_data_run_id"),
+        before_insert=before_insert,
+    )
+    response = _job_response(row)
+    _strip_eval_api_keys(response)
+    return response
+
+
+async def _eval_static_errors(
+    config: dict[str, Any], parent_job_id: str, db: asyncpg.Connection
+) -> list[str]:
+    """Config/data errors shared by validate_eval_job and create_eval_job. Mutates ``config``
+    (may set eval_mode); safe to run more than once."""
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
     errors.extend(_validate_eval_endpoints(config))
     errors.extend(await _validate_eval_definition(config))
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
-
-    user_id = http_request.headers.get("X-Forwarded-User", "")
-
-    # Persist the metric set on the dataset's MLflow run so every later
-    # eval on the same dataset (any session) reuses the same metrics.
-    await _persist_metric_set(config, parent_job_id, db)
-
-    repo = Repository(db)
-    try:
-        row = await core_create_job(
-            repo,
-            job_type=JobType.eval,
-            config=config,
-            parent_job_id=parent_job_id,
-            user_id=user_id,
-        )
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    response = _job_response(row)
-    _strip_eval_api_keys(response)
-    return response
+    return errors
 
 
 @router.post(
@@ -890,6 +966,7 @@ async def create_eval_job(
     status_code=201,
     response_model=Job,
     operation_id="retry_job",
+    responses=_ADMISSION_422,
     summary=(
         "Retry/rerun a FAILED or cancelled job (SDG, training, or eval) by"
         " cloning its original request config. With no overrides it re-runs"
@@ -902,7 +979,6 @@ async def create_eval_job(
 async def retry_job(
     job_id: str,
     http_request: Request,
-    db: asyncpg.Connection = Depends(_get_db),
     overrides: dict[str, Any] | None = None,
 ) -> Job:
     """Clone a failed/cancelled job's original config into a new job of the same type.
@@ -911,9 +987,10 @@ async def retry_job(
     type's runtime/lineage fields from the pre-dispatch snapshot and applies any
     caller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind
     a confirmation step, so re-running an expensive training/SDG job is never a
-    single misclick."""
-    repo = Repository(db)
-    job = await repo.get_job(job_id)
+    single misclick. Goes through job admission, so the retried job's LLM endpoints are
+    checked exactly like a fresh create."""
+    async with get_pool().acquire() as conn:
+        job = await Repository(conn).get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
     job_type = str(job.get("type") or "")
@@ -952,6 +1029,12 @@ async def retry_job(
         if src_records is not None:
             config["num_records"] = src_records
 
+    # Overrides skip request validation: normalize the merged config as its create request would
+    # be (expanding config_json too) before anything below reads it.
+    schema_errors = _normalize_retry_config(job_type, config)
+    if schema_errors:
+        raise HTTPException(status_code=422, detail=schema_errors)
+
     # Resolve the parent the new job will actually store before validating it:
     # core_create_job falls back to config's parent_job_id when the arg is empty, so
     # a parent_job_id override would otherwise be stored unvalidated (linking the
@@ -965,39 +1048,34 @@ async def retry_job(
         config.pop("parent_job_id", None)
 
     # Per-type validation mirrors each create endpoint (SDG has none at this layer).
-    if job_type == JobType.training.value:
-        errors = await _validate_training_data(config, parent_job_id, db)
-        if errors:
-            raise HTTPException(status_code=422, detail=errors)
-    elif job_type == JobType.eval.value:
-        try:
-            config = EvalJobRequest(**config).model_dump(exclude_none=True, exclude_unset=True)
-            config.pop("parent_job_id", None)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        errors = await _validate_eval_data(config, parent_job_id, db)
-        errors += await _apply_classification_eval_mode(config, db)
-        errors += _validate_eval_rubric_judge(config)
-        errors += _validate_eval_endpoints(config)
-        errors += await _validate_eval_definition(config)
-        if errors:
-            raise HTTPException(status_code=422, detail=errors)
-        await _persist_metric_set(config, parent_job_id, db)
+    async def prechecks(repo: Repository) -> list[str]:
+        if job_type == JobType.training.value:
+            return await _validate_training_data(config, parent_job_id, repo.conn)
+        if job_type == JobType.eval.value:
+            return await _eval_static_errors(config, parent_job_id, repo.conn)
+        return []
+
+    async def before_insert(repo: Repository) -> None:
+        if job_type == JobType.eval.value:
+            await _persist_metric_set(config, parent_job_id, repo.conn)
 
     user_id = http_request.headers.get("X-Forwarded-User", "") or job.get("user_id", "")
-
-    try:
-        row = await core_create_job(
-            repo,
-            job_type=JobType(job_type),
-            config=config,
-            recipe=job.get("recipe", ""),
-            parent_job_id=parent_job_id,
-            user_id=user_id,
-            retry_of=job_id,
-        )
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    row, _ = await admit_job(
+        JobType(job_type),
+        config,
+        recipe=job.get("recipe", ""),
+        parent_job_id=parent_job_id,
+        user_id=user_id,
+        retry_of=job_id,
+        prechecks=prechecks,
+        dependencies=_locked_dependency_check(
+            config,
+            parent_job_id,
+            {"training": "data_run_id", "eval": "eval_data_run_id"}.get(job_type, ""),
+            training=job_type == JobType.training.value,
+        ),
+        before_insert=before_insert,
+    )
 
     logger.info("Retrying %s job %s as %s", job_type, job_id[:8], row["id"][:8])
     response = _job_response(row)
@@ -1014,6 +1092,7 @@ async def retry_job(
     "/sdg/validate",
     response_model=ValidatedJobConfig,
     operation_id="validate_sdg_job",
+    responses=_ADMISSION_422,
     summary=(
         "Validate an SDG job config and present it for user confirmation. "
         "The UI renders a confirmation card — the user clicks confirm to submit. "
@@ -1023,7 +1102,6 @@ async def retry_job(
 )
 async def validate_sdg_job(
     request: SDGJobRequest,
-    db: asyncpg.Connection = Depends(_get_db),
 ) -> ValidatedJobConfig:
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
@@ -1036,8 +1114,9 @@ async def validate_sdg_job(
     refs = find_prompt_refs(config)
     display_config = config
     if refs:
-        repo = Repository(db)
-        contents = {rid: await repo.get_prompt_content(rid) for rid in refs}
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            contents = {rid: await repo.get_prompt_content(rid) for rid in refs}
         missing = sorted(rid for rid, text in contents.items() if text is None)
         if missing:
             raise HTTPException(
@@ -1050,6 +1129,7 @@ async def validate_sdg_job(
                 ),
             )
         display_config = resolve_prompt_refs(config, contents.get)
+    model_checks = await check_models_or_raise(JobType.sdg.value, config)
     prompts = _recipe_prompts(display_config)
     output = next((p.text for p in prompts if p.role == "output"), None)
     return ValidatedJobConfig(
@@ -1058,7 +1138,12 @@ async def validate_sdg_job(
         parent_job_id=parent_job_id,
         output_prompt=output,
         prompts=prompts,
+        model_checks=_model_check_views(model_checks),
     )
+
+
+def _model_check_views(results: list[CheckResult]) -> list[ModelCheckResult]:
+    return [ModelCheckResult(**r.to_dict()) for r in results]
 
 
 def _output_column_name(config: dict[str, Any]) -> str | None:
@@ -1326,6 +1411,7 @@ async def clone_sdg_config_for_eval(
     "/training/validate",
     response_model=ValidatedJobConfig,
     operation_id="validate_training_job",
+    responses=_ADMISSION_422,
     summary=(
         "Validate a training job config and present it for user confirmation. "
         "The UI renders a confirmation card with ALL parameters — do NOT output "
@@ -1341,31 +1427,31 @@ async def clone_sdg_config_for_eval(
 )
 async def validate_training_job(
     request: TrainingJobRequest,
-    db: asyncpg.Connection = Depends(_get_db),
 ) -> ValidatedJobConfig:
     """Validate a training job config without creating it."""
     config = request.model_dump(exclude_none=True, exclude_unset=True)
     parent_job_id = config.pop("parent_job_id", "")
 
-    errors = await _validate_training_data(config, parent_job_id, db)
-    model_errors, model_warnings = await _validate_model_source(config, db)
-    errors.extend(model_errors)
-    credential_error = inline_credential_error(config)
-    if credential_error:
-        errors.append(credential_error)
-    budget_error = gpu_budget_error(JobType.training, config)
-    if budget_error:
-        errors.append(budget_error)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
+    async with get_pool().acquire() as conn:
+        errors = await _validate_training_data(config, parent_job_id, conn)
+        model_errors, model_warnings = await _validate_model_source(config, conn)
+        errors.extend(model_errors)
+        credential_error = inline_credential_error(config)
+        if credential_error:
+            errors.append(credential_error)
+        budget_error = gpu_budget_error(JobType.training, config)
+        if budget_error:
+            errors.append(budget_error)
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+        # Resolve the run the job will ACTUALLY train on: an explicit data_run_id
+        # (e.g. a split complement) takes precedence over the parent SDG's full
+        # output, matching _resolve_training_data_run and the overlap check. Resolving
+        # parent-first here showed a split-trained job the full SDG size on the card.
+        data_run_id = str(config.get("data_run_id") or "")
+        data_run = data_run_id or await _resolve_data_run(Repository(conn), parent_job_id, "")
 
-    repo = Repository(db)
-    # Resolve the run the job will ACTUALLY train on: an explicit data_run_id
-    # (e.g. a split complement) takes precedence over the parent SDG's full
-    # output, matching _resolve_training_data_run and the overlap check. Resolving
-    # parent-first here showed a split-trained job the full SDG size on the card.
-    data_run_id = str(config.get("data_run_id") or "")
-    data_run = data_run_id or await _resolve_data_run(repo, parent_job_id, "")
+    model_checks = await check_models_or_raise(JobType.training.value, config)
     record_count = await _dataset_record_count(data_run)
 
     return ValidatedJobConfig(
@@ -1375,6 +1461,7 @@ async def validate_training_job(
         data_record_count=record_count,
         trainer_default_fields=_trainer_default_fields(config),
         warnings=model_warnings,
+        model_checks=_model_check_views(model_checks),
     )
 
 
@@ -1422,6 +1509,7 @@ def _warnings_ack_token(warnings: list[str]) -> str:
     "/eval/validate",
     response_model=ValidatedJobConfig,
     operation_id="validate_eval_job",
+    responses=_ADMISSION_422,
     summary=(
         "Validate an eval job config and present it for user confirmation."
         " Do NOT call signal_subagent_completion in this turn — wait for the user."
@@ -1431,35 +1519,41 @@ def _warnings_ack_token(warnings: list[str]) -> str:
 )
 async def validate_eval_job(
     request: EvalJobRequest,
-    db: asyncpg.Connection = Depends(_get_db),
 ) -> ValidatedJobConfig:
     """Validate an eval job config without creating it."""
     config = request.model_dump(exclude_none=True, exclude_unset=True)
     parent_job_id = config.pop("parent_job_id", "")
     acknowledge_warnings = str(config.pop("acknowledge_warnings", "") or "")
 
-    errors = await _validate_eval_data(config, parent_job_id, db)
-    errors.extend(await _apply_classification_eval_mode(config, db))
-    errors.extend(_validate_eval_rubric_judge(config))
-    errors.extend(_validate_eval_endpoints(config))
-    credential_error = inline_credential_error(config)
-    if credential_error:
-        errors.append(credential_error)
-    budget_error = gpu_budget_error(JobType.eval, config)
-    if budget_error:
-        errors.append(budget_error)
-    errors.extend(await _validate_eval_definition(config))
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
+    async with get_pool().acquire() as conn:
+        errors = await _eval_static_errors(config, parent_job_id, conn)
+        credential_error = inline_credential_error(config)
+        if credential_error:
+            errors.append(credential_error)
+        budget_error = gpu_budget_error(JobType.eval, config)
+        if budget_error:
+            errors.append(budget_error)
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
 
-    # Paraphrase guardrail: comparison groups key on the exact rubric
-    # text, so a re-typed (even slightly reworded) criterion set would
-    # fork the dataset's row in the Evaluation tab. Warn — do not
-    # block — when the submitted criterion names match an earlier eval
-    # on this dataset but the descriptions differ.
-    warnings = await _rubric_drift_warning(config, parent_job_id, db)
-    warnings.extend(await _training_sdg_mirror_warning(config, parent_job_id, db))
-    warnings.extend(await _eval_overlap_warning(config, parent_job_id, db))
+    # Before the decision warnings: an eval whose judge fails can't score, so there's nothing to
+    # decide. No DB connection is held while it runs.
+    model_checks = await check_models_or_raise(JobType.eval.value, config)
+
+    # Read after the check: another eval on the dataset may have been created while it ran.
+    async with get_pool().acquire() as conn:
+        # Paraphrase guardrail: comparison groups key on the exact rubric
+        # text, so a re-typed (even slightly reworded) criterion set would
+        # fork the dataset's row in the Evaluation tab. Warn — do not
+        # block — when the submitted criterion names match an earlier eval
+        # on this dataset but the descriptions differ.
+        warnings = await _rubric_drift_warning(config, parent_job_id, conn)
+        warnings.extend(await _training_sdg_mirror_warning(config, parent_job_id, conn))
+        warnings.extend(await _eval_overlap_warning(config, parent_job_id, conn))
+        # Count the run the eval job actually scores: an explicit eval_data_run_id (e.g. a
+        # held-out split) wins over the parent's output, as in resolve_parent_artifacts.
+        eval_data_run_id = str(config.get("eval_data_run_id") or "")
+        data_run = eval_data_run_id or await _resolve_data_run(Repository(conn), parent_job_id, "")
 
     # A decision-requiring warning blocks the confirm card until the user weighs in:
     # surface it as a TOOL ERROR (not a 200 + card) so the model relays it and gets a
@@ -1483,10 +1577,6 @@ async def validate_eval_job(
             ],
         )
 
-    # Count the run the eval job actually scores: an explicit eval_data_run_id (e.g. a
-    # held-out split) wins over the parent's output, as in resolve_parent_artifacts.
-    eval_data_run_id = str(config.get("eval_data_run_id") or "")
-    data_run = eval_data_run_id or await _resolve_data_run(Repository(db), parent_job_id, "")
     record_count = await _dataset_record_count(data_run)
 
     return ValidatedJobConfig(
@@ -1495,6 +1585,7 @@ async def validate_eval_job(
         parent_job_id=parent_job_id,
         data_record_count=record_count,
         warnings=warnings,
+        model_checks=_model_check_views(model_checks),
     )
 
 

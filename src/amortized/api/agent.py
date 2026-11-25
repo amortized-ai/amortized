@@ -20,7 +20,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from amortized.api.agent_parts import _get_tool_input, _part_errored, _tool_name
 from amortized.api.agent_sdg_prompt import (
@@ -66,6 +66,10 @@ MAX_TURNS_HARD = 64
 # state.lock, so beyond this a client is only queuing work unboundedly — reject with
 # 429 rather than letting state.turns / _background_tasks grow without limit.
 MAX_ACTIVE_TURNS = 16
+# Delivered system events remembered per session; replies larger than MAX_EVENT_REPLY_BYTES
+# keep only the id.
+MAX_COMPLETED_EVENTS = 64
+MAX_EVENT_REPLY_BYTES = 256_000
 
 
 @dataclass
@@ -132,6 +136,15 @@ class SessionState:
     # context already records a successful completion ack). Cleared on the next send so the
     # system prompt can correct the stale context — keeps AX = UX.
     suppressed_completion: bool = False
+    # Client event id -> the turn it started. Lets a retried system event (e.g. a blocked
+    # confirmation whose POST response was lost) return the turn already running instead of
+    # starting a second one. Pruned with the turns it points at.
+    event_turns: dict[str, str] = field(default_factory=dict)
+    # Event id -> the messages its turn produced (None when too large). Separate from the turn
+    # cache, which evicts finished turns, so a late resend is neither re-run nor answered with
+    # a later turn's messages.
+    # Insertion-ordered and bounded (MAX_COMPLETED_EVENTS).
+    completed_events: dict[str, list[Any] | None] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -260,6 +273,46 @@ _SUBAGENT_JOB_FAILED_PROMPT = (
     "the job ID. Do NOT retry, do NOT present_options or offer next steps, and do NOT start "
     "new work — hand control back now."
 )
+
+# A confirmed job whose create request was rejected: no job_complete will ever arrive, so the
+# studio sends `confirmation_blocked`. The imperative rides the SYSTEM channel; the user part
+# carries only the server's reason.
+_CONFIRMATION_BLOCKED_PROMPT = (
+    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but creation was"
+    " rejected (the reason is in the user message). Explain the problem briefly, help the user"
+    " resolve it, then call validate_{job_type}_job with the updated configuration to present a"
+    " new confirmation card. Do not say a job was submitted or is running."
+)
+# Same event when no subagent is active: the orchestrator can't validate a job itself, so it
+# hands the fix back to the workflow agent that owns the job type, resuming its context.
+_ORCHESTRATOR_CONFIRMATION_BLOCKED_PROMPT = (
+    "[SYSTEM EVENT] The {job_type} job was NOT created: the user confirmed it, but creation was"
+    " rejected (the reason is in the user message). Your only move: delegate_to_subagent with"
+    ' target "{job_type}" and resume: true, passing the reason as context, so the {job_type}'
+    " workflow helps the user resolve it and presents a new confirmation card."
+)
+
+
+def _confirmation_blocked_job_type(body: MessageRequest) -> str | None:
+    """The job type of a confirmation_blocked event, or None for any other turn."""
+    if body.event != "confirmation_blocked":
+        return None
+    job_type = (body.job_type or "").strip().lower()
+    return job_type if job_type in _VALID_TARGETS else None
+
+
+def _park_subagent_for_other_blocked_job(state: SessionState, body: MessageRequest) -> None:
+    """If a different workflow than the blocked job's is active, park it (resumable, like a help
+    detour) so the orchestrator routes the notice to the workflow that owns that job type."""
+    blocked = _confirmation_blocked_job_type(body)
+    target = state.subagent_target
+    if not blocked or not state.subagent_id or not target or target == blocked:
+        return
+    state.completed_subagents[target] = state.subagent_id
+    state.completed_last_step[target] = state.last_signal_step
+    state.subagent_id = None
+    state.subagent_target = None
+
 
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
 # a subagent (e.g. eval) needs a dataset it can't produce itself (e.g. a held-out set).
@@ -692,6 +745,10 @@ class MessageRequest(BaseModel):
     # older client — the deliverable check then falls back to the display text / create mode.
     job_type: str | None = None
     job_mode: str | None = None
+    # Stable id for a system event the client may resend (e.g. "confirmation_blocked:<msg id>").
+    # A resend while the first turn is running or after it succeeded gets that same turn back,
+    # so Morty processes the event once.
+    event_id: str | None = Field(None, max_length=200)
 
 
 def _extract_user_text(body: MessageRequest) -> str:
@@ -785,6 +842,8 @@ def _evict_finished_turns(state: SessionState) -> None:
                 keep_hard.append(tid)
         state.turn_order = keep_hard
 
+    state.event_turns = {e: t for e, t in state.event_turns.items() if t in state.turns}
+
 
 @router.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
@@ -805,6 +864,23 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
     state.last_activity = datetime.now(UTC)
 
+    if body.event_id:
+        existing_id = state.event_turns.get(body.event_id)
+        existing = state.turns.get(existing_id) if existing_id else None
+        # A turn that failed may run again; one still running or done is the same event.
+        # `replayed` tells the client this is a resend, so it doesn't render a finished reply
+        # from session messages that may now belong to later turns.
+        if existing_id and existing is not None and existing.active:
+            return {"turn_id": existing_id, "status": "processing", "replayed": True}
+        if body.event_id in state.completed_events:
+            # Delivered already (its turn may be evicted): return that turn's own reply.
+            return {
+                "turn_id": existing_id if existing is not None else None,
+                "status": "done",
+                "replayed": True,
+                "messages": state.completed_events[body.event_id],
+            }
+
     # Bound pending work per session: active turns are never evicted, so without an
     # admission limit a client could queue unboundedly (state.turns / _background_tasks).
     if sum(1 for t in state.turns.values() if t.active) >= MAX_ACTIVE_TURNS:
@@ -818,6 +894,8 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     state.turns[turn_id] = turn
     state.turn_order.append(turn_id)
     _evict_finished_turns(state)
+    if body.event_id:
+        state.event_turns[body.event_id] = turn_id
     task = asyncio.create_task(_run_turn(state, session_id, turn_id, user_text, body))
     turn.task = task
     _background_tasks.add(task)
@@ -835,6 +913,7 @@ async def _run_turn(
     turn = state.turns.get(turn_id)
     try:
         async with state.lock:
+            _park_subagent_for_other_blocked_job(state, body)
             if state.subagent_id:
                 result = await _handle_subagent_message(state, session_id, user_text, body)
             else:
@@ -863,6 +942,13 @@ async def _run_turn(
                 p for p in (result.get("parts") or []) if p.get("tool") == _BACKFILL_PHASE_TOOL
             ]
             result["parts"] = [*client_parts, *phase_backfill]
+            if body.event_id:
+                # Still under the lock, so no later turn has added to the session yet.
+                reply = await _turn_messages(state, session_id)
+                kept = reply if reply is not None and _fits_retention(reply) else None
+                _record_completed_event(state, body.event_id, kept)
+                # The client renders only these, never the session's latest messages.
+                result["event_messages"] = reply if reply is not None else []
         if turn:
             turn.result = result
     except AgentTurnError as exc:
@@ -892,6 +978,42 @@ async def _run_turn(
         state.last_activity = datetime.now(UTC)
 
 
+async def _turn_messages(state: SessionState, session_id: str) -> list[Any] | None:
+    """The messages the turn that just finished added — what the client's GET /message would
+    show for it: the active session's messages after its last user message. None when they
+    can't be read."""
+    try:
+        messages = await get_session_messages(session_id)
+    except Exception:
+        logger.warning("could not read an event turn's messages: session=%s", session_id)
+        return None
+    if not isinstance(messages, list):
+        return None
+    last_user = max(
+        (
+            i
+            for i, m in enumerate(messages)
+            if isinstance(m, dict) and (m.get("info") or {}).get("role") == "user"
+        ),
+        default=-1,
+    )
+    return messages[last_user + 1 :]
+
+
+def _fits_retention(reply: list[Any]) -> bool:
+    """Whether an event's reply is small enough to keep for a later resend."""
+    return len(json.dumps(reply, default=str)) <= MAX_EVENT_REPLY_BYTES
+
+
+def _record_completed_event(
+    state: SessionState, event_id: str, messages: list[Any] | None = None
+) -> None:
+    state.completed_events.pop(event_id, None)
+    state.completed_events[event_id] = messages
+    while len(state.completed_events) > MAX_COMPLETED_EVENTS:
+        state.completed_events.pop(next(iter(state.completed_events)))
+
+
 @router.get("/session/{session_id}/turn/{turn_id}")
 async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
     state = _sessions.get(session_id)
@@ -918,8 +1040,8 @@ _STALL_NUDGE_INTRO = "[WORKFLOW STALL] Your last turn did not advance the workfl
 
 
 # Terminal control-transfers a SUBAGENT can emit: the turn is LEAVING its phase (handled by the
-# hand-off / resume path), never working inside one — so it is never a stall and the signalled-guard
-# must not re-drive it (that would intercept the hand-off and strand the resume pointer).
+# hand-off / resume path), never working inside one — so it is never a stall and must not be
+# re-driven (that would intercept the hand-off and strand the resume pointer).
 # `delegate_to_subagent` is orchestrator-only and so excluded.
 _HANDOFF_TOOLS = frozenset({"request_orchestrator_help", "signal_subagent_completion"})
 
@@ -1019,21 +1141,12 @@ def _stall_nudge_text(step: str, verdict: Verdict) -> str | None:
     return None
 
 
-# The signalled-guard nudge: a subagent turn that skips `signal_phase` — or signals an off-vocab
-# slug that resolves to no phase (`signal_is_known` is false) — leaves `last_signal_step` pinned to
-# a PRIOR turn's step or to an unusable key, so the adjudicator would check the wrong phase's
-# obligation (or none). Rather than nudge off a stale/unusable key, re-prompt ONCE to emit a
-# recognized signal — the re-driven turn carries a fresh key the next adjudication can resolve. Same
-# bracketed system-channel convention as _STALL_NUDGE_INTRO.
-_MISSING_SIGNAL_NUDGE = (
-    "[PHASE SIGNAL MISSING] You did not signal a recognized step this turn — you either skipped "
-    "`signal_phase` or sent a slug that is not one of your `## Workflow` section slugs or your "
-    "loaded skill's `### Step` slugs. A valid signal is required on every turn — it stamps which "
-    "step you are in (each heading in your resident workflow / skill carries its slug). Do BOTH "
-    "now, in order: (1) CALL `signal_phase` with your current step's EXACT slug; (2) then carry "
-    "out that step's instructions from your resident workflow — do the action it specifies (ask "
-    "the next gather question, call the tool, surface the card), do not merely describe it in "
-    "prose and do not skip ahead to a later step."
+# A finished turn with no text and no tool call (beyond `signal_phase`) showed the user nothing — a
+# re-prompt here hides nothing, unlike one after a real answer. Same bracketed convention as
+# _STALL_NUDGE_INTRO.
+_EMPTY_REPLY_NUDGE = (
+    "[EMPTY RESPONSE] Your last response had no text and no tool call, so the user saw nothing. "
+    "Respond to the user's last message now, following your current workflow step."
 )
 
 
@@ -1047,11 +1160,10 @@ async def _redrive_subagent(
     """Re-prompt the subagent ONCE on the system channel and return its re-fetched parts; on a send
     failure return `fallback` (the original parts) so one failed nudge never drops the turn.
 
-    This is the card-preserving re-drive helper shared by both nudge paths. The empty-user re-drive
-    advances opencode's message boundary PAST anything the turn already rendered, so a card-bearing
-    turn would be stranded — callers MUST gate it on the card rules (`_maybe_nudge_subagent_stall`:
-    the signalled-guard and every stall verdict except `batching` are skipped when the turn rendered
-    a card). Centralizing the send/refetch keeps that invariant in one place."""
+    The empty-user re-drive advances opencode's message boundary PAST anything the turn already
+    rendered, so a card-bearing turn would be stranded — callers MUST gate it on the card rules
+    (`_maybe_nudge_subagent_stall`: every stall verdict except `batching` is skipped when the turn
+    rendered a card). Centralizing the send/refetch keeps that invariant in one place."""
     assert state.subagent_id is not None  # caller guards this; narrows for the proxy/fetch calls
     try:
         await _proxy_send_message(
@@ -1075,20 +1187,22 @@ async def _maybe_nudge_subagent_stall(
     *,
     guard_missing_signal: bool = True,
 ) -> list[dict[str, Any]]:
-    """If the just-finished subagent turn stalled on an owed tool edge, re-prompt ONCE on the
-    system channel and return the re-fetched parts; otherwise return `latest_parts` unchanged. Runs
+    """If the just-finished subagent turn came back empty or stalled on an owed tool edge, re-prompt
+    ONCE on the system channel and return the re-fetched parts; otherwise return `latest_parts`
+    unchanged. Runs
     BEFORE completion/help detection so a nudged request_orchestrator_help flows through the normal
     hand-off path (not stripped as prose). One nudge per user turn — the re-driven turn is not
     re-adjudicated, so it can never loop. This is the live consumer of the pure `adjudicate`
     library (api/phases.py). Every decision below reads the single `_observe_turn` scan.
 
-    `guard_missing_signal` — whether to apply the signalled-guard (re-drive a turn that stamped
-    no recognized `signal_phase`). Steady-state turns (the ordinary handler) want it; a fresh
-    delegation or RESUME turn (the `_maybe_delegate` exit) does NOT — the subagent is (re)entering,
-    and a first clarifying turn without a signal is legitimate, so only the owed-edge STALL check
-    applies there (the #534 P2c path: a narrated hand-off on a delegate/resume turn)."""
-    if body.event == "job_complete":
-        return latest_parts  # carries its own terminal hand-back steer; not a stall
+    `guard_missing_signal` — whether to skip the stall check on a turn that stamped no recognized
+    `signal_phase` (see the comment at the check). Steady-state turns (the ordinary handler) want
+    it; a fresh delegation or RESUME turn (the `_maybe_delegate` exit) does NOT — there the step
+    the server just set (entry or restored) is the right key, so the owed-edge STALL check runs on
+    it (the #534 P2c path: a narrated hand-off on a delegate/resume turn)."""
+    if body.event in ("job_complete", "confirmation_blocked"):
+        # Both carry their own steer; not a stall
+        return latest_parts
     if not state.subagent_id or not state.subagent_target:
         return latest_parts
     target = state.subagent_target
@@ -1097,14 +1211,31 @@ async def _maybe_nudge_subagent_stall(
     # The cursor is this turn's OWN signal, falling back to the prior step only when it skipped.
     step = obs.signalled_step or state.last_signal_step
 
-    # Signalled-guard: a subagent must stamp a RECOGNIZED `signal_phase` slug every turn — it is the
-    # KEY the adjudicator (and the per-turn pointer) resolve against. A measured ~33% of GLM-flash
-    # turns skip it, and some signal an off-vocab slug (`signal_is_known` false); either leaves the
-    # key stale/unusable and mis-nudges (false wrong_edge / misdirected stall / missed stall). So
-    # re-prompt ONCE to emit a valid signal — the re-driven turn carries a fresh key for the NEXT
-    # adjudication. A card-bearing turn did its owed work and a handing-off turn is leaving its
-    # phase; both are exempt (re-driving would strand the card / intercept the hand-off). One nudge
-    # per user turn (not re-adjudicated), so it can never loop.
+    # Empty reply: re-prompt on every turn kind past the event return, signalled or not.
+    # `latest_parts` is [] only when the fetch failed (a real reply always carries step markers),
+    # which must not re-prompt.
+    if (
+        latest_parts
+        and not obs.has_text
+        and not (obs.tools - {"signal_phase"})
+        and not obs.hands_off
+    ):
+        logger.info("Empty-reply nudge: session=%s target=%s", session_id, target)
+        # The caller reads the step only from the parts returned here, so a bare signal_phase
+        # would be lost if the retry doesn't signal again.
+        if obs.signalled_step:
+            state.last_signal_step = obs.signalled_step
+        return await _redrive_subagent(state, session_id, body, _EMPTY_REPLY_NUDGE, latest_parts)
+
+    # Missing signal: a turn that skipped `signal_phase` (or sent an off-vocab slug,
+    # `signal_is_known` false) carries no fresh step key — only a PRIOR turn's, which would
+    # mis-judge it (e.g. a stale `validate` owes `validate_eval_job`, so a plain answer to a user
+    # question would be re-driven to re-validate). So it is not adjudicated at all, and NOT
+    # re-prompted for the signal either: the re-prompt is an empty-user hidden turn the user never
+    # sees, and it advanced the reply window past the turn's real answer (a benchmark list the
+    # user asked for vanished — GLM-flash mostly skips the signal on same-step turns: 0/6 on that
+    # turn even with the per-turn pointer asking for it). Batching needs >1 card, so a card-free
+    # turn can't batch; a card-bearing or handing-off turn falls through to the normal checks.
     if (
         guard_missing_signal
         and requires_phase_signal(target)
@@ -1112,8 +1243,10 @@ async def _maybe_nudge_subagent_stall(
         and not obs.hands_off
         and not obs.has_card
     ):
-        logger.info("Phase-signal-missing nudge: session=%s target=%s", session_id, target)
-        return await _redrive_subagent(state, session_id, body, _MISSING_SIGNAL_NUDGE, latest_parts)
+        logger.info(
+            "Phase signal missing (not adjudicated): session=%s target=%s", session_id, target
+        )
+        return latest_parts
 
     verdict = adjudicate(
         target,
@@ -1179,9 +1312,13 @@ async def _handle_subagent_message(
         succeeded = _job_succeeded(body, user_text)
         job_failed = not succeeded
         steer_system = _SUBAGENT_JOB_DONE_PROMPT if succeeded else _SUBAGENT_JOB_FAILED_PROMPT
+    blocked_job_type = _confirmation_blocked_job_type(body)
+    if blocked_job_type:
+        steer_system = _CONFIRMATION_BLOCKED_PROMPT.format(job_type=blocked_job_type)
     # On a job_complete turn the terminal hand-back steer owns the system channel (it tells the
-    # finishing subagent to signal completion now). On every other turn, re-anchor the driver to
-    # its resident workflow section with the pointer (see phases.subagent_pointer).
+    # finishing subagent to signal completion now); a blocked confirmation's steer does the same.
+    # On every other turn, re-anchor the driver to its resident workflow section with the pointer
+    # (see phases.subagent_pointer).
     system = steer_system or _pointer_for(state, state.subagent_target)
     if state.suppressed_completion:
         if not steer_system:
@@ -1445,9 +1582,9 @@ async def _maybe_delegate(
     # ordinary handler runs (_handle_subagent_message). Without this, a subagent's FIRST turn (new
     # delegation) or a resumed consumer's turn could signal its owed edge, narrate instead of
     # calling the tool, and stop — with no adjudication or nudge, because _maybe_delegate returned
-    # the response directly (#534 P2c). `guard_missing_signal=False`: on a (re)entering turn an
-    # unsignalled first clarifying turn is legitimate, so only the owed-edge stall check applies
-    # (not the steady-state signalled-guard). The nudge is idempotent per turn (one re-drive, not
+    # the response directly (#534 P2c). `guard_missing_signal=False`: on a (re)entering turn the
+    # step the server just set (entry or restored) is the key, so an unsignalled turn is still
+    # adjudicated against it. The nudge is idempotent per turn (one re-drive, not
     # re-adjudicated) and self-guards on job_complete / missing subagent, so it is safe on every
     # _maybe_delegate exit (fresh, resume, help-producer).
     #
@@ -1473,7 +1610,13 @@ async def _handle_orchestrator_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    morty_result = await _orchestrator_turn(state, user_text, body)
+    blocked_job_type = _confirmation_blocked_job_type(body)
+    system = (
+        _ORCHESTRATOR_CONFIRMATION_BLOCKED_PROMPT.format(job_type=blocked_job_type)
+        if blocked_job_type
+        else None
+    )
+    morty_result = await _orchestrator_turn(state, user_text, body, system=system)
     delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
     return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
 

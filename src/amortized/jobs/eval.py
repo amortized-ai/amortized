@@ -34,6 +34,13 @@ from typing import Any
 import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.core.model_catalog import inject_enabled_provider_keys, resolve_provider
+from amortized.core.model_endpoints import (
+    ConfigError,
+    ModelEndpoint,
+    endpoint_with_credential,
+    is_http_url,
+    is_valid_http_url,
+)
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import resolve_training_model, set_mlflow_run_tag
 from amortized.models import INLINE_API_KEY_ERROR
@@ -49,7 +56,7 @@ _ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 SERVE_STARTUP_TIMEOUT = 900
 
 
-def _endpoint_spec(config: dict[str, Any], key: str, env_name: str) -> dict[str, str]:
+def _endpoint_spec(config: dict[str, Any], key: str) -> dict[str, str]:
     endpoint = config.get(key)
     if not isinstance(endpoint, dict) or not endpoint.get("base_url") or not endpoint.get("model"):
         raise JobBuildError(f"{key}: base_url and model are required")
@@ -61,19 +68,112 @@ def _endpoint_spec(config: dict[str, Any], key: str, env_name: str) -> dict[str,
     # authenticates with the forwarded key (OPENAI_API_KEY, MAAS_API_KEY, ...). The
     # provider_type (openai|anthropic) selects the runner's calling paradigm so the judge
     # supports exactly what the SDG teacher does (incl. native Anthropic). Any other
-    # base_url is a keyless URL.
+    # base_url is a keyless URL: a model that needs a key comes from a provider configured
+    # in Settings, so a key the server happens to forward is never sent to a URL the config
+    # names.
     provider_type = "openai"
+    env_name = ""
     provider = resolve_provider(base_url)
     if provider:
         base_url = provider.get("endpoint", base_url)
         provider_type = provider.get("provider_type") or "openai"
-        env_name = provider.get("api_key", env_name)
+        env_name = provider.get("api_key", "")
     return {
         "base_url": base_url.rstrip("/"),
         "model": str(endpoint["model"]),
         "api_key_env": env_name,
         "provider_type": provider_type,
     }
+
+
+def _external_model_key(config: dict[str, Any]) -> str | None:
+    """Config key of the external model-under-test endpoint, or None when the eval serves its
+    own model (a training job or HF model, and no explicit ``endpoint``)."""
+    has_model_source = bool(
+        str(config.get("training_job_id", "")).strip()
+        or str(config.get("model_name_or_path", "")).strip()
+    )
+    if has_model_source and not config.get("endpoint"):
+        return None
+    if config.get("endpoint"):
+        return "endpoint"
+    return "endpoint_tuned" if config.get("endpoint_tuned") else "endpoint_base"
+
+
+def model_checks(
+    config: dict[str, Any], env: dict[str, str]
+) -> tuple[list[ModelEndpoint], list[ConfigError]]:
+    """The LLM endpoints this eval will call (judge, and an external model under test), with
+    credentials resolved exactly as the job pod receives them: a provider's key from the
+    forwarded server env plus every enabled provider's key; a literal URL gets none."""
+    if config.get("eval_mode") == "classification":
+        return [], []
+    job_env = dict(env)
+    inject_enabled_provider_keys(job_env)
+    targets: list[tuple[str, str]] = []
+    external_key = _external_model_key(config)
+    if external_key:
+        # build() calls this endpoint whether or not it is set.
+        targets.append(("model under test", external_key))
+    if config.get("judge") not in (None, {}):
+        targets.append(("judge", "judge"))
+
+    endpoints: list[ModelEndpoint] = []
+    errors: list[ConfigError] = []
+    for label, key in targets:
+        endpoint_cfg = config.get(key)
+        if not isinstance(endpoint_cfg, dict):
+            # Reachable only via retry overrides; build() would reject it at dispatch.
+            errors.append(
+                ConfigError(label, "invalid_endpoint", f"{key}: base_url and model are required")
+            )
+            continue
+        base_url = str(endpoint_cfg.get("base_url") or "")
+        if not base_url or not endpoint_cfg.get("model"):
+            # A create request can't get here (request validation needs both), but a retry's
+            # overrides skip that validation; build() would reject this endpoint at dispatch,
+            # so reject it now instead of queueing a job that can't run.
+            errors.append(
+                ConfigError(label, "invalid_endpoint", f"{key}: base_url and model are required")
+            )
+            continue
+        if not is_http_url(base_url) and resolve_provider(base_url) is None:
+            errors.append(
+                ConfigError(
+                    label,
+                    "invalid_base_url",
+                    # The value isn't echoed: a key pasted into the field would otherwise
+                    # land in the agent's context and the chat.
+                    f"{label}: base_url is neither an http(s) URL nor the name of a provider"
+                    " configured on the server",
+                )
+            )
+            continue
+        if is_http_url(base_url) and not is_valid_http_url(base_url):
+            errors.append(
+                ConfigError(
+                    label,
+                    "invalid_base_url",
+                    f"{label}: base_url is not a valid URL (check the host and port)",
+                )
+            )
+            continue
+        try:
+            spec = _endpoint_spec({key: endpoint_cfg}, key)
+        except JobBuildError as exc:  # e.g. an inline api_key — rejected, never probed
+            errors.append(ConfigError(label, "invalid_endpoint", str(exc)))
+            continue
+        endpoints.append(
+            endpoint_with_credential(
+                label,
+                spec["base_url"],
+                spec["model"],
+                spec["provider_type"],
+                spec["api_key_env"],
+                job_env,
+            )
+        )
+    return endpoints, errors
 
 
 def _resolve_named_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
@@ -113,11 +213,7 @@ async def _build_embedded_serving(
     # sentinel goes in raw. Everything else is user-provided and stays
     # quoted: a value starting with '$' (e.g. "$(rm -rf ~)") would
     # otherwise run as command substitution in the pod's shell.
-    quoted_path = (
-        model_path
-        if model_path == "$SERVE_MODEL_DIR"
-        else shlex.quote(model_path)
-    )
+    quoted_path = model_path if model_path == "$SERVE_MODEL_DIR" else shlex.quote(model_path)
 
     import contextlib as _cl
 
@@ -135,8 +231,7 @@ async def _build_embedded_serving(
 
     gpu_memory_utilization = explicit_util if explicit_util is not None else 0.9
     pre_commands.append(
-        "python3 /amortized/check_gpu_memory.py"
-        f" {quoted_path} {int(gpus)} {gpu_memory_utilization}"
+        f"python3 /amortized/check_gpu_memory.py {quoted_path} {int(gpus)} {gpu_memory_utilization}"
     )
 
     port = int(config.get("port", DEFAULT_SERVE_PORT))
@@ -148,8 +243,7 @@ async def _build_embedded_serving(
     # auto-set when the caller hasn't already set it in vllm_args — match the real flag
     # (--tensor-parallel-size / -tp), not a loose substring a model name could trip.
     caller_set_tp = any(
-        a in ("--tensor-parallel-size", "-tp")
-        or a.startswith(("--tensor-parallel-size=", "-tp="))
+        a in ("--tensor-parallel-size", "-tp") or a.startswith(("--tensor-parallel-size=", "-tp="))
         for a in vllm_args
     )
     if gpus > 1 and not caller_set_tp:
@@ -358,11 +452,8 @@ async def build(
     image = config_mod.job_image("eval")
 
     # --- Model under evaluation: embedded serving or external endpoint ---
-    has_model_source = bool(
-        str(config.get("training_job_id", "")).strip()
-        or str(config.get("model_name_or_path", "")).strip()
-    )
-    embedded = has_model_source and not config.get("endpoint")
+    external_key = _external_model_key(config)
+    embedded = external_key is None
 
     if embedded:
         pre_commands, main_script, extras = await _build_embedded_serving(config, env)
@@ -394,14 +485,8 @@ async def build(
             with open(os.path.join(_ASSETS_DIR, asset)) as f:
                 config_files[asset] = f.read()
     else:
-        model_key = (
-            "endpoint"
-            if config.get("endpoint")
-            else "endpoint_tuned"
-            if config.get("endpoint_tuned")
-            else "endpoint_base"
-        )
-        model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY")
+        model_key = external_key or "endpoint_base"
+        model_endpoint = _endpoint_spec(config, model_key)
         pre_commands = []
         extras = {}
         resources = Resources(gpus=0, cpus=2, memory_gb=4)
@@ -409,9 +494,7 @@ async def build(
 
     endpoints = {"model": model_endpoint}
 
-    rubric = [
-        c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
-    ]
+    rubric = [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]
     judge_cfg = config.get("judge")
     if bool(rubric) and not judge_cfg:
         raise JobBuildError(
@@ -419,7 +502,7 @@ async def build(
             " must set `judge` explicitly (there is no default judge)"
         )
     if judge_cfg:
-        endpoints["judge"] = _endpoint_spec({"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY")
+        endpoints["judge"] = _endpoint_spec({"judge": judge_cfg}, "judge")
 
     eval_data_path = config.get("eval_data_path", "")
     eval_data_run_id = config.get("eval_data_run_id", "")
@@ -523,7 +606,7 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         num_scored = metrics.get("num_scored")
         if num_scored is not None:
             await set_mlflow_run_tag(mlflow_run_id, "num_scored", str(num_scored))
-        judge = (job_config.get("judge") or {})
+        judge = job_config.get("judge") or {}
         judge_model = str(judge.get("model") or "")
         if judge_model:
             await set_mlflow_run_tag(mlflow_run_id, "judge_model", judge_model)
