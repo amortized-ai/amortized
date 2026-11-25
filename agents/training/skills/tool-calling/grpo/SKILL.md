@@ -41,10 +41,15 @@ parameters. The tool validates all fields and rejects invalid combinations (e.g.
 dataset without the columns the reward needs, `prompt_batch_size × group_size` not
 divisible by `4 × nproc_per_node`, or LoRA fields with full-weight `grpo`).
 
-Unlike the OSFT/SFT/LoRA sub-skills, the VRAM estimator does **not** model GRPO (the vLLM
-rollout engine and the trainer share the GPUs), so there is **no VRAM card**: skip the
-workflow's Training Method Selection VRAM step, When the Config Doesn't Fit, and Phase 3's
-resource estimation. GRPO still needs a GPU, so the Compute budget question applies.
+**VRAM estimates.** The workflow's estimate tools model GRPO: set `method` to `lora_grpo`
+or `grpo` and pass the config's `max_prompt_length`, `max_tokens`,
+`gpu_memory_utilization` and (`lora_grpo`) `lora_r`, plus `gpu_memory_gb` for the GPU type
+from the Compute budget question (80 for an H100). Unset fields use the job defaults. The
+vLLM rollout engine and the trainer share each GPU, and vLLM reserves
+`gpu_memory_utilization` of it, so the per-GPU need drops only a little with more GPUs for
+`lora_grpo`; full `grpo` shards its larger trainer state and drops more. Show the VRAM card
+for the model options (step 1) and for the final config (Phase 3). Skip the workflow's
+Training Method Selection VRAM step: the method is decided in step 5.
 
 Every parameter is adjustable:
 - Model selection based on available compute
@@ -61,8 +66,9 @@ Ask the user, one question per message:
    of instruct models with tool-calling support, sized for GRPO. **Recommend the
    `default` entry first** and present the options with their sizes and descriptions;
    never auto-select. Start at ≤4B — RL on top of a model that already gets some calls
-   right learns fastest. No VRAM comparison card. Multimodal checkpoints such as Qwen3.5
-   are handled automatically: the job detects them and sets `language_model_only`.
+   right learns fastest. Show the VRAM comparison card first, as in the workflow's Student
+   Model Selection, with `method` `lora_grpo` and the default lengths (the data isn't chosen
+   yet). Multimodal checkpoints such as Qwen3.5 are handled automatically: the job detects them and sets `language_model_only`.
 
    **If the user wants a model that is NOT in the list**, follow this flow:
 
@@ -84,9 +90,8 @@ Ask the user, one question per message:
 
    The model choice affects all downstream parameters — gather them after.
 
-2. **GPUs** — Set `nproc_per_node` from the model size and the method (no estimator call;
-   see Compute Requirements). `lora_grpo` on a ≤4B model fits one 80 GB GPU; use 2+ GPUs
-   for 8–9B models or for full-weight `grpo`. Stay within the compute budget gathered in
+2. **GPUs** — Set `nproc_per_node` to the smallest GPU count whose per-GPU estimate fits
+   the GPU's memory. Stay within the compute budget gathered in
    the workflow (H100 80 GB by default) and briefly explain the choice. Keep
    `prompt_batch_size × group_size` divisible by `4 × nproc_per_node` when you change it.
 
@@ -105,7 +110,7 @@ Ask the user, one question per message:
    columns.
 
 5. **Method** — `lora_grpo` (LoRA adapter, default, recommended) unless the user asks for
-   full fine-tuning, then `grpo` (all weights; much more GPU memory — revisit step 2).
+   full fine-tuning, then `grpo` (all weights; much more GPU memory — re-estimate with `grpo` and revisit step 2).
    Don't ask otherwise.
 
 Don't ask about the GRPO hyperparameters unless the user brings them up.

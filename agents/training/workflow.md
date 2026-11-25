@@ -87,12 +87,6 @@ question, the Student Model Selection and Training Method Selection VRAM steps
 below, and Phase 3's resource estimation / VRAM card**; they apply only to the LLM
 sub-skills. The classifier skill covers its own device choice.
 
-**The GRPO skill also differs:** the VRAM estimator does not model GRPO, so **skip the
-Training Method Selection VRAM step, When the Config Doesn't Fit, and Phase 3's resource
-estimation / VRAM card** for it. It still asks the Compute budget question and offers
-models from its own bundled `supported_models.json`, without the VRAM card — the skill
-covers the rest.
-
 ## Student Model Selection
 
 Read `supported_models.json` (bundled with the `training-knowledge-ingestion-osft` skill) for the
@@ -126,13 +120,14 @@ You MUST show VRAM estimates before presenting method options.
 Before submitting, estimate training resources with the final model,
 method, and the same `effective_batch_size`,
 `max_length` (as `max_seq_len`), `max_tokens_per_gpu` and (lora/qlora)
-`gradient_accumulation_steps` and `enable_model_splitting` (if set) as the config,
-then show the VRAM card so the user sees what they
+`gradient_accumulation_steps` and `enable_model_splitting` (if set) as the config —
+for GRPO, the config's `max_prompt_length`, `max_tokens`, `gpu_memory_utilization` and
+`lora_r`, plus `gpu_memory_gb` for the GPU type — then show the VRAM card so the user sees what they
 are committing to.
 
 ## When the Config Doesn't Fit
 
-LLM methods (lora/qlora/osft/sft) only.
+LLM methods (lora/qlora/osft/sft) and GRPO (lora_grpo/grpo).
 
 It doesn't fit when no GPU count within the compute budget brings per-GPU
 VRAM under ~110% of one GPU's memory. Between ~90% and ~110% it is
@@ -157,6 +152,15 @@ the user (alongside the "any method" options):
   - lower `effective_batch_size` — only when
     `effective_batch_size × max_length / nproc_per_node` <
     `max_tokens_per_gpu`; otherwise it saves nothing, so don't offer it
+- **If lora_grpo/grpo** (instead of the "any method" options; batch sizes and
+  `group_size` don't change the per-GPU need):
+  - more GPUs (`nproc_per_node`) — keep `prompt_batch_size × group_size`
+    divisible by `4 × nproc_per_node`
+  - lower `gpu_memory_utilization` — shrinks vLLM's reservation; not below 0.3,
+    or rollouts run short of KV cache
+  - lower `max_prompt_length` / `max_tokens` — only if the longest prompt and
+    answer still fit
+  - switch `grpo` → `lora_grpo`, or pick a smaller model
 - **Any method:**
   - lower `max_length` — only if the longest example still fits
   - switch to a lighter method (osft/sft → lora → qlora)
@@ -243,8 +247,7 @@ that choice is made inside the skill, not here. Load the matching skill
 (`skill({ name: "training-knowledge-ingestion-osft" })`,
 `skill({ name: "training-classifier" })` or `skill({ name: "training-grpo" })`). You MUST load it before Phase 2 — it
 contains the detailed guidance (the OSFT skill also bundles the supported-model
-list). For the classifier skill, skip the VRAM/model-size/method steps; for the GRPO
-skill, skip the VRAM steps.
+list). For the classifier skill, skip the VRAM/model-size/method steps.
 
 ### Phase 2 — Gather Requirements <!--signal:gather-->
 
@@ -325,7 +328,7 @@ If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
 For an LLM sub-skill, estimate training resources with the final configuration
-and show the VRAM card (the classifier skill and GRPO skip this). Call `validate_training_job` with the assembled config. Pass
+and show the VRAM card (the classifier skill skips this). Call `validate_training_job` with the assembled config. Pass
 it as a SINGLE `config_json` argument whose value is the entire config
 serialized as a JSON string (every field inside that one string) — a
 large multi-argument call can be corrupted in transit, one `config_json`

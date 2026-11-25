@@ -899,7 +899,7 @@
         "tags": [
           "costs"
         ],
-        "summary": "Estimate the VRAM a training job (sft, osft, lora, qlora) needs, from the HuggingFace model id and method. Returns the single-GPU need and the per-GPU need for 1/2/4/8 GPUs, to suggest nproc_per_node. To compare several models or methods, use estimate_training_resources_batch (one call for the whole card).",
+        "summary": "Estimate the VRAM a training job (sft, osft, lora, qlora, lora_grpo, grpo) needs, from the HuggingFace model id and method. Returns the single-GPU need and the per-GPU need for 1/2/4/8 GPUs, to suggest nproc_per_node. For lora_grpo/grpo the need includes vLLM's gpu_memory_utilization share. To compare several models or methods, use estimate_training_resources_batch (one call for the whole card).",
         "operationId": "estimate_training_resources",
         "requestBody": {
           "content": {
@@ -6775,7 +6775,7 @@
           "method": {
             "type": "string",
             "title": "Method",
-            "description": "Training method: sft, osft, lora, qlora",
+            "description": "Training method: sft, osft, lora, qlora, lora_grpo, grpo",
             "default": "lora"
           },
           "effective_batch_size": {
@@ -6822,7 +6822,7 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Lora R",
-            "description": "LoRA rank (lora/qlora only)",
+            "description": "LoRA rank (lora/qlora/lora_grpo only)",
             "default": 32
           },
           "enable_model_splitting": {
@@ -6838,6 +6838,53 @@
             "title": "Unfreeze Rank Ratio",
             "description": "OSFT unfreeze ratio (osft only)",
             "default": 0.2
+          },
+          "max_prompt_length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Prompt Length",
+            "description": "lora_grpo/grpo only: same value as the job config (default 2048)"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "description": "lora_grpo/grpo only: same value as the job config (default 512)"
+          },
+          "gpu_memory_utilization": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 1.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Memory Utilization",
+            "description": "lora_grpo/grpo only: same value as the job config (default 0.45); vLLM reserves this share of every GPU"
+          },
+          "gpu_memory_gb": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Gpu Memory Gb",
+            "description": "lora_grpo/grpo only: memory of one GPU (80 for an H100). vLLM reserves gpu_memory_utilization of it, so the estimate depends on the GPU type",
+            "default": 80
           }
         },
         "type": "object",
