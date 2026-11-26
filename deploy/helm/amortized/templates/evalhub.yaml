@@ -24,9 +24,10 @@ spec:
     secret: {{ required "evalhub.operator.databaseSecret with db-url is required" .Values.evalhub.operator.databaseSecret }}
   providers:
     - {{ $provider }}
-  # Absent, the CRD fills in the operator's own collections, which reference providers
-  # this Hub doesn't register.
-  collections: []
+  # collections is left to the CRD default. The operator adds its finalizer with a full
+  # update that drops an empty list, which brings the default back and takes the field from
+  # Helm, so `helm upgrade` would conflict on it. RHOAI ships the default collections;
+  # Amortized uses none.
   env:
     - name: MLFLOW_TRACKING_URI
       value: {{ include "amortized.mlflowTrackingUri" . | quote }}
