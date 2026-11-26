@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import type { ActionBlocked } from "@/features/chat/types"
 
 export interface PersistedMessage {
   id: string
@@ -31,6 +32,8 @@ export interface PersistedMessage {
   // Set on a job-completion continuation turn so the plan deriver can mark the phase
   // terminal even when the driver never emits a "complete" signal_phase (see ChatMessage).
   terminal?: boolean
+  // The user confirmed this message's card but the server rejected the job.
+  actionBlocked?: ActionBlocked
 }
 
 export interface PersistedConversation {
@@ -62,7 +65,11 @@ interface ChatStoreState {
   sessionMap: Record<string, string>
   sessionStatus: Record<string, SessionStatus>
   notifiedJobs: Record<string, string[]>
+  // Locks the composer while a job runs; recovery (refocus, timeout) may release it early.
   jobInFlight: Record<string, boolean>
+  // The job running in a conversation, kept until it is known to be terminal: guards Confirm and
+  // holds other jobs' completion turns back, independently of the composer lock.
+  runningJob: Record<string, string>
   // Live requests only: shared by every chat view, but never persisted across reloads.
   activeRequests: Record<string, boolean>
   requestErrors: Record<string, string>
@@ -92,6 +99,7 @@ interface ChatStoreState {
   addNotifiedJob: (conversationId: string, jobId: string) => void
   getNotifiedJobs: (conversationId: string) => string[]
   setJobInFlight: (conversationId: string, inFlight: boolean) => void
+  setRunningJob: (conversationId: string, jobId: string | null) => void
   getJobInFlight: (conversationId: string) => boolean
   tryStartRequest: (conversationId: string) => boolean
   finishRequest: (conversationId: string) => void
@@ -115,6 +123,7 @@ export const useChatStore = create<ChatStoreState>()(
       sessionStatus: {},
       notifiedJobs: {},
       jobInFlight: {},
+      runningJob: {},
       activeRequests: {},
       requestErrors: {},
       drafts: {},
@@ -134,6 +143,7 @@ export const useChatStore = create<ChatStoreState>()(
           const { [id]: _ss, ...restSessionStatus } = s.sessionStatus  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sn, ...restNotifiedJobs } = s.notifiedJobs  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _jf, ...restJobInFlight } = s.jobInFlight  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _rj, ...restRunningJob } = s.runningJob  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _ar, ...restActiveRequests } = s.activeRequests  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _re, ...restRequestErrors } = s.requestErrors  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -145,6 +155,7 @@ export const useChatStore = create<ChatStoreState>()(
             sessionStatus: restSessionStatus,
             notifiedJobs: restNotifiedJobs,
             jobInFlight: restJobInFlight,
+            runningJob: restRunningJob,
             activeRequests: restActiveRequests,
             requestErrors: restRequestErrors,
             drafts: restDrafts,
@@ -247,6 +258,13 @@ export const useChatStore = create<ChatStoreState>()(
             ? { ...s.jobInFlight, [conversationId]: true }
             : Object.fromEntries(Object.entries(s.jobInFlight).filter(([k]) => k !== conversationId)),
         })),
+      setRunningJob: (conversationId, jobId) =>
+        set((s) => {
+          const others = Object.fromEntries(
+            Object.entries(s.runningJob).filter(([k]) => k !== conversationId),
+          )
+          return { runningJob: jobId ? { ...others, [conversationId]: jobId } : others }
+        }),
       getJobInFlight: (conversationId) =>
         get().jobInFlight[conversationId] ?? false,
       tryStartRequest: (conversationId) => {
@@ -333,6 +351,7 @@ export const useChatStore = create<ChatStoreState>()(
         sessionMap: state.sessionMap,
         notifiedJobs: state.notifiedJobs,
         jobInFlight: state.jobInFlight,
+        runningJob: state.runningJob,
         drafts: state.drafts,
       }),
     },

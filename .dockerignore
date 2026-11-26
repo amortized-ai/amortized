@@ -11,7 +11,9 @@ node_modules
 
 # Python
 __pycache__
+**/__pycache__
 *.pyc
+**/*.pyc
 *.pyo
 .venv
 venv

@@ -2,12 +2,17 @@
 
 import hashlib
 import json
+import logging
 import math
 from typing import Any
+
+from pydantic import ValidationError
 
 from amortized.db.evalhub import EvalHubRepository
 from amortized.db.repository import Repository
 from amortized.integrations.evalhub import catalog
+
+logger = logging.getLogger(__name__)
 
 
 def primary_metric(execution: dict[str, Any], benchmark_id: str) -> str:
@@ -178,6 +183,9 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
     groups: dict[str, Any] = {}
     store = EvalHubRepository(repo)
     for job in jobs:
+        # Like the native groups: a failed or cancelled run's partial scores are no result.
+        if job.get("status") != "succeeded":
+            continue
         execution = await store.get(job["id"])
         if execution is None:
             continue
@@ -186,7 +194,16 @@ async def comparison_groups(repo: Repository, jobs: list[dict[str, Any]]) -> lis
             continue
         from amortized.models import EvalJobConfig
 
-        config = EvalJobConfig(**(job.get("config") or {})).model_dump(exclude_none=True)
+        stored = job.get("config") or {}
+        try:
+            config = EvalJobConfig(**stored).model_dump(exclude_none=True)
+        except ValidationError:
+            # Written by a build with other rules, e.g. a benchmark eval read after a rollback.
+            # Hiding the run would tell Morty the model was never evaluated.
+            logger.warning(
+                "Eval %s: config doesn't parse in this version; compared as stored", job["id"]
+            )
+            config = stored
         definition = config.get("evaluation") or {}
         # The recipe fingerprint covers everything that decides a benchmark score
         # (entry, adapter digest, settings) and leaves out how the model was served,

@@ -1,3 +1,18 @@
+import type { JobType } from "@/types/api"
+
+export const JOB_TYPE_LABELS: Record<JobType, string> = {
+  training: "Training",
+  sdg: "SDG",
+  upload: "Upload",
+  eval: "Eval",
+  serve: "Serve",
+}
+
+// Display label for a job type, e.g. "eval" -> "Eval"; "Job" for an unknown or missing type.
+export function jobTypeLabel(type: string | undefined): string {
+  return JOB_TYPE_LABELS[(type ?? "").toLowerCase() as JobType] ?? "Job"
+}
+
 export function formatDuration(
   startedAt: string | null,
   completedAt: string | null,

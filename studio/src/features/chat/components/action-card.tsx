@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, ChevronDown, ChevronRight, Rocket } from "lucide-react"
+import { ModelCheckWarnings } from "@/components/model-check-warnings"
 import { useResolvedConfig } from "@/lib/use-resolved-config"
 import type { ProposedAction, PromptView } from "../types"
 
@@ -164,7 +165,8 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
     setSubmitting(true)
     try {
       await onConfirm()
-    } catch {
+    } finally {
+      // The card can stay mounted (e.g. Confirm refused while a job runs): re-enable it.
       setSubmitting(false)
     }
   }
@@ -240,6 +242,8 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
             {JSON.stringify(resolvedConfig, null, 2)}
           </pre>
         )}
+
+        <ModelCheckWarnings checks={action.modelChecks} />
       </CardContent>
 
       <CardFooter className="gap-2 px-4 pb-4 pt-0">

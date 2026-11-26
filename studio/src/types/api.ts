@@ -8,6 +8,16 @@ export type JobStatus =
   | "failed"
   | "cancelled"
 
+// Outcome of checking one LLM endpoint a job will call. base_url is redacted server-side.
+export interface ModelCheckResult {
+  label: string
+  model: string
+  base_url: string
+  outcome: "passed" | "failed" | "unverified"
+  reason: string
+  detail: string
+}
+
 export interface Job {
   id: string
   type: JobType
@@ -30,6 +40,8 @@ export interface Job {
   execution_sync_error?: string
   execution_observed_at?: string | null
   execution_phase?: string
+  // Model-liveness check recorded at creation; `unverified` entries are warnings.
+  model_checks?: ModelCheckResult[]
 }
 
 export interface ComputeSpec {

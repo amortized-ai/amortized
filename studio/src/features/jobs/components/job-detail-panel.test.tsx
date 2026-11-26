@@ -73,3 +73,25 @@ describe("EvalResultsTab score table", () => {
     expect(within(table).getAllByRole("cell").at(-1)).toHaveTextContent("2")
   })
 })
+
+describe("Overview sync error", () => {
+  const syncError = "Execution synchronization pending; retrying"
+
+  it.each(["queued", "provisioning", "running"] as const)("shows it while the job is %s", (status) => {
+    render(
+      <MemoryRouter>
+        <JobDetailPanel job={{ ...job, status, execution_sync_error: syncError }} open onOpenChange={() => {}} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText(syncError)).toBeInTheDocument()
+  })
+
+  it.each(["succeeded", "failed", "cancelled"] as const)("hides it once the job is %s", (status) => {
+    render(
+      <MemoryRouter>
+        <JobDetailPanel job={{ ...job, status, execution_sync_error: syncError }} open onOpenChange={() => {}} />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByText(syncError)).not.toBeInTheDocument()
+  })
+})

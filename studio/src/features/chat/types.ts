@@ -1,3 +1,5 @@
+import type { ModelCheckResult } from "@/types/api"
+
 export interface OptionCard {
   title: string
   description: string
@@ -43,6 +45,20 @@ export interface ProposedAction {
   prompts?: PromptView[]
   // Eval benchmark jobs: the pinned benchmark as the server resolved it.
   benchmark?: BenchmarkView | null
+  // Model-liveness results for the endpoints the job will call. Definite failures never
+  // reach a card, so these are passed or unverified; unverified ones render as warnings.
+  modelChecks?: ModelCheckResult[]
+}
+
+// A confirmed card whose job creation the server rejected (e.g. the model check). Kept on the message
+// (persisted) so the explanation shows whether or not Morty could be told about it.
+export interface ActionBlocked {
+  message: string
+  jobType: string
+  // Delivery of the blocked notice to Morty: "sending" while in flight, "failed" after the
+  // automatic attempts (the bubble offers Retry), "delivered" once Morty has it, "deferred"
+  // while a newer confirmation card is pending (sent once that card is confirmed or dismissed).
+  notify: "sending" | "delivered" | "failed" | "deferred"
 }
 
 export interface ToolResult {
@@ -67,6 +83,8 @@ export interface ChatMessage {
   // current phase terminal even when the driver never emits a "complete" signal_phase
   // (observed with GLM) — otherwise the progress bar strands on the last step.
   terminal?: boolean
+  // Set when the user confirmed this message's card but the server rejected the job.
+  actionBlocked?: ActionBlocked
 }
 
 export type ChatState =
@@ -145,6 +163,8 @@ export type OpenCodePart =
   | OpenCodePartTool
 
 export interface OpenCodeResponse {
+  // On an event turn's result: the messages that turn itself produced.
+  event_messages?: OpenCodeResponse[]
   info: {
     providerID: string
     modelID: string

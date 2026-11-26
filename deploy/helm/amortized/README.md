@@ -85,7 +85,7 @@ helm install amortized deploy/helm/amortized \
 | `security.runAsNonRoot` | `true` | app pods runAsNonRoot; set `false` on vanilla/kind (see `values-kind.yaml`) |
 | `mlflow.trackingUri` / `mlflow.gatewayUrl` | `""` | external MLflow (when not bundled) |
 | `s3.bucket` / `s3.endpoint` / `s3.accessKey` / `s3.secretKey` | see values | object storage |
-| `s3.region` | `us-east-1` | `AWS_DEFAULT_REGION` in the `amortized-s3` Secrets; region of the bundled MinIO bucket |
+| `s3.region` | `us-east-1` | region of the bundled MinIO bucket; with `evalhub.url` set, also `AWS_DEFAULT_REGION` in the `amortized-s3` Secrets (Eval Hub's initializer needs one) |
 | `evalhub.acceptNewJobs` | `true` | with `evalhub.url` set, send new evaluations to Eval Hub; `false` runs them natively and keeps following evaluations already on Hub (set it before clearing `evalhub.url`, see `docs/evalhub.md`) |
 | `database.url` | `""` | external PostgreSQL (when not bundled) |
 
@@ -174,6 +174,44 @@ Other notes:
   Studio's plain-http proxy can't reach the operator MLflow (`https://` + bearer token +
   `X-MLFLOW-WORKSPACE`). Job logging is unaffected; only the in-Studio MLflow *view* is. Tracked
   in [#430](https://github.com/amortized-ai/amortized/issues/430).
+
+## Model endpoint checks and destinations
+
+When a job is validated and created, the server checks the LLM endpoints it will call (eval judge,
+external model under test, SDG teacher models). Only definite answers block the job (rejected
+credentials, an unknown model, a non-chat API, a refused destination); timeouts, 5xx and
+connection failures are warnings.
+
+**Destination policy.** Every request the platform itself sends to a user-named model endpoint —
+the check (validation and Confirm) and provider model discovery — is authorized on the final URL
+(after a provider name is resolved) and on the addresses it resolves to, then connects only to
+those addresses (TLS still verifies the original host name; no redirects):
+
+- public HTTPS endpoints (every resolved IPv4/IPv6 address public) are allowed;
+- private services (cluster, RFC 1918, or plain HTTP) need operator approval —
+  `server.approvedModelUrls` (URL prefixes; the MLflow AI Gateway and configured providers'
+  endpoints, such as MaaS/EnMaaS, are always approved);
+- loopback, link-local and cloud-metadata addresses are always refused.
+
+Job pods' own connections (the eval runner, Data Designer) are not yet subject to the policy.
+
+**Standalone checker (opt-in).** By default the check runs in-process in the server.
+`modelCheck.enabled: true` deploys it as a separate service instead (independent scaling,
+controlled egress): it serves TLS (OpenShift service CA by default; `modelCheck.tls` for your own
+Secret and CA), only the server may call it, and its egress is limited to DNS and public addresses
+— add rules in `modelCheck.egress.extraRules` for the private services it must reach (the
+gateway, approved URLs). Kustomize: include `k8s/components/model-check`.
+
+**Companion changes in `amortized-deploy`** (installations that opt into the standalone checker
+through the RHOAI per-user provisioner):
+
+- The studio-gateway's ClusterRole (`helm/studio-gateway/templates/rbac.yaml`) must let it manage
+  the checker's NetworkPolicy in user namespaces:
+  ```yaml
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  ```
 
 ## OpenShift / `restricted-v2`
 

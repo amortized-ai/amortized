@@ -18,7 +18,7 @@ EVALHUB_SERVER         ?= deploy/amortized-server
 EVALHUB_POD_DIR        ?= /data/conformance
 EVALHUB_CONFORM_ARGS   ?=
 
-.PHONY: help build build-server build-studio prompt deploy-dev lint typecheck test evalhub-catalog evalhub-describe evalhub-describe-lighteval evalhub-describe-lm-eval evalhub-conform evalhub-contract
+.PHONY: help build build-server build-studio build-model-check prompt deploy-dev lint typecheck test evalhub-catalog evalhub-describe evalhub-describe-lighteval evalhub-describe-lm-eval evalhub-conform evalhub-contract
 
 # ──────────────────────────────────────────────
 # Help
@@ -32,13 +32,17 @@ help: ## Show this help
 # Build
 # ──────────────────────────────────────────────
 
-build: build-server build-studio ## Build all images
+build: build-server build-studio build-model-check ## Build all images
 
 build-server: ## Build amortized server image
 	@echo "Removing old amortized-server images from Docker..."
 	@docker images --format '{{.Repository}}:{{.Tag}}' | grep '^amortized-server:' | xargs -r docker rmi 2>/dev/null || true
 	@echo "Building amortized-server:$(IMAGE_TAG)..."
 	docker build -t amortized-server:$(IMAGE_TAG) -f Dockerfile .
+
+build-model-check: ## Build the model-liveness check service image
+	@echo "Building amortized-model-check:$(IMAGE_TAG)..."
+	docker build -t amortized-model-check:$(IMAGE_TAG) -f containers/model-check/Dockerfile .
 
 build-studio: ## Build studio image
 	@echo "Removing old amortized-studio images from Docker..."

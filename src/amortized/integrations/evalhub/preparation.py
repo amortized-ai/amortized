@@ -180,7 +180,7 @@ async def _credential_secret(
             data["hf-token"] = os.environ[key]
             break
     if judge:
-        spec = _endpoint_spec({"judge": judge}, "judge", "EVAL_JUDGE_API_KEY")
+        spec = _endpoint_spec({"judge": judge}, "judge")
         data.update(
             {
                 "judge_url": spec["base_url"],
@@ -419,7 +419,7 @@ async def prepare(
     else:
         endpoint = await prepare_serving(job, store, execution)
     # Resolved once: a provider name gives both the real URL and that provider's key.
-    model = _endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+    model = _endpoint_spec({"endpoint": endpoint}, "endpoint")
     secret = await _credential_secret(job, store, model, config.get("judge"))
     if benchmark:
         selected = benchmark_selection(recipe, definition)

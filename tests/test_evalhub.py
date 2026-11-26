@@ -13,6 +13,7 @@ import pytest
 from conftest import TEST_DATABASE_URL
 from pydantic import ValidationError
 
+from amortized.db.repository import Repository
 from amortized.evaluation.spec import TaskEvaluation
 from amortized.integrations.evalhub import SERVER_LIMIT, client, lifecycle
 from amortized.integrations.evalhub.results import present
@@ -107,6 +108,13 @@ class MemoryStore:
 
     async def cancel(self, _):
         self.execution["cancel_requested"] = True
+
+    async def cancel_unclaimed(self, _):
+        if self.job["status"] != "queued":
+            return False
+        self.job.update(status="cancelled", completed_at=datetime.now(UTC))
+        self.execution.update(state="finished", cancel_requested=True)
+        return True
 
     async def update_job(self, _, **fields):
         self.job.update(fields)
@@ -874,13 +882,53 @@ async def test_rejected_and_ambiguous_submissions_have_distinct_recovery(
     submit.assert_awaited_once()
 
 
-async def test_cancel_api_records_intent_without_inventing_terminal_outcome(hub_http_client):
+async def test_cancel_api_ends_an_unclaimed_job_at_once(hub_http_client, monkeypatch):
+    from amortized.db.connection import get_pool
+
+    hub = AsyncMock(side_effect=AssertionError("Eval Hub was called"))
+    monkeypatch.setattr(client, "cancel", hub)
     created = await hub_http_client.post("/api/v1/jobs/eval", json=TASK)
     job_id = created.json()["id"]
     cancelled = await hub_http_client.delete(f"/api/v1/jobs/{job_id}")
     assert cancelled.status_code == 200, cancelled.text
-    assert cancelled.json()["status"] == "queued"
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["completed_at"]
+    async with get_pool().acquire() as conn:
+        intent = await conn.fetchrow("SELECT * FROM evalhub_executions WHERE job_id = $1", job_id)
+        # No worker resumes a finished execution, and nothing was prepared to release.
+        assert intent["state"] == "finished"
+        assert intent["cancel_requested"] is True
+        assert await Repository(conn).claim_job(job_id) is None
+    hub.assert_not_awaited()
+
+
+async def test_cancel_racing_the_claim_falls_back_to_recording_intent(monkeypatch):
+    store = MemoryStore("preparing")
+    monkeypatch.setattr(lifecycle, "EvalHubRepository", lambda _repo: store)
+    # The API read the job while queued; the worker claimed it before the cancel wrote.
+    updated = await lifecycle.request_cancel(store.repo, {**store.job, "status": "queued"})
+    assert updated["status"] == "provisioning"
+    assert store.execution["state"] == "preparing"
+    assert store.execution["cancel_requested"]
+    assert not await lifecycle.tick(store.job, store)
+    assert store.job["status"] == "cancelled"
+    assert store.execution["state"] == "cleanup"
+
+
+async def test_cancel_api_records_intent_without_inventing_terminal_outcome(hub_http_client):
+    from amortized.db.connection import get_pool
+
+    created = await hub_http_client.post("/api/v1/jobs/eval", json=TASK)
+    job_id = created.json()["id"]
+    async with get_pool().acquire() as conn:
+        assert await Repository(conn).claim_job(job_id) is not None
+    cancelled = await hub_http_client.delete(f"/api/v1/jobs/{job_id}")
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "provisioning"
     assert cancelled.json()["cancel_requested"] is True
+    async with get_pool().acquire() as conn:
+        intent = await conn.fetchrow("SELECT * FROM evalhub_executions WHERE job_id = $1", job_id)
+        assert intent["state"] == "preparing"
 
 
 async def test_hub_eval_refuses_an_inline_api_key(hub_http_client):
@@ -1092,7 +1140,9 @@ async def test_create_routes_a_new_eval_by_the_same_rule(monkeypatch, accept, ex
     monkeypatch.setattr(core_jobs, "_settings", settings)  # read by the GPU budget check
     repo = _create_repo()
     config = {"training_job_id": "train-1", "eval_data_run_id": "a" * 32, **extra}
-    row = await core_jobs.create_job(repo, job_type=JobType.eval, config=config)
+    row = await core_jobs.create_job(
+        repo, job_type=JobType.eval, config=config, models_checked=True
+    )
     assert row["execution_owner"] == owner
     # Only a Hub-owned job gets a Hub execution record.
     assert repo.conn.execute.await_count == (1 if owner == "evalhub" else 0)
@@ -1120,7 +1170,9 @@ async def test_a_use_peft_head_is_validated_estimated_and_created_as_a_native_gp
     assert await client.validate_definition(config) == []
     assert core_jobs.estimate_gpu_demand({"type": "eval", "config": config}) == 1
     assert core_jobs.gpu_budget_error(JobType.eval, config) is None
-    row = await core_jobs.create_job(_create_repo(), job_type=JobType.eval, config=config)
+    row = await core_jobs.create_job(
+        _create_repo(), job_type=JobType.eval, config=config, models_checked=True
+    )
     assert row["execution_owner"] == "native"
 
     # The stamp is the server's: a client sending it can't move an eval off Hub.
@@ -1297,6 +1349,48 @@ async def test_comparisons_use_content_and_recipe_not_job_prefixes(monkeypatch):
     assert len(await results.comparison_groups(MagicMock(), [job, other])) == 2
 
 
+@pytest.mark.parametrize("status", ["failed", "cancelled", "running"])
+async def test_only_succeeded_hub_runs_are_compared(monkeypatch, status):
+    from amortized.integrations.evalhub import results
+
+    execution = {
+        "snapshot": snapshot("completed", metrics={"mae": 3.5}),
+        "request": {},
+        "inputs": {"dataset_identity": "sha256:dataset", "dataset_run_id": "run-a"},
+    }
+    store = MagicMock()
+    store.get = AsyncMock(return_value=execution)
+    monkeypatch.setattr(results, "EvalHubRepository", lambda _: store)
+    job = {"id": "a", "config": TASK, "status": status, "created_at": "now"}
+    assert await results.comparison_groups(MagicMock(), [job]) == []
+    job["status"] = "succeeded"
+    assert len(await results.comparison_groups(MagicMock(), [job])) == 1
+
+
+async def test_a_config_this_version_cannot_parse_is_compared_as_stored(monkeypatch):
+    from amortized.integrations.evalhub import results
+
+    execution = {
+        "snapshot": snapshot("completed", metrics={"mae": 3.5}),
+        "request": {},
+        "inputs": {"dataset_identity": "sha256:dataset", "dataset_run_id": "run-a"},
+    }
+    store = MagicMock()
+    store.get = AsyncMock(return_value=execution)
+    monkeypatch.setattr(results, "EvalHubRepository", lambda _: store)
+    benchmark = {"kind": "benchmark", "provider_id": "lm-eval", "benchmark_id": "arc_easy"}
+    newer = {**TASK, "evaluation": benchmark}
+    jobs = [
+        {"id": "a", "config": newer, "status": "succeeded", "created_at": "now"},
+        {"id": "b", "config": TASK, "status": "succeeded", "created_at": "now"},
+    ]
+    groups = await results.comparison_groups(MagicMock(), jobs)
+    assert sorted(len(g["evals"]) for g in groups) == [1, 1]
+    stored = next(g for g in groups if g["evals"][0]["job_id"] == "a")
+    assert stored["evals"][0]["model"] == "test"
+    assert stored["evals"][0]["scores"]
+
+
 def test_task_adapter_generates_scores_and_artifacts_using_sdk_contract(tmp_path, monkeypatch):
     from evalhub.adapter.models import JobSpec
 
@@ -1428,7 +1522,7 @@ async def test_embedding_download_secret_obeys_forward_env_policy(monkeypatch):
     settings = preparation.config_mod.settings
     monkeypatch.setattr(settings, "forward_env", [])
     endpoint = {"base_url": "http://model/v1", "model": "private-embedding"}
-    model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+    model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint")
     await preparation._credential_secret(store.job, store, model, None)
     assert "hf-token" not in api.create_namespaced_secret.call_args.args[1].string_data
     monkeypatch.setattr(settings, "forward_env", ["HF_TOKEN"])
@@ -1509,7 +1603,7 @@ async def test_https_model_secret_carries_cluster_ca(monkeypatch, tmp_path):
 
     async def secret_for(url: str, judge_url: str = "") -> dict[str, str]:
         endpoint = {"base_url": url, "model": "granite"}
-        model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+        model = preparation._endpoint_spec({"endpoint": endpoint}, "endpoint")
         judge = {"base_url": judge_url, "model": "judge"} if judge_url else None
         await preparation._credential_secret(store.job, store, model, judge)
         return api.create_namespaced_secret.call_args.args[1].string_data

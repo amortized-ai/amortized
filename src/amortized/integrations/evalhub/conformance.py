@@ -121,7 +121,7 @@ class Runner:
                     raise JobBuildError(f"the model server did not start: {exc}") from exc
                 _log(f"waiting for the model server: {exc}")
                 await asyncio.sleep(15)
-        model = _endpoint_spec({"endpoint": endpoint}, "endpoint", "EVAL_MODEL_API_KEY")
+        model = _endpoint_spec({"endpoint": endpoint}, "endpoint")
         secret = await preparation._credential_secret(self.job, store, model, None)  # type: ignore[arg-type]
         return endpoint, secret
 

@@ -14,8 +14,10 @@ metadata:
 data:
   {{- (.Files.Glob "files/evalhub/compat/*.json").AsConfig | nindent 2 }}
 {{- end }}
+{{- $provider := .Values.evalhub.taskProvider }}
 {{- if .Values.evalhub.operator.createInstance }}
 {{- $hubNamespace := required "evalhub.operator.namespace is required" .Values.evalhub.operator.namespace }}
+{{- if not $provider }}{{ fail "evalhub.taskProvider is required: the Hub registers the provider the server submits to" }}{{ end }}
 {{- /* A multi-tenant Hub serves the jobs namespace as a tenant, and the operator refuses to
        run one inside a tenant namespace (InvalidPlacement). */}}
 {{- if or (eq $hubNamespace .Values.namespace) (eq $hubNamespace .Values.jobsNamespace) }}
@@ -27,6 +29,9 @@ kind: EvalHub
 metadata:
   name: {{ .Values.evalhub.operator.name }}
   namespace: {{ $hubNamespace }}
+  # Other releases may share this Hub: uninstalling this one leaves it in place.
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   tenancy: multi
   replicas: 1
@@ -34,7 +39,7 @@ spec:
     type: postgresql
     secret: {{ required "evalhub.operator.databaseSecret with db-url is required" .Values.evalhub.operator.databaseSecret }}
   providers:
-    - amortized
+    - {{ $provider }}
     - amortized-lm-eval
     - amortized-lighteval
   # Absent, the CRD fills in the operator's own collections, which reference providers
@@ -52,22 +57,25 @@ spec:
 {{- end }}
 {{- if .Values.evalhub.operator.createProviders }}
 {{- $operatorNamespace := required "evalhub.operator.namespaceForProviders is required" .Values.evalhub.operator.namespaceForProviders }}
+{{- if not $provider }}{{ fail "evalhub.taskProvider is required: the Hub registers the provider the server submits to" }}{{ end }}
 {{- $taskImage := required "Pin evalhub.operator.taskAdapterImage to a built image digest" .Values.evalhub.operator.taskAdapterImage }}
-{{- if not (contains "@sha256:" $taskImage) }}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $taskImage) }}
 {{- fail "evalhub.operator.taskAdapterImage must use an immutable digest" }}
 {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: amortized-evalhub-task-provider
+  name: {{ $provider }}-evalhub-task-provider
   namespace: {{ $operatorNamespace }}
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     trustyai.opendatahub.io/evalhub-provider-type: system
-    trustyai.opendatahub.io/evalhub-provider-name: amortized
+    trustyai.opendatahub.io/evalhub-provider-name: {{ $provider }}
 data:
-  amortized.yaml: |
-    id: amortized
+  {{ $provider }}.yaml: |
+    id: {{ $provider }}
     name: Amortized task evaluation v1
     description: Versioned deterministic, rubric and anchor/query task scoring
     runtime:
@@ -98,11 +106,11 @@ id and runtime are replaced, so each registered adapter is its pinned image. */}
             "entrypoint" (list "/bin/sh" "-c" "exec python -c \"$AMORTIZED_ADAPTER_LAUNCHER\" main.py")
             "env" (list $launcher)) }}
 {{- range $adapters }}
-{{- if not (contains "@sha256:" .image) }}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" .image) }}
 {{- fail (printf "evalhub.operator.%s must use an immutable digest" .value) }}
 {{- end }}
-{{- $provider := $.Files.Get (printf "files/evalhub/%s" .catalog) | fromYaml }}
-{{- $_ := set $provider "id" .id }}
+{{- $spec := $.Files.Get (printf "files/evalhub/%s" .catalog) | fromYaml }}
+{{- $_ := set $spec "id" .id }}
 {{- /* The lm-eval image's HOME, HF_HOME and main.py's output/ folder are writable only by
        OpenShift's group-0 UIDs, and Hub sets no pod group. Running the pinned main.py from a
        copy under /tmp lets it write results under any UID. */}}
@@ -113,7 +121,7 @@ id and runtime are replaced, so each registered adapter is its pinned image. */}
       "cpu_request" "500m" "cpu_limit" "4000m"
       "memory_request" "4Gi" "memory_limit" "8Gi" }}
 {{- if .env }}{{ $_ := set $runtime "env" .env }}{{ end }}
-{{- $_ := set $provider "runtime" (dict "k8s" $runtime) }}
+{{- $_ := set $spec "runtime" (dict "k8s" $runtime) }}
 {{- $compat := $.Files.Get (printf "files/evalhub/compat/%s.json" .id) | fromJson }}
 {{- if ne (get $compat "adapter_digest") (regexReplaceAll "^[^@]*@" .image "") }}
 {{- fail (printf "files/evalhub/compat/%s.json describes a different adapter image than evalhub.operator.%s; run make evalhub-describe evalhub-conform evalhub-contract" .id .value) }}
@@ -124,11 +132,13 @@ kind: ConfigMap
 metadata:
   name: {{ printf "%s-provider" (replace "amortized-" "amortized-evalhub-" .id) }}
   namespace: {{ $operatorNamespace }}
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     trustyai.opendatahub.io/evalhub-provider-type: system
     trustyai.opendatahub.io/evalhub-provider-name: {{ .id }}
 data:
   {{ .id }}.yaml: |
-    {{- toYaml $provider | nindent 4 }}
+    {{- toYaml $spec | nindent 4 }}
 {{- end }}
 {{- end }}

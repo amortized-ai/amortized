@@ -425,6 +425,13 @@ chart does not install a cluster-wide operator.
      started with `--enable-workspaces` (`mlflow-ws`); turning workspaces on in the
      shared one is a separate amortized-kind-deploy change.
 
+   When `namespace` and `jobsNamespace` differ and `mlflow.enterprise.workspace` is unset,
+   the default workspace follows Hub: `namespace` with Hub off, `jobsNamespace` with it
+   on. Datasets, models and evaluations logged before a switch stay in the old
+   workspace, and Amortized no longer sees them. To keep one workspace across
+   switches, set `mlflow.enterprise.workspace: <jobsNamespace>` before logging
+   anything.
+
    For RHOAI, also configure the Hub operator's MLflow TLS/workspace/auth integration
    and include the actual helper/adapter SA in `evalhub.operator.jobServiceAccount`
    so the chart grants existing workspace roles. Verify the workspace, CA and rotating
@@ -504,14 +511,15 @@ Keep the URL disabled until this passes in the target environment. No cluster
 deployment or live paid evaluation is performed by the unit tests.
 
 Historical jobs retain `execution_owner=native`; new jobs select their owner at
-creation. To turn Hub off, first set `evalhub.acceptNewJobs: false`. New evaluations
-then run natively and `list_evaluation_providers` reports `enabled: false`, so Morty
-offers no benchmarks, while evaluations already on Hub are still observed and
+creation. To turn Hub off, first set `evalhub.acceptNewJobs: false`; the server
+restarts to pick it up. New evaluations then run natively and
+`list_evaluation_providers` reports `enabled: false`, so Morty offers no benchmarks,
+while evaluations already on Hub are still observed and
 cancelled to completion. Wait until no Hub evaluation is running
 (`SELECT count(*) FROM evalhub_executions WHERE state <> 'finished'` returns 0),
 then clear `evalhub.url`. Clearing it drops the `amortized-evalhub-user`
 Role/RoleBinding, the Hub CA mount, the tenant label and every `AMORTIZED_EVALHUB_*`
-setting, and switches `AMORTIZED_MLFLOW_WORKSPACE`, so Amortized can no longer reach
+setting, and switches `AMORTIZED_MLFLOW_WORKSPACE` (see step 7), so Amortized can no longer reach
 Hub. A Hub evaluation still open at that point fails ("Eval Hub is no longer
 configured on this server…") instead of retrying forever: Amortized makes no Hub
 call, stops the model server it started, deletes the credential Secret and staged

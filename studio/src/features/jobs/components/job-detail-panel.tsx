@@ -23,6 +23,7 @@ import { Link, useNavigate } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogViewer } from "@/components/log-viewer"
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
+import { ModelCheckWarnings } from "@/components/model-check-warnings"
 import { StatusBadge } from "./status-badge"
 import { JobTypeBadge } from "./job-type-badge"
 import { TrainingMetricsChart } from "./training-metrics-chart"
@@ -251,7 +252,11 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
               fill the remaining height without a double scrollbar.
               Non-logs tabs use overflow-y-auto for their own scrolling. */}
           <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
-            {job.execution_sync_error && <p className="text-sm text-muted-foreground mb-3">{job.execution_sync_error}</p>}
+            {/* Only while the job is active, like the chat card: after it ends, the text is at
+                most a cleanup retry, which isn't the user's concern. */}
+            {job.execution_sync_error && ["queued", "provisioning", "running"].includes(job.status) && (
+              <p className="text-sm text-muted-foreground mb-3">{job.execution_sync_error}</p>
+            )}
             <OverviewTab job={job} onClose={() => onOpenChange(false)} />
           </TabsContent>
 
@@ -399,6 +404,8 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
       {job.mlflow_run_id && <MetadataRow label="MLflow Run" value={job.mlflow_run_id} mono />}
       {job.parent_job_id && <MetadataRow label="Parent Job" value={job.parent_job_id} mono />}
       {job.k8s_namespace && <MetadataRow label="Namespace" value={job.k8s_namespace} />}
+      {/* Endpoints the job calls that couldn't be verified when it was created */}
+      <ModelCheckWarnings checks={job.model_checks} />
       {job.error && <ErrorSection job={job} />}
     </div>
   )
