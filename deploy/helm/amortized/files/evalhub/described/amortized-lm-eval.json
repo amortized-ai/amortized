@@ -1,0 +1,3977 @@
+{
+  "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+  "adapter_image": "quay.io/opendatahub/ta-lmes-job@sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+  "benchmarks": {
+    "AraDiCE_ArabicMMLU_egy": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_humanities_egy",
+        "AraDiCE_ArabicMMLU_language_egy",
+        "AraDiCE_ArabicMMLU_social-science_egy",
+        "AraDiCE_ArabicMMLU_stem_egy",
+        "AraDiCE_ArabicMMLU_other_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_high_humanities_history_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "high_humanities_history",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_high_humanities_history_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_high_humanities_history_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "high_humanities_philosophy",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_high_language_arabic-language_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "high_language_arabic-language",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_high_language_arabic-language_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_high_language_arabic-language_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_high_social-science_economics_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "high_social-science_economics",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_high_social-science_economics_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_high_social-science_economics_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_high_social-science_geography_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "high_social-science_geography",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_high_social-science_geography_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_high_social-science_geography_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_high_stem_computer-science_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "high_stem_computer-science",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_high_stem_computer-science_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_high_stem_computer-science_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_high_stem_physics_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "high_stem_physics",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_high_stem_physics_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_high_stem_physics_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_lev": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_humanities_lev",
+        "AraDiCE_ArabicMMLU_language_lev",
+        "AraDiCE_ArabicMMLU_social-science_lev",
+        "AraDiCE_ArabicMMLU_stem_lev",
+        "AraDiCE_ArabicMMLU_other_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_middle_humanities_islamic-studies_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "middle_humanities_islamic-studies",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_middle_humanities_islamic-studies_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_middle_humanities_islamic-studies_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "middle_language_arabic-language",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_middle_social-science_civics_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "middle_social-science_civics",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_middle_social-science_civics_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_middle_social-science_civics_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_middle_social-science_economics_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "middle_social-science_economics",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_middle_social-science_economics_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_middle_social-science_economics_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "middle_social-science_social-science",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "middle_stem_computer-science",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "na_humanities_islamic-studies",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "na_language_arabic-language-general",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_na_other_driving-test_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "na_other_driving-test",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_na_other_driving-test_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_na_other_driving-test_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "na_other_general-knowledge",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "primary_humanities_islamic-studies",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "primary_language_arabic-language",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_primary_social-science_geography_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "primary_social-science_geography",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_primary_social-science_geography_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_primary_social-science_geography_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "primary_social-science_social-science",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_primary_stem_math_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "primary_stem_math",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_primary_stem_math_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_primary_stem_math_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "primary_stem_natural-science",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_univ_other_management_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "univ_other_management",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_univ_other_management_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_univ_other_management_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "univ_social-science_accounting",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+          "hf_revision": null,
+          "hf_subset": "univ_social-science_political-science",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy"
+      ]
+    },
+    "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+          "hf_revision": null,
+          "hf_subset": "univ_stem_computer-science",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev"
+      ]
+    },
+    "AraDiCE_boolq_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDiCE-BoolQ",
+          "hf_revision": null,
+          "hf_subset": "BoolQ-lev",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_boolq_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_boolq_lev"
+      ]
+    },
+    "AraDiCE_openbookqa_eng": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDiCE-OpenBookQA",
+          "hf_revision": null,
+          "hf_subset": "OBQA-eng",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_openbookqa_eng"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_openbookqa_eng"
+      ]
+    },
+    "AraDiCE_piqa_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDiCE-PIQA",
+          "hf_revision": null,
+          "hf_subset": "PIQA-lev",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_piqa_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_piqa_lev"
+      ]
+    },
+    "AraDiCE_truthfulqa_mc1_lev": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDiCE-TruthfulQA",
+          "hf_revision": null,
+          "hf_subset": "TruthfulQA-lev",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_truthfulqa_mc1_lev"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_truthfulqa_mc1_lev"
+      ]
+    },
+    "AraDiCE_winogrande_eng": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "QCRI/AraDiCE-WinoGrande",
+          "hf_revision": null,
+          "hf_subset": "Winogrande-eng",
+          "splits": [
+            "test"
+          ],
+          "task": "AraDiCE_winogrande_eng"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "AraDiCE_winogrande_eng"
+      ]
+    },
+    "aclue_ancient_chinese_culture": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "tyouisen/aclue",
+          "hf_revision": null,
+          "hf_subset": "ancient_chinese_culture",
+          "splits": [
+            "test"
+          ],
+          "task": "aclue_ancient_chinese_culture"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "aclue_ancient_chinese_culture"
+      ]
+    },
+    "afrixnli_en_direct_ewe": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "masakhane/afrixnli",
+          "hf_revision": null,
+          "hf_subset": "ewe",
+          "splits": [
+            "test"
+          ],
+          "task": "afrixnli_en_direct_ewe"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "afrixnli_en_direct_ewe"
+      ]
+    },
+    "afrixnli_en_direct_ibo": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "masakhane/afrixnli",
+          "hf_revision": null,
+          "hf_subset": "ibo",
+          "splits": [
+            "test"
+          ],
+          "task": "afrixnli_en_direct_ibo"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "afrixnli_en_direct_ibo"
+      ]
+    },
+    "afrixnli_en_direct_lug": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "masakhane/afrixnli",
+          "hf_revision": null,
+          "hf_subset": "lug",
+          "splits": [
+            "test"
+          ],
+          "task": "afrixnli_en_direct_lug"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "afrixnli_en_direct_lug"
+      ]
+    },
+    "afrixnli_en_direct_sot": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "masakhane/afrixnli",
+          "hf_revision": null,
+          "hf_subset": "sot",
+          "splits": [
+            "test"
+          ],
+          "task": "afrixnli_en_direct_sot"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "afrixnli_en_direct_sot"
+      ]
+    },
+    "afrixnli_en_direct_wol": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "masakhane/afrixnli",
+          "hf_revision": null,
+          "hf_subset": "wol",
+          "splits": [
+            "test"
+          ],
+          "task": "afrixnli_en_direct_wol"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "afrixnli_en_direct_wol"
+      ]
+    },
+    "afrixnli_en_direct_zul": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "masakhane/afrixnli",
+          "hf_revision": null,
+          "hf_subset": "zul",
+          "splits": [
+            "test"
+          ],
+          "task": "afrixnli_en_direct_zul"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "f1": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "afrixnli_en_direct_zul"
+      ]
+    },
+    "agieval_logiqa_zh": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "hails/agieval-logiqa-zh",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "agieval_logiqa_zh"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "agieval_logiqa_zh"
+      ]
+    },
+    "arabic_leaderboard_arabic_mmlu_anatomy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "OALL/Arabic_MMLU",
+          "hf_revision": null,
+          "hf_subset": "anatomy",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_leaderboard_arabic_mmlu_anatomy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_leaderboard_arabic_mmlu_anatomy"
+      ]
+    },
+    "arabic_leaderboard_arabic_mmlu_clinical_knowledge": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "OALL/Arabic_MMLU",
+          "hf_revision": null,
+          "hf_subset": "clinical_knowledge",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_leaderboard_arabic_mmlu_clinical_knowledge"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_leaderboard_arabic_mmlu_clinical_knowledge"
+      ]
+    },
+    "arabic_leaderboard_arabic_mmlu_college_biology_light": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "arcee-globe/Arabic_MMLU-10percent",
+          "hf_revision": null,
+          "hf_subset": "college_biology",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_leaderboard_arabic_mmlu_college_biology_light"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_leaderboard_arabic_mmlu_college_biology_light"
+      ]
+    },
+    "arabic_leaderboard_arabic_mmlu_college_mathematics_light": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "arcee-globe/Arabic_MMLU-10percent",
+          "hf_revision": null,
+          "hf_subset": "college_mathematics",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_leaderboard_arabic_mmlu_college_mathematics_light"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_leaderboard_arabic_mmlu_college_mathematics_light"
+      ]
+    },
+    "arabic_leaderboard_arabic_mmlu_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "OALL/Arabic_MMLU",
+          "hf_revision": null,
+          "hf_subset": "high_school_mathematics",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_leaderboard_arabic_mmlu_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_leaderboard_arabic_mmlu_high_school_mathematics"
+      ]
+    },
+    "arabic_leaderboard_arabic_mmlu_medical_genetics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "OALL/Arabic_MMLU",
+          "hf_revision": null,
+          "hf_subset": "medical_genetics",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_leaderboard_arabic_mmlu_medical_genetics"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_leaderboard_arabic_mmlu_medical_genetics"
+      ]
+    },
+    "arabic_leaderboard_arabic_mmlu_professional_medicine": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "OALL/Arabic_MMLU",
+          "hf_revision": null,
+          "hf_subset": "professional_medicine",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_leaderboard_arabic_mmlu_professional_medicine"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_leaderboard_arabic_mmlu_professional_medicine"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_boolq": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_boolq"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_boolq_light": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_boolq_light"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_copa": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_copa"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_copa_light": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_copa_light"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_hellaswag": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_hellaswag"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_hellaswag_light": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_hellaswag_light"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_piqa": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_piqa"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_piqa_light": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_piqa_light"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_race": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_race"
+      ]
+    },
+    "arabic_leaderboard_arabic_mt_race_light": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "arabic_mt_race_light"
+      ]
+    },
+    "arabic_mt_boolq_light": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "arcee-globe/AlGhafa-Arabic-LLM-Benchmark-Translated-10percent",
+          "hf_revision": null,
+          "hf_subset": "boolq_ar",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_mt_boolq_light"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_mt_boolq_light"
+      ]
+    },
+    "arabic_mt_hellaswag": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "OALL/AlGhafa-Arabic-LLM-Benchmark-Translated",
+          "hf_revision": null,
+          "hf_subset": "hellaswag_okapi_ar",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_mt_hellaswag"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_mt_hellaswag"
+      ]
+    },
+    "arabic_mt_piqa": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "OALL/AlGhafa-Arabic-LLM-Benchmark-Translated",
+          "hf_revision": null,
+          "hf_subset": "piqa_ar",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_mt_piqa"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_mt_piqa"
+      ]
+    },
+    "arabic_mt_race_light": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "arcee-globe/AlGhafa-Arabic-LLM-Benchmark-Translated-10percent",
+          "hf_revision": null,
+          "hf_subset": "race_ar",
+          "splits": [
+            "test"
+          ],
+          "task": "arabic_mt_race_light"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arabic_mt_race_light"
+      ]
+    },
+    "arc_easy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/ai2_arc",
+          "hf_revision": null,
+          "hf_subset": "ARC-Easy",
+          "splits": [
+            "test"
+          ],
+          "task": "arc_easy"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "arc_easy"
+      ]
+    },
+    "bbh": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "bbh_cot_fewshot_boolean_expressions",
+        "bbh_cot_fewshot_causal_judgement",
+        "bbh_cot_fewshot_date_understanding",
+        "bbh_cot_fewshot_disambiguation_qa",
+        "bbh_cot_fewshot_dyck_languages",
+        "bbh_cot_fewshot_formal_fallacies",
+        "bbh_cot_fewshot_geometric_shapes",
+        "bbh_cot_fewshot_hyperbaton",
+        "bbh_cot_fewshot_logical_deduction_five_objects",
+        "bbh_cot_fewshot_logical_deduction_seven_objects",
+        "bbh_cot_fewshot_logical_deduction_three_objects",
+        "bbh_cot_fewshot_movie_recommendation",
+        "bbh_cot_fewshot_multistep_arithmetic_two",
+        "bbh_cot_fewshot_navigate",
+        "bbh_cot_fewshot_object_counting",
+        "bbh_cot_fewshot_penguins_in_a_table",
+        "bbh_cot_fewshot_reasoning_about_colored_objects",
+        "bbh_cot_fewshot_ruin_names",
+        "bbh_cot_fewshot_salient_translation_error_detection",
+        "bbh_cot_fewshot_snarks",
+        "bbh_cot_fewshot_sports_understanding",
+        "bbh_cot_fewshot_temporal_sequences",
+        "bbh_cot_fewshot_tracking_shuffled_objects_five_objects",
+        "bbh_cot_fewshot_tracking_shuffled_objects_seven_objects",
+        "bbh_cot_fewshot_tracking_shuffled_objects_three_objects",
+        "bbh_cot_fewshot_web_of_lies",
+        "bbh_cot_fewshot_word_sorting"
+      ]
+    },
+    "bbh_cot_fewshot": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "bbh_cot_fewshot_boolean_expressions",
+        "bbh_cot_fewshot_causal_judgement",
+        "bbh_cot_fewshot_date_understanding",
+        "bbh_cot_fewshot_disambiguation_qa",
+        "bbh_cot_fewshot_dyck_languages",
+        "bbh_cot_fewshot_formal_fallacies",
+        "bbh_cot_fewshot_geometric_shapes",
+        "bbh_cot_fewshot_hyperbaton",
+        "bbh_cot_fewshot_logical_deduction_five_objects",
+        "bbh_cot_fewshot_logical_deduction_seven_objects",
+        "bbh_cot_fewshot_logical_deduction_three_objects",
+        "bbh_cot_fewshot_movie_recommendation",
+        "bbh_cot_fewshot_multistep_arithmetic_two",
+        "bbh_cot_fewshot_navigate",
+        "bbh_cot_fewshot_object_counting",
+        "bbh_cot_fewshot_penguins_in_a_table",
+        "bbh_cot_fewshot_reasoning_about_colored_objects",
+        "bbh_cot_fewshot_ruin_names",
+        "bbh_cot_fewshot_salient_translation_error_detection",
+        "bbh_cot_fewshot_snarks",
+        "bbh_cot_fewshot_sports_understanding",
+        "bbh_cot_fewshot_temporal_sequences",
+        "bbh_cot_fewshot_tracking_shuffled_objects_five_objects",
+        "bbh_cot_fewshot_tracking_shuffled_objects_seven_objects",
+        "bbh_cot_fewshot_tracking_shuffled_objects_three_objects",
+        "bbh_cot_fewshot_web_of_lies",
+        "bbh_cot_fewshot_word_sorting"
+      ]
+    },
+    "bbh_cot_fewshot_causal_judgement": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "causal_judgement",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_causal_judgement"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_causal_judgement"
+      ]
+    },
+    "bbh_cot_fewshot_dyck_languages": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "dyck_languages",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_dyck_languages"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_dyck_languages"
+      ]
+    },
+    "bbh_cot_fewshot_hyperbaton": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "hyperbaton",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_hyperbaton"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_hyperbaton"
+      ]
+    },
+    "bbh_cot_fewshot_logical_deduction_three_objects": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "logical_deduction_three_objects",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_logical_deduction_three_objects"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_logical_deduction_three_objects"
+      ]
+    },
+    "bbh_cot_fewshot_navigate": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "navigate",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_navigate"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_navigate"
+      ]
+    },
+    "bbh_cot_fewshot_reasoning_about_colored_objects": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "reasoning_about_colored_objects",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_reasoning_about_colored_objects"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_reasoning_about_colored_objects"
+      ]
+    },
+    "bbh_cot_fewshot_snarks": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "snarks",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_snarks"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_snarks"
+      ]
+    },
+    "bbh_cot_fewshot_tracking_shuffled_objects_five_objects": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "tracking_shuffled_objects_five_objects",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_tracking_shuffled_objects_five_objects"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_tracking_shuffled_objects_five_objects"
+      ]
+    },
+    "bbh_cot_fewshot_web_of_lies": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "web_of_lies",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_fewshot_web_of_lies"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "max_few_shot": 3,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_fewshot_web_of_lies"
+      ]
+    },
+    "bbh_cot_zeroshot": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "bbh_cot_zeroshot_boolean_expressions",
+        "bbh_cot_zeroshot_causal_judgement",
+        "bbh_cot_zeroshot_date_understanding",
+        "bbh_cot_zeroshot_disambiguation_qa",
+        "bbh_cot_zeroshot_dyck_languages",
+        "bbh_cot_zeroshot_formal_fallacies",
+        "bbh_cot_zeroshot_geometric_shapes",
+        "bbh_cot_zeroshot_hyperbaton",
+        "bbh_cot_zeroshot_logical_deduction_five_objects",
+        "bbh_cot_zeroshot_logical_deduction_seven_objects",
+        "bbh_cot_zeroshot_logical_deduction_three_objects",
+        "bbh_cot_zeroshot_movie_recommendation",
+        "bbh_cot_zeroshot_multistep_arithmetic_two",
+        "bbh_cot_zeroshot_navigate",
+        "bbh_cot_zeroshot_object_counting",
+        "bbh_cot_zeroshot_penguins_in_a_table",
+        "bbh_cot_zeroshot_reasoning_about_colored_objects",
+        "bbh_cot_zeroshot_ruin_names",
+        "bbh_cot_zeroshot_salient_translation_error_detection",
+        "bbh_cot_zeroshot_snarks",
+        "bbh_cot_zeroshot_sports_understanding",
+        "bbh_cot_zeroshot_temporal_sequences",
+        "bbh_cot_zeroshot_tracking_shuffled_objects_five_objects",
+        "bbh_cot_zeroshot_tracking_shuffled_objects_seven_objects",
+        "bbh_cot_zeroshot_tracking_shuffled_objects_three_objects",
+        "bbh_cot_zeroshot_web_of_lies",
+        "bbh_cot_zeroshot_word_sorting"
+      ]
+    },
+    "bbh_cot_zeroshot_causal_judgement": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "causal_judgement",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_zeroshot_causal_judgement"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_zeroshot_causal_judgement"
+      ]
+    },
+    "bbh_cot_zeroshot_dyck_languages": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lukaemon/bbh",
+          "hf_revision": null,
+          "hf_subset": "dyck_languages",
+          "splits": [
+            "test"
+          ],
+          "task": "bbh_cot_zeroshot_dyck_languages"
+        }
+      ],
+      "directions": {
+        "exact_match": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbh_cot_zeroshot_dyck_languages"
+      ]
+    },
+    "bbq": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "oskarvanderwal/bbq",
+          "hf_revision": null,
+          "hf_subset": "All",
+          "splits": [
+            "test"
+          ],
+          "task": "bbq"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "accuracy_amb": true,
+        "accuracy_disamb": true,
+        "amb_bias_score": false,
+        "amb_bias_score_Age": false,
+        "amb_bias_score_Disability_status": false,
+        "amb_bias_score_Gender_identity": false,
+        "amb_bias_score_Nationality": false,
+        "amb_bias_score_Physical_appearance": false,
+        "amb_bias_score_Race_ethnicity": false,
+        "amb_bias_score_Race_x_SES": false,
+        "amb_bias_score_Race_x_gender": false,
+        "amb_bias_score_Religion": false,
+        "amb_bias_score_SES": false,
+        "amb_bias_score_Sexual_orientation": false,
+        "disamb_bias_score": false,
+        "disamb_bias_score_Age": false,
+        "disamb_bias_score_Disability_status": false,
+        "disamb_bias_score_Gender_identity": false,
+        "disamb_bias_score_Nationality": false,
+        "disamb_bias_score_Physical_appearance": false,
+        "disamb_bias_score_Race_ethnicity": false,
+        "disamb_bias_score_Race_x_SES": false,
+        "disamb_bias_score_Race_x_gender": false,
+        "disamb_bias_score_Religion": false,
+        "disamb_bias_score_SES": false,
+        "disamb_bias_score_Sexual_orientation": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bbq"
+      ]
+    },
+    "bigbench_code_line_description_multiple_choice": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "hails/bigbench",
+          "hf_revision": null,
+          "hf_subset": "code_line_description_zero_shot",
+          "splits": [
+            "default"
+          ],
+          "task": "bigbench_code_line_description_multiple_choice"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bigbench_code_line_description_multiple_choice"
+      ]
+    },
+    "bigbench_gre_reading_comprehension_multiple_choice": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "hails/bigbench",
+          "hf_revision": null,
+          "hf_subset": "gre_reading_comprehension_zero_shot",
+          "splits": [
+            "default"
+          ],
+          "task": "bigbench_gre_reading_comprehension_multiple_choice"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bigbench_gre_reading_comprehension_multiple_choice"
+      ]
+    },
+    "bigbench_hhh_alignment_multiple_choice": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "hails/bigbench",
+          "hf_revision": null,
+          "hf_subset": "hhh_alignment_zero_shot",
+          "splits": [
+            "default"
+          ],
+          "task": "bigbench_hhh_alignment_multiple_choice"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "bigbench_hhh_alignment_multiple_choice"
+      ]
+    },
+    "blimp": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "blimp_adjunct_island",
+        "blimp_anaphor_gender_agreement",
+        "blimp_anaphor_number_agreement",
+        "blimp_animate_subject_passive",
+        "blimp_animate_subject_trans",
+        "blimp_causative",
+        "blimp_complex_NP_island",
+        "blimp_coordinate_structure_constraint_complex_left_branch",
+        "blimp_coordinate_structure_constraint_object_extraction",
+        "blimp_determiner_noun_agreement_1",
+        "blimp_determiner_noun_agreement_2",
+        "blimp_determiner_noun_agreement_irregular_1",
+        "blimp_determiner_noun_agreement_irregular_2",
+        "blimp_determiner_noun_agreement_with_adj_2",
+        "blimp_determiner_noun_agreement_with_adj_irregular_1",
+        "blimp_determiner_noun_agreement_with_adj_irregular_2",
+        "blimp_determiner_noun_agreement_with_adjective_1",
+        "blimp_distractor_agreement_relational_noun",
+        "blimp_distractor_agreement_relative_clause",
+        "blimp_drop_argument",
+        "blimp_ellipsis_n_bar_1",
+        "blimp_ellipsis_n_bar_2",
+        "blimp_existential_there_object_raising",
+        "blimp_existential_there_quantifiers_1",
+        "blimp_existential_there_quantifiers_2",
+        "blimp_existential_there_subject_raising",
+        "blimp_expletive_it_object_raising",
+        "blimp_inchoative",
+        "blimp_intransitive",
+        "blimp_irregular_past_participle_adjectives",
+        "blimp_irregular_past_participle_verbs",
+        "blimp_irregular_plural_subject_verb_agreement_1",
+        "blimp_irregular_plural_subject_verb_agreement_2",
+        "blimp_left_branch_island_echo_question",
+        "blimp_left_branch_island_simple_question",
+        "blimp_matrix_question_npi_licensor_present",
+        "blimp_npi_present_1",
+        "blimp_npi_present_2",
+        "blimp_only_npi_licensor_present",
+        "blimp_only_npi_scope",
+        "blimp_passive_1",
+        "blimp_passive_2",
+        "blimp_principle_A_c_command",
+        "blimp_principle_A_case_1",
+        "blimp_principle_A_case_2",
+        "blimp_principle_A_domain_1",
+        "blimp_principle_A_domain_2",
+        "blimp_principle_A_domain_3",
+        "blimp_principle_A_reconstruction",
+        "blimp_regular_plural_subject_verb_agreement_1",
+        "blimp_regular_plural_subject_verb_agreement_2",
+        "blimp_sentential_negation_npi_licensor_present",
+        "blimp_sentential_negation_npi_scope",
+        "blimp_sentential_subject_island",
+        "blimp_superlative_quantifiers_1",
+        "blimp_superlative_quantifiers_2",
+        "blimp_tough_vs_raising_1",
+        "blimp_tough_vs_raising_2",
+        "blimp_transitive",
+        "blimp_wh_island",
+        "blimp_wh_questions_object_gap",
+        "blimp_wh_questions_subject_gap",
+        "blimp_wh_questions_subject_gap_long_distance",
+        "blimp_wh_vs_that_no_gap",
+        "blimp_wh_vs_that_no_gap_long_distance",
+        "blimp_wh_vs_that_with_gap",
+        "blimp_wh_vs_that_with_gap_long_distance"
+      ]
+    },
+    "blimp_anaphor_gender_agreement": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "anaphor_gender_agreement",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_anaphor_gender_agreement"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_anaphor_gender_agreement"
+      ]
+    },
+    "blimp_animate_subject_trans": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "animate_subject_trans",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_animate_subject_trans"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_animate_subject_trans"
+      ]
+    },
+    "blimp_coordinate_structure_constraint_complex_left_branch": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "coordinate_structure_constraint_complex_left_branch",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_coordinate_structure_constraint_complex_left_branch"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_coordinate_structure_constraint_complex_left_branch"
+      ]
+    },
+    "blimp_determiner_noun_agreement_2": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "determiner_noun_agreement_2",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_determiner_noun_agreement_2"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_determiner_noun_agreement_2"
+      ]
+    },
+    "blimp_determiner_noun_agreement_with_adj_2": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "determiner_noun_agreement_with_adj_2",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_determiner_noun_agreement_with_adj_2"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_determiner_noun_agreement_with_adj_2"
+      ]
+    },
+    "blimp_determiner_noun_agreement_with_adjective_1": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "determiner_noun_agreement_with_adjective_1",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_determiner_noun_agreement_with_adjective_1"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_determiner_noun_agreement_with_adjective_1"
+      ]
+    },
+    "blimp_drop_argument": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "drop_argument",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_drop_argument"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_drop_argument"
+      ]
+    },
+    "blimp_existential_there_object_raising": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "existential_there_object_raising",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_existential_there_object_raising"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_existential_there_object_raising"
+      ]
+    },
+    "blimp_existential_there_subject_raising": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "existential_there_subject_raising",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_existential_there_subject_raising"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_existential_there_subject_raising"
+      ]
+    },
+    "blimp_intransitive": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "intransitive",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_intransitive"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_intransitive"
+      ]
+    },
+    "blimp_irregular_plural_subject_verb_agreement_1": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "irregular_plural_subject_verb_agreement_1",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_irregular_plural_subject_verb_agreement_1"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_irregular_plural_subject_verb_agreement_1"
+      ]
+    },
+    "blimp_left_branch_island_simple_question": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "left_branch_island_simple_question",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_left_branch_island_simple_question"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_left_branch_island_simple_question"
+      ]
+    },
+    "blimp_npi_present_2": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "npi_present_2",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_npi_present_2"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_npi_present_2"
+      ]
+    },
+    "blimp_passive_1": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "nyu-mll/blimp",
+          "hf_repo_as_written": "blimp",
+          "hf_revision": null,
+          "hf_subset": "passive_1",
+          "splits": [
+            "train"
+          ],
+          "task": "blimp_passive_1"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "blimp_passive_1"
+      ]
+    },
+    "careqa_open_perplexity": {
+      "reason": "the adapter fails on it: RuntimeError: Error loading evaluation metrics: module 'huggingface_hub.hf_api' has no attribute 'HfFolder'. Please check your installation.",
+      "status": "unknown"
+    },
+    "ceval-valid_college_programming": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "ceval/ceval-exam",
+          "hf_revision": null,
+          "hf_subset": "college_programming",
+          "splits": [
+            "val"
+          ],
+          "task": "ceval-valid_college_programming"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "ceval-valid_college_programming"
+      ]
+    },
+    "cmmlu_college_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lmlmcat/cmmlu",
+          "hf_repo_as_written": "haonan-li/cmmlu",
+          "hf_revision": null,
+          "hf_subset": "college_mathematics",
+          "splits": [
+            "test"
+          ],
+          "task": "cmmlu_college_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "cmmlu_college_mathematics"
+      ]
+    },
+    "cmmlu_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lmlmcat/cmmlu",
+          "hf_repo_as_written": "haonan-li/cmmlu",
+          "hf_revision": null,
+          "hf_subset": "high_school_mathematics",
+          "splits": [
+            "test"
+          ],
+          "task": "cmmlu_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "cmmlu_high_school_mathematics"
+      ]
+    },
+    "cmmlu_professional_medicine": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lmlmcat/cmmlu",
+          "hf_repo_as_written": "haonan-li/cmmlu",
+          "hf_revision": null,
+          "hf_subset": "professional_medicine",
+          "splits": [
+            "test"
+          ],
+          "task": "cmmlu_professional_medicine"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "cmmlu_professional_medicine"
+      ]
+    },
+    "cmmlu_traditional_chinese_medicine": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "lmlmcat/cmmlu",
+          "hf_repo_as_written": "haonan-li/cmmlu",
+          "hf_revision": null,
+          "hf_subset": "traditional_chinese_medicine",
+          "splits": [
+            "test"
+          ],
+          "task": "cmmlu_traditional_chinese_medicine"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "cmmlu_traditional_chinese_medicine"
+      ]
+    },
+    "code2text_javascript": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CM/codexglue_code2text_javascript",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "code2text_javascript"
+        }
+      ],
+      "directions": {
+        "smoothed_bleu_4": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "code2text_javascript"
+      ]
+    },
+    "code2text_ruby": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CM/codexglue_code2text_ruby",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "code2text_ruby"
+        }
+      ],
+      "directions": {
+        "smoothed_bleu_4": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "code2text_ruby"
+      ]
+    },
+    "copa_ar": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "Hennara/copa_ar",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "copa_ar"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "copa_ar"
+      ]
+    },
+    "copal_id_colloquial": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "haryoaw/COPAL",
+          "hf_revision": null,
+          "hf_subset": "id",
+          "splits": [
+            "test_colloquial"
+          ],
+          "task": "copal_id_colloquial"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "copal_id_colloquial"
+      ]
+    },
+    "crows_pairs_english": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "jannalu/crows_pairs_multilingual",
+          "hf_revision": null,
+          "hf_subset": "english",
+          "splits": [
+            "test"
+          ],
+          "task": "crows_pairs_english"
+        }
+      ],
+      "directions": {
+        "likelihood_diff": false,
+        "pct_stereotype": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "crows_pairs_english"
+      ]
+    },
+    "cruxeval_output": {
+      "answers_per_question": 10,
+      "datasets": [
+        {
+          "hf_repo": "cruxeval-org/cruxeval",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "cruxeval_output"
+        }
+      ],
+      "directions": {
+        "pass_at_k": true
+      },
+      "max_few_shot": 2,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "cruxeval_output"
+      ]
+    },
+    "ethics_cm": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/hendrycks_ethics",
+          "hf_revision": "a710dd862056df1a92346e7afee93a34d57a5f42",
+          "hf_subset": "commonsense",
+          "splits": [
+            "test"
+          ],
+          "task": "ethics_cm"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "ethics_cm"
+      ]
+    },
+    "eus_reading": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "HiTZ/EusReading",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "eus_reading"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "eus_reading"
+      ]
+    },
+    "global_mmlu_full_am_anatomy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "am",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_am_anatomy"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_am_anatomy"
+      ]
+    },
+    "global_mmlu_full_am_clinical_knowledge": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "am",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_am_clinical_knowledge"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_am_clinical_knowledge"
+      ]
+    },
+    "global_mmlu_full_am_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "am",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_am_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_am_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_am_medical_genetics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "am",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_am_medical_genetics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_am_medical_genetics"
+      ]
+    },
+    "global_mmlu_full_am_professional_medicine": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "am",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_am_professional_medicine"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_am_professional_medicine"
+      ]
+    },
+    "global_mmlu_full_ar_anatomy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "ar",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_ar_anatomy"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_ar_anatomy"
+      ]
+    },
+    "global_mmlu_full_ar_clinical_knowledge": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "ar",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_ar_clinical_knowledge"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_ar_clinical_knowledge"
+      ]
+    },
+    "global_mmlu_full_ar_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "ar",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_ar_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_ar_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_ar_medical_genetics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "ar",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_ar_medical_genetics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_ar_medical_genetics"
+      ]
+    },
+    "global_mmlu_full_ar_professional_medicine": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "ar",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_ar_professional_medicine"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_ar_professional_medicine"
+      ]
+    },
+    "global_mmlu_full_bn_anatomy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "bn",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_bn_anatomy"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_bn_anatomy"
+      ]
+    },
+    "global_mmlu_full_bn_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "bn",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_bn_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_bn_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_cs_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "cs",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_cs_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_cs_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_de_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "de",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_de_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_de_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_el_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "el",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_el_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_el_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_en_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "en",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_en_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_en_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_es_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "es",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_es_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_es_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_fa_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "fa",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_fa_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_fa_high_school_mathematics"
+      ]
+    },
+    "global_mmlu_full_fil_high_school_mathematics": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "CohereLabs/Global-MMLU",
+          "hf_repo_as_written": "CohereForAI/Global-MMLU",
+          "hf_revision": null,
+          "hf_subset": "fil",
+          "splits": [
+            "test"
+          ],
+          "task": "global_mmlu_full_fil_high_school_mathematics"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "global_mmlu_full_fil_high_school_mathematics"
+      ]
+    },
+    "hellaswag_ar": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "alexandrainst/m_hellaswag",
+          "hf_revision": null,
+          "hf_subset": "ar",
+          "splits": [
+            "val"
+          ],
+          "task": "hellaswag_ar"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "hellaswag_ar"
+      ]
+    },
+    "humaneval": {
+      "reason": "the adapter fails on it: AttributeError: module 'huggingface_hub.hf_api' has no attribute 'HfFolder'",
+      "status": "unknown"
+    },
+    "humaneval_instruct": {
+      "reason": "lm-eval has no such task",
+      "status": "unknown",
+      "tasks": [
+        "humaneval_instruct"
+      ]
+    },
+    "ifeval": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "google/IFEval",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
+          "task": "ifeval"
+        }
+      ],
+      "directions": {
+        "inst_level_loose_acc": true,
+        "inst_level_strict_acc": true,
+        "prompt_level_loose_acc": true,
+        "prompt_level_strict_acc": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "ifeval"
+      ]
+    },
+    "jsonschema_bench_easy": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "epfl-dlab/JSONSchemaBench",
+          "hf_revision": null,
+          "hf_subset": "Github_easy",
+          "splits": [
+            "test"
+          ],
+          "task": "jsonschema_bench_easy"
+        }
+      ],
+      "directions": {
+        "json_validity": true,
+        "schema_compliance": true
+      },
+      "max_few_shot": 6,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "jsonschema_bench_easy"
+      ]
+    },
+    "jsonschema_bench_hard": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "epfl-dlab/JSONSchemaBench",
+          "hf_revision": null,
+          "hf_subset": "Github_hard",
+          "splits": [
+            "test"
+          ],
+          "task": "jsonschema_bench_hard"
+        }
+      ],
+      "directions": {
+        "json_validity": true,
+        "schema_compliance": true
+      },
+      "max_few_shot": 6,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "jsonschema_bench_hard"
+      ]
+    },
+    "jsonschema_bench_medium": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "epfl-dlab/JSONSchemaBench",
+          "hf_revision": null,
+          "hf_subset": "Github_medium",
+          "splits": [
+            "test"
+          ],
+          "task": "jsonschema_bench_medium"
+        }
+      ],
+      "directions": {
+        "json_validity": true,
+        "schema_compliance": true
+      },
+      "max_few_shot": 6,
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "jsonschema_bench_medium"
+      ]
+    },
+    "lambada_openai": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/lambada_openai",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "lambada_openai"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "lambada_openai"
+      ]
+    },
+    "lambada_openai_mt_en": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/lambada_openai",
+          "hf_revision": null,
+          "hf_subset": "en",
+          "splits": [
+            "test"
+          ],
+          "task": "lambada_openai_mt_en"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "lambada_openai_mt_en"
+      ]
+    },
+    "lambada_openai_mt_it": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/lambada_openai",
+          "hf_revision": null,
+          "hf_subset": "it",
+          "splits": [
+            "test"
+          ],
+          "task": "lambada_openai_mt_it"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "lambada_openai_mt_it"
+      ]
+    },
+    "lambada_openai_mt_stablelm_es": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/lambada_multilingual_stablelm",
+          "hf_revision": null,
+          "hf_subset": "es",
+          "splits": [
+            "test"
+          ],
+          "task": "lambada_openai_mt_stablelm_es"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "lambada_openai_mt_stablelm_es"
+      ]
+    },
+    "lambada_openai_mt_stablelm_nl": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/lambada_multilingual_stablelm",
+          "hf_revision": null,
+          "hf_subset": "nl",
+          "splits": [
+            "test"
+          ],
+          "task": "lambada_openai_mt_stablelm_nl"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "lambada_openai_mt_stablelm_nl"
+      ]
+    },
+    "lambada_standard_cloze_yaml": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "cimec/lambada",
+          "hf_repo_as_written": "lambada",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "lambada_standard_cloze_yaml"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "lambada_standard_cloze_yaml"
+      ]
+    },
+    "leaderboard_bbh": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "leaderboard_bbh_boolean_expressions",
+        "leaderboard_bbh_causal_judgement",
+        "leaderboard_bbh_date_understanding",
+        "leaderboard_bbh_disambiguation_qa",
+        "leaderboard_bbh_formal_fallacies",
+        "leaderboard_bbh_geometric_shapes",
+        "leaderboard_bbh_hyperbaton",
+        "leaderboard_bbh_logical_deduction_five_objects",
+        "leaderboard_bbh_logical_deduction_seven_objects",
+        "leaderboard_bbh_logical_deduction_three_objects",
+        "leaderboard_bbh_movie_recommendation",
+        "leaderboard_bbh_navigate",
+        "leaderboard_bbh_object_counting",
+        "leaderboard_bbh_penguins_in_a_table",
+        "leaderboard_bbh_reasoning_about_colored_objects",
+        "leaderboard_bbh_ruin_names",
+        "leaderboard_bbh_salient_translation_error_detection",
+        "leaderboard_bbh_snarks",
+        "leaderboard_bbh_sports_understanding",
+        "leaderboard_bbh_temporal_sequences",
+        "leaderboard_bbh_tracking_shuffled_objects_five_objects",
+        "leaderboard_bbh_tracking_shuffled_objects_seven_objects",
+        "leaderboard_bbh_tracking_shuffled_objects_three_objects",
+        "leaderboard_bbh_web_of_lies"
+      ]
+    },
+    "leaderboard_bbh_salient_translation_error_detection": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "SaylorTwift/bbh",
+          "hf_revision": null,
+          "hf_subset": "salient_translation_error_detection",
+          "splits": [
+            "test"
+          ],
+          "task": "leaderboard_bbh_salient_translation_error_detection"
+        }
+      ],
+      "directions": {
+        "acc_norm": true
+      },
+      "max_few_shot": 3,
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "leaderboard_bbh_salient_translation_error_detection"
+      ]
+    },
+    "leaderboard_gpqa": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "leaderboard_gpqa_diamond",
+        "leaderboard_gpqa_extended",
+        "leaderboard_gpqa_main"
+      ]
+    },
+    "leaderboard_ifeval": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "wis-k/instruction-following-eval",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "train"
+          ],
+          "task": "leaderboard_ifeval"
+        }
+      ],
+      "directions": {
+        "inst_level_loose_acc": true,
+        "inst_level_strict_acc": true,
+        "prompt_level_loose_acc": true,
+        "prompt_level_strict_acc": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "leaderboard_ifeval"
+      ]
+    },
+    "leaderboard_math_hard": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "leaderboard_math_algebra_hard",
+        "leaderboard_math_counting_and_prob_hard",
+        "leaderboard_math_geometry_hard",
+        "leaderboard_math_intermediate_algebra_hard",
+        "leaderboard_math_num_theory_hard",
+        "leaderboard_math_prealgebra_hard",
+        "leaderboard_math_precalculus_hard"
+      ]
+    },
+    "leaderboard_mmlu_pro": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "TIGER-Lab/MMLU-Pro",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "test"
+          ],
+          "task": "leaderboard_mmlu_pro"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "leaderboard_mmlu_pro"
+      ]
+    },
+    "leaderboard_musr": {
+      "reason": "lm-eval group",
+      "status": "known",
+      "suite": true,
+      "tasks": [
+        "leaderboard_musr_murder_mysteries",
+        "leaderboard_musr_object_placements",
+        "leaderboard_musr_team_allocation"
+      ]
+    },
+    "longbenchv2": {
+      "reason": "the adapter fails on it: ValueError: LongBench requires parameters.max_length set to the served model's context limit",
+      "status": "unknown"
+    },
+    "mbpp": {
+      "reason": "the adapter fails on it: AttributeError: module 'huggingface_hub.hf_api' has no attribute 'HfFolder'",
+      "status": "unknown"
+    },
+    "metabench_truthfulqa_permute": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "HCAI/metabench",
+          "hf_revision": null,
+          "hf_subset": "TruthfulQA",
+          "splits": [
+            "primary"
+          ],
+          "task": "metabench_truthfulqa_permute"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "metabench_truthfulqa_permute"
+      ]
+    },
+    "paloma_wikitext_103": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/paloma",
+          "hf_revision": null,
+          "hf_subset": "wikitext_103",
+          "splits": [
+            "test"
+          ],
+          "task": "paloma_wikitext_103"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "paloma_wikitext_103"
+      ]
+    },
+    "pile_arxiv": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/pile",
+          "hf_revision": null,
+          "hf_subset": "pile_arxiv",
+          "splits": [
+            "train"
+          ],
+          "task": "pile_arxiv"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "pile_arxiv"
+      ]
+    },
+    "pile_freelaw": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/pile",
+          "hf_revision": null,
+          "hf_subset": "pile_freelaw",
+          "splits": [
+            "train"
+          ],
+          "task": "pile_freelaw"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "pile_freelaw"
+      ]
+    },
+    "pile_hackernews": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/pile",
+          "hf_revision": null,
+          "hf_subset": "pile_hackernews",
+          "splits": [
+            "train"
+          ],
+          "task": "pile_hackernews"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "pile_hackernews"
+      ]
+    },
+    "pile_openwebtext2": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/pile",
+          "hf_revision": null,
+          "hf_subset": "pile_openwebtext2",
+          "splits": [
+            "train"
+          ],
+          "task": "pile_openwebtext2"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "pile_openwebtext2"
+      ]
+    },
+    "pile_ubuntu-irc": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/pile",
+          "hf_revision": null,
+          "hf_subset": "pile_ubuntu-irc",
+          "splits": [
+            "train"
+          ],
+          "task": "pile_ubuntu-irc"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "pile_ubuntu-irc"
+      ]
+    },
+    "pile_youtubesubtitles": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/pile",
+          "hf_revision": null,
+          "hf_subset": "pile_youtubesubtitles",
+          "splits": [
+            "train"
+          ],
+          "task": "pile_youtubesubtitles"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "pile_youtubesubtitles"
+      ]
+    },
+    "qasper_freeform": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "allenai/qasper",
+          "hf_revision": null,
+          "hf_subset": "default",
+          "splits": [
+            "validation"
+          ],
+          "task": "qasper_freeform"
+        }
+      ],
+      "directions": {
+        "f1_abstractive": true
+      },
+      "scoring": "generative",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "qasper_freeform"
+      ]
+    },
+    "scrolls_qasper": {
+      "reason": "lm-eval python_task (Python class task)",
+      "status": "unknown",
+      "suite": false,
+      "tasks": [
+        "scrolls_qasper"
+      ]
+    },
+    "tinyTruthfulQA": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "tinyBenchmarks/tinyTruthfulQA",
+          "hf_revision": null,
+          "hf_subset": "multiple_choice",
+          "splits": [
+            "validation"
+          ],
+          "task": "tinyTruthfulQA"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "tinyTruthfulQA"
+      ]
+    },
+    "toxigen": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "toxigen/toxigen-data",
+          "hf_repo_as_written": "skg/toxigen-data",
+          "hf_revision": null,
+          "hf_subset": "annotated",
+          "splits": [
+            "test"
+          ],
+          "task": "toxigen"
+        }
+      ],
+      "directions": {
+        "acc": true,
+        "acc_norm": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "toxigen"
+      ]
+    },
+    "truthfulqa_mc1": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "truthfulqa/truthful_qa",
+          "hf_repo_as_written": "truthful_qa",
+          "hf_revision": null,
+          "hf_subset": "multiple_choice",
+          "splits": [
+            "validation"
+          ],
+          "task": "truthfulqa_mc1"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "truthfulqa_mc1"
+      ]
+    },
+    "wikitext": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "EleutherAI/wikitext_document_level",
+          "hf_revision": null,
+          "hf_subset": "wikitext-2-raw-v1",
+          "splits": [
+            "test"
+          ],
+          "task": "wikitext"
+        }
+      ],
+      "directions": {
+        "bits_per_byte": false,
+        "byte_perplexity": false,
+        "word_perplexity": false
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "wikitext"
+      ]
+    },
+    "winogender": {
+      "answers_per_question": 1,
+      "datasets": [
+        {
+          "hf_repo": "oskarvanderwal/winogender",
+          "hf_revision": null,
+          "hf_subset": "all",
+          "splits": [
+            "test"
+          ],
+          "task": "winogender_all"
+        }
+      ],
+      "directions": {
+        "acc": true
+      },
+      "scoring": "likelihood",
+      "settings_profile": "lm-eval-completions-v1",
+      "status": "known",
+      "suite": false,
+      "tasks": [
+        "winogender_all"
+      ]
+    }
+  },
+  "catalog": {
+    "commit": "9a18b91657dae635d9ed56a2075ec1b808eb6345",
+    "repo": "eval-hub/eval-hub"
+  },
+  "lm_eval_version": "0.4.8",
+  "schema": "amortized.evalhub.described/v1",
+  "settings_profile": "lm-eval-completions-v1"
+}

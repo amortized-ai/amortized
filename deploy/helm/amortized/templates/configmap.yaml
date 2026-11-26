@@ -50,6 +50,8 @@ data:
   AMORTIZED_EVALHUB_S3_SECRET: {{ $.Values.evalhub.s3Secret | quote }}
   AMORTIZED_EVALHUB_POLL_INTERVAL: {{ $.Values.evalhub.pollInterval | quote }}
   AMORTIZED_EVALHUB_PREPARATION_TIMEOUT: {{ $.Values.evalhub.preparationTimeout | quote }}
+  AMORTIZED_EVALHUB_PROVIDERS: {{ $.Values.evalhub.providers | toJson | quote }}
+  AMORTIZED_EVALHUB_COMPAT_DIR: "/etc/amortized/evalhub-compat"
   AMORTIZED_EVALHUB_TASK_PROVIDER: {{ $.Values.evalhub.taskProvider | quote }}
   AMORTIZED_EVALHUB_EXPERIMENT: {{ $.Values.evalhub.experiment | quote }}
   {{- if $.Values.evalhub.caConfigMap }}

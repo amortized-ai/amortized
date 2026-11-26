@@ -27,6 +27,7 @@ import { ModelCheckWarnings } from "@/components/model-check-warnings"
 import { StatusBadge } from "./status-badge"
 import { JobTypeBadge } from "./job-type-badge"
 import { TrainingMetricsChart } from "./training-metrics-chart"
+import { BenchmarkResults } from "./benchmark-results"
 import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
 import { useCancelJob, useDeleteJob, useRetryJob, useJobLogs, useJobMlflowMetrics, useEvalResults } from "../api/use-jobs"
@@ -653,6 +654,10 @@ function EvalResultsTab({ job }: { job: Job }) {
     (job.config?.endpoint as Record<string, unknown> | undefined)?.model ??
     (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model ??
     (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
+
+  if (results.kind === "benchmark") {
+    return <BenchmarkResults results={results} modelName={modelName ? String(modelName) : undefined} />
+  }
 
   // ---- New single-model schema (one model per eval job, absolute scores) ----
   if (results.model) {

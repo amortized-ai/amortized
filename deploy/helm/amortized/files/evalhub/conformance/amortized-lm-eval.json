@@ -1,0 +1,6252 @@
+{
+  "adapter_digest": "sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+  "adapter_image": "quay.io/opendatahub/ta-lmes-job@sha256:e2f7f91b3452e9d7bd97d9e16323e7e437d14e4e17fb9d8b0d24615290ccb9a0",
+  "benchmarks": {
+    "AraDiCE_ArabicMMLU_high_humanities_history_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "high_humanities_history",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:50:53.249088+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 760,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_humanities_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {
+        "acc": 0.1,
+        "acc_norm": 0.1,
+        "acc_norm_stderr": 0.09999999999999999,
+        "acc_stderr": 0.09999999999999999,
+        "f1": 0.1
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "48f934047a6b46749b2954543dc55692",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_high_humanities_philosophy_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "high_humanities_philosophy",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:50:55.338480+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 39,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_humanities_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "d087c0adbae9473290b45322c1f5358e",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_high_language_arabic-language_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "high_language_arabic-language",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:10.025359+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 390,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_language_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.4,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16329931618554522,
+        "f1": 0.4
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "cc49f48b028f46ee8476a8069f3cd250",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_high_social-science_economics_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "high_social-science_economics",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:13.986210+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 360,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {
+        "acc": 0.1,
+        "acc_norm": 0.1,
+        "acc_norm_stderr": 0.09999999999999999,
+        "acc_stderr": 0.09999999999999999,
+        "f1": 0.1
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "2f223da5df904ed781acaf29944d7101",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_high_social-science_geography_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "high_social-science_geography",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:41.865030+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 1038,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0,
+        "acc_norm": 0,
+        "acc_norm_stderr": 0,
+        "acc_stderr": 0,
+        "f1": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "fbf91fe5949346ce87d08a4710015b54",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_high_stem_computer-science_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "high_stem_computer-science",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:42.304524+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 261,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_stem_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0.5,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.16666666666666666,
+        "f1": 0.5
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "d26460e4ebf14740a5264db873754256",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_high_stem_physics_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "high_stem_physics",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:46.103800+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 255,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_stem_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.7
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0.7,
+        "acc_norm": 0.7,
+        "acc_norm_stderr": 0.15275252316519466,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.7
+      },
+      "mlflow": {
+        "overall_score": 0.7,
+        "run_id": "31fbeab86d2243bfbc3530e2be080f7a",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_middle_humanities_islamic-studies_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "middle_humanities_islamic-studies",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:11.733504+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 238,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_humanities_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "835a0cd89fe84f22b9b71a69bfa11d56",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_middle_language_arabic-language_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "middle_language_arabic-language",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:12.416502+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 27,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_language_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.5,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.16666666666666666,
+        "f1": 0.5
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "2148020aad9a44dc9f7d744e272a9e76",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_middle_social-science_civics_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "middle_social-science_civics",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:48.504147+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 236,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "9e42b5eae8244456abcedd1c101f9fec",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_middle_social-science_economics_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "middle_social-science_economics",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:55.907132+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 87,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "ed4f6e6f113d4950a0df252664310956",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_middle_social-science_social-science_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "middle_social-science_social-science",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:58.505255+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 241,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0.4,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16329931618554522,
+        "f1": 0.4
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "ff99995c19144b07b5138509337cbf94",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_middle_stem_computer-science_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "middle_stem_computer-science",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:59.704036+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 27,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_stem_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0.4,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.1632993161855452,
+        "acc_stderr": 0.1632993161855452,
+        "f1": 0.4
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "ec72058085444a298abe665e1c9979b5",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_na_humanities_islamic-studies_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "na_humanities_islamic-studies",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:20.330960+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 639,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_humanities_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.1,
+        "acc_norm": 0.1,
+        "acc_norm_stderr": 0.09999999999999999,
+        "acc_stderr": 0.09999999999999999,
+        "f1": 0.1
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "343dfe96e07e49b1aa19f481abf87016",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_na_language_arabic-language-general_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "na_language_arabic-language-general",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:24.330837+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 612,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_language_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.6
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.6,
+        "acc_norm": 0.6,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16329931618554522,
+        "f1": 0.6
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "25f1c95195ad49b1938e948feadd24ee",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_na_other_driving-test_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "na_other_driving-test",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:26.131167+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 1211,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_other_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.5,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.16666666666666666,
+        "f1": 0.5
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "5023610227574411995481b44a8c76b1",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_na_other_general-knowledge_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "na_other_general-knowledge",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:27.332124+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 864,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_other_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519464,
+        "acc_stderr": 0.15275252316519464,
+        "f1": 0.3
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "e2acc6b8fd3f4ecc90ee8b7e54a56d59",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_primary_humanities_islamic-studies_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "primary_humanities_islamic-studies",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:29.131885+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 999,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_humanities_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.7
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:51:46+00:00",
+      "error": "",
+      "hub_job": "ab3026c7-2638-4efa-945d-88cfd2f64955",
+      "metrics": {
+        "acc": 0.7,
+        "acc_norm": 0.7,
+        "acc_norm_stderr": 0.15275252316519466,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.7
+      },
+      "mlflow": {
+        "overall_score": 0.7,
+        "run_id": "2050e3bd7d7c45d1b8f67a0a92aad9d6",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_primary_language_arabic-language_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "primary_language_arabic-language",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:55.215268+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 252,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_language_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519466,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.3
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "f28afca168f347db828a51217f975de1",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_primary_social-science_geography_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "primary_social-science_geography",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:01.304973+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 57,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:56:17+00:00",
+      "error": "",
+      "hub_job": "dddc8a08-782f-40b2-989c-a13db636aaa0",
+      "metrics": {
+        "acc": 0.4,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16329931618554522,
+        "f1": 0.4
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "deff601b5b9249079acd8a304b881c40",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_primary_social-science_social-science_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "primary_social-science_social-science",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:26.970124+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 705,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:03+00:00",
+      "error": "",
+      "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+      "metrics": {
+        "acc": 0.5,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.16666666666666666,
+        "f1": 0.5
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "9b38b612160d4ed79c6aaa47a007809f",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_primary_stem_math_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "primary_stem_math",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:54.240702+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 409,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_stem_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "648762d6ef89440ba81c8a0a4feeae19",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_primary_stem_natural-science_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "primary_stem_natural-science",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:27.515503+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 336,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_stem_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:03+00:00",
+      "error": "",
+      "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519466,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.3
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "d3f29a8c84ef409d918ea0c32b496696",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_univ_other_management_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "univ_other_management",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:56.940932+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 75,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_other_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "3f762a63e3544cebb70ad255886f4d92",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_univ_social-science_accounting_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "univ_social-science_accounting",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:31.514698+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 74,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:03+00:00",
+      "error": "",
+      "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+      "metrics": {
+        "acc": 0.1,
+        "acc_norm": 0.1,
+        "acc_norm_stderr": 0.09999999999999999,
+        "acc_stderr": 0.09999999999999999,
+        "f1": 0.1
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "ef4a0da0d2684c17999c09c9cb2671dc",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_univ_social-science_political-science_egy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-egy",
+            "hf_subset": "univ_social-science_political-science",
+            "sha": "7143ab012b22c44b579aeb4c10db57412c92ee40"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:37.713892+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 210,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_social-science_egy"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:03+00:00",
+      "error": "",
+      "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "52ef65fdfea94257b27b5735bb003acc",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_ArabicMMLU_univ_stem_computer-science_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDICE-ArabicMMLU-lev",
+            "hf_subset": "univ_stem_computer-science",
+            "sha": "d6ff16481d1561c73ded7299a9c41c33a01f08db"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:40.712901+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 64,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "AraDiCE_ArabicMMLU_stem_lev"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:03+00:00",
+      "error": "",
+      "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519466,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.3
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "d2397b104cc34abb89439d19f1521e8c",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_boolq_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDiCE-BoolQ",
+            "hf_subset": "BoolQ-lev",
+            "sha": "54335614d929a0a38803644288cd77472f7b9313"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:50:09.651080+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 984,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {
+        "acc": 0.4,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.1632993161855452,
+        "f1": 0.4
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "ef9ff99078fa45308ba75201ce50c0f8",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_openbookqa_eng": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDiCE-OpenBookQA",
+            "hf_subset": "OBQA-eng",
+            "sha": "f4379035bd888b5bdec036d7018c57c9f341711f"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:51:57.621616+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 497,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {
+        "acc": 0,
+        "acc_norm": 0.1,
+        "acc_norm_stderr": 0.09999999999999999,
+        "acc_stderr": 0,
+        "f1": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "5a86e6dd792445cbac950c3c1f1f5bf7",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_piqa_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDiCE-PIQA",
+            "hf_subset": "PIQA-lev",
+            "sha": "4ea87eb93c44debd0f666504eac4f2cdcb4ee2ea"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:18.604784+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 1838,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.3
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "9102b716641c451698beca6a9a6a8d9a",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_truthfulqa_mc1_lev": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDiCE-TruthfulQA",
+            "hf_subset": "TruthfulQA-lev",
+            "sha": "35ac89fead74ce7a6dbd1992e8dcdb8737feea10"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:06.052166+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 780,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:00:34+00:00",
+      "error": "",
+      "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.2
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "451e9e67c3d74abe80ba9a1876340a6f",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "AraDiCE_winogrande_eng": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "QCRI/AraDiCE-WinoGrande",
+            "hf_subset": "Winogrande-eng",
+            "sha": "0b78fca818f98d0fec4370035746dd260dba28e2"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:21.207202+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 1267,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.5,
+        "acc_norm": 0.6,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16666666666666666,
+        "f1": 0.5
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "7d12efa280d24bf9a6511d48bbf8a39d",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "aclue_ancient_chinese_culture": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "Evaluation failed: The repository for tyouisen/aclue contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/tyouisen/aclue.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "afrixnli_en_direct_ewe": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "masakhane/afrixnli",
+            "hf_subset": "ewe",
+            "sha": "e3ca06b30f3e7af2a86f6c8609ea76fee326bc56"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:12.339023+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 600,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "afrixnli",
+          "afrixnli_en_direct"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.18461538461538463
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "f6b9ce2b19524c49889f944fc41ff842",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "afrixnli_en_direct_ibo": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "masakhane/afrixnli",
+            "hf_subset": "ibo",
+            "sha": "e3ca06b30f3e7af2a86f6c8609ea76fee326bc56"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:14.739501+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 600,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "afrixnli",
+          "afrixnli_en_direct"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466,
+        "f1": 0.24545454545454545
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "b5c67d7d1bfb488f9364ce31cbb78f8e",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "afrixnli_en_direct_lug": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "masakhane/afrixnli",
+            "hf_subset": "lug",
+            "sha": "e3ca06b30f3e7af2a86f6c8609ea76fee326bc56"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:40.544838+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 600,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "afrixnli",
+          "afrixnli_en_direct"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {
+        "acc": 0.2,
+        "acc_stderr": 0.13333333333333333,
+        "f1": 0.10909090909090909
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "e3bab84c3e854e5d9f56b122495f589b",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "afrixnli_en_direct_sot": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "masakhane/afrixnli",
+            "hf_subset": "sot",
+            "sha": "e3ca06b30f3e7af2a86f6c8609ea76fee326bc56"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:42.239399+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 600,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "afrixnli",
+          "afrixnli_en_direct"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.6
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {
+        "acc": 0.6,
+        "acc_stderr": 0.1632993161855452,
+        "f1": 0.5
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "e5c9b57f1b1d4a598bbafa05c8315f79",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "afrixnli_en_direct_wol": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "masakhane/afrixnli",
+            "hf_subset": "wol",
+            "sha": "e3ca06b30f3e7af2a86f6c8609ea76fee326bc56"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:44.239817+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 600,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "afrixnli",
+          "afrixnli_en_direct"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519464,
+        "f1": 0.18
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "0323b3226a9c49588a392af9b5008559",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "afrixnli_en_direct_zul": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "masakhane/afrixnli",
+            "hf_subset": "zul",
+            "sha": "e3ca06b30f3e7af2a86f6c8609ea76fee326bc56"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:52.637162+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 600,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "afrixnli",
+          "afrixnli_en_direct"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519464,
+        "f1": 0.16363636363636364
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "be0f310ed2934d71a38124d53c0e6856",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "agieval_logiqa_zh": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "hails/agieval-logiqa-zh",
+            "sha": "e85baf7de058eba84623ebb2b6266cf77691df62"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:44.712838+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 651,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:03+00:00",
+      "error": "",
+      "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519464,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "1143295dcc9f42f39a73c430c5e5edd9",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "arabic_leaderboard_arabic_mmlu_anatomy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "OALL/Arabic_MMLU",
+            "hf_subset": "anatomy",
+            "sha": "6cff7fb8aa93bdc6e02d663a5a4406cbb0e02179"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:57:58.617261+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 135,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519464,
+        "acc_stderr": 0.15275252316519464
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "95b3dc696a7549c1bdc4d379aa494923",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "arabic_leaderboard_arabic_mmlu_clinical_knowledge": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "OALL/Arabic_MMLU",
+            "hf_subset": "clinical_knowledge",
+            "sha": "6cff7fb8aa93bdc6e02d663a5a4406cbb0e02179"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:01.749065+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 265,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519464,
+        "acc_stderr": 0.15275252316519464
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "ac057835054a45769bc57159c3f88d05",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "arabic_leaderboard_arabic_mmlu_college_biology_light": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "arcee-globe/Arabic_MMLU-10percent",
+            "hf_subset": "college_biology",
+            "sha": "db79a5dc13375d462e555677b668b756845f1e91"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:56:42.712955+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 14,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:03+00:00",
+      "error": "",
+      "hub_job": "be426130-21d9-453d-bb4b-6f18362d9807",
+      "metrics": {
+        "acc": 0.1,
+        "acc_norm": 0.1,
+        "acc_norm_stderr": 0.09999999999999999,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "e60821d633394103aacebebdd1913715",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "arabic_leaderboard_arabic_mmlu_college_mathematics_light": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "arcee-globe/Arabic_MMLU-10percent",
+            "hf_subset": "college_mathematics",
+            "sha": "db79a5dc13375d462e555677b668b756845f1e91"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:56.239552+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 10,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "fa865cd79fd9411b97fbcfab202af578",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "arabic_leaderboard_arabic_mmlu_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "OALL/Arabic_MMLU",
+            "hf_subset": "high_school_mathematics",
+            "sha": "6cff7fb8aa93bdc6e02d663a5a4406cbb0e02179"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:57.637955+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "d868478e3bc146f5aae702c39b5b2ca6",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "arabic_leaderboard_arabic_mmlu_medical_genetics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "OALL/Arabic_MMLU",
+            "hf_subset": "medical_genetics",
+            "sha": "6cff7fb8aa93bdc6e02d663a5a4406cbb0e02179"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:04.148214+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 100,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "9a68986c09fc48c8b447778e08ef47c1",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "arabic_leaderboard_arabic_mmlu_professional_medicine": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "OALL/Arabic_MMLU",
+            "hf_subset": "professional_medicine",
+            "sha": "6cff7fb8aa93bdc6e02d663a5a4406cbb0e02179"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:07.551119+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 272,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {
+        "acc": 0.2,
+        "acc_norm": 0.2,
+        "acc_norm_stderr": 0.13333333333333333,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "2040190cf24141219ab0fe9a018a0e85",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "arabic_mt_boolq_light": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "arcee-globe/AlGhafa-Arabic-LLM-Benchmark-Translated-10percent",
+            "hf_subset": "boolq_ar",
+            "sha": "0aefe159414549a4c870f2eed68a3161387b70c8"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:52:06.337975+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 326,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {
+        "acc": 0.5,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.16666666666666666
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "a4026b973ec34ca8918067f6fdc49d6e",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "arabic_mt_hellaswag": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "OALL/AlGhafa-Arabic-LLM-Benchmark-Translated",
+            "hf_subset": "hellaswag_okapi_ar",
+            "sha": "08663706ee7cab30c4b7dc1bb00042a3227ce1ff"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:26.605044+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 9171,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.1,
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519466,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "6dd6afe6b2f54f149cf25c1cac9d5200",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "arabic_mt_piqa": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "OALL/AlGhafa-Arabic-LLM-Benchmark-Translated",
+            "hf_subset": "piqa_ar",
+            "sha": "08663706ee7cab30c4b7dc1bb00042a3227ce1ff"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:29.005333+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 1833,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.8
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.8,
+        "acc_norm": 0.6,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.8,
+        "run_id": "555922824c65485e8581c952dae2c16f",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "arabic_mt_race_light": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "arcee-globe/AlGhafa-Arabic-LLM-Benchmark-Translated-10percent",
+            "hf_subset": "race_ar",
+            "sha": "0aefe159414549a4c870f2eed68a3161387b70c8"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:00.586594+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 492,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {
+        "acc": 0.5,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16666666666666666
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "9bbb3b549327456ba521a72c2f26bc01",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "arc_easy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "allenai/ai2_arc",
+            "hf_subset": "ARC-Easy",
+            "sha": "210d026faf9955653af8916fad021475a3f00453"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:25:24.950063+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 2376,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "ai2_arc"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:26:06+00:00",
+      "error": "",
+      "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+      "metrics": {
+        "acc": 0.6,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "e99a2e6e7f0045009d1153d9337aa2d3",
+        "status": "FINISHED"
+      },
+      "seconds": 200,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_causal_judgement": {
+      "additional_info": {
+        "alt_prompting": 0.4,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "causal_judgement",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Answer questions about causal attribution.\n\n",
+        "evaluation_date": "2026-11-09T18:29:18.187791+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 187,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0.4,
+        "exact_match_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "7fc640b9248842ff907e5534a96760f5",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_dyck_languages": {
+      "additional_info": {
+        "alt_prompting": 0,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "dyck_languages",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Correctly close a Dyck-n word.\n\n",
+        "evaluation_date": "2026-11-09T18:29:18.696011+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0,
+        "exact_match_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "f9f56c131f7e4967bccc78c6030ab5f6",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_hyperbaton": {
+      "additional_info": {
+        "alt_prompting": 0.4,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "hyperbaton",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Order adjectives correctly in English sentences.\n\n",
+        "evaluation_date": "2026-11-09T18:29:21.892557+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0.4,
+        "exact_match_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "66ba6330b28146c6a13de18992354f68",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_logical_deduction_three_objects": {
+      "additional_info": {
+        "alt_prompting": 0.6,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "logical_deduction_three_objects",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "A logical deduction task which requires deducing the order of a sequence of objects.\n\n",
+        "evaluation_date": "2026-11-09T18:29:23.693404+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0.6,
+        "exact_match_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "7cb1764fe4de4c31b8bf353bacfc7e22",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_navigate": {
+      "additional_info": {
+        "alt_prompting": 0.5,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "navigate",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Given a series of navigation instructions, determine whether one would end up back at the starting point.\n\n",
+        "evaluation_date": "2026-11-09T18:29:25.492966+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0.5,
+        "exact_match_stderr": 0.16666666666666666
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "e798051e77234f7285ce01deee99ed38",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_reasoning_about_colored_objects": {
+      "additional_info": {
+        "alt_prompting": 0.6,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "reasoning_about_colored_objects",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Answer extremely simple questions about the colors of objects on a surface.\n\n",
+        "evaluation_date": "2026-11-09T18:29:26.176624+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0.6,
+        "exact_match_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "c26e8885138c455ebbe07c64ee3e4453",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_snarks": {
+      "additional_info": {
+        "alt_prompting": 0.5,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "snarks",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Determine which of two sentences is sarcastic.\n\nAccording to Cambridge University Dictionary, sarcasm is \"the use of remarks that clearly mean the opposite of what they say, made in order to hurt someone's feelings or to criticize something in a humorous way.\" Sarcastic sentences often contain satirical or ironic utterances, hyperboles, ambivalent or witty remarks.\n\n",
+        "evaluation_date": "2026-11-09T18:29:29.690746+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 178,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0.5,
+        "exact_match_stderr": 0.16666666666666666
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "8ea8f24eda3145cfb58458bf8643ccae",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_tracking_shuffled_objects_five_objects": {
+      "additional_info": {
+        "alt_prompting": 0.3,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "tracking_shuffled_objects_five_objects",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "A task requiring determining the final positions of a set of objects given their initial positions and a description of a sequence of swaps.\n\n",
+        "evaluation_date": "2026-11-09T18:29:35.892785+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:29:54+00:00",
+      "error": "",
+      "hub_job": "25a258c5-5f1d-4b74-9b7e-0ec2e2e47858",
+      "log": "",
+      "metrics": {
+        "exact_match": 0.3,
+        "exact_match_stderr": 0.15275252316519466
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "6f14964f694b4970bc6b227d721c30de",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_fewshot_web_of_lies": {
+      "additional_info": {
+        "alt_prompting": 1,
+        "alt_prompting_description": "3-Shot CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "web_of_lies",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Evaluate a random boolean function expressed as a word problem.\n\n",
+        "evaluation_date": "2026-11-09T18:30:03.266112+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 3,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T18:30:09+00:00",
+      "error": "",
+      "hub_job": "19a80916-7884-4bb4-8b9a-c580d0b1d2e0",
+      "log": "",
+      "metrics": {
+        "exact_match": 1,
+        "exact_match_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 1.0,
+        "run_id": "bf58506c88364c90bdd382254ee45c36",
+        "status": "FINISHED"
+      },
+      "questions": 10,
+      "seconds": 15,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_zeroshot_causal_judgement": {
+      "additional_info": {
+        "alt_prompting": 0.4,
+        "alt_prompting_description": "CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "causal_judgement",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Answer questions about causal attribution.\n\n",
+        "evaluation_date": "2026-11-09T16:57:27.524385+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 187,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:57:48+00:00",
+      "error": "",
+      "hub_job": "de7fd4e3-8282-48e3-b710-37d2fcf4e996",
+      "metrics": {
+        "exact_match": 0.4,
+        "exact_match_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "04861276bfdc4ce08af798adf0bc64c1",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbh_cot_zeroshot_dyck_languages": {
+      "additional_info": {
+        "alt_prompting": 0,
+        "alt_prompting_description": "CoT",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "lukaemon/bbh",
+            "hf_subset": "dyck_languages",
+            "sha": "982bb89fd79532a8ac676a61fc42eb1aeec63f99"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Correctly close a Dyck-n word.\n\n",
+        "evaluation_date": "2026-11-09T16:57:58.040079+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "generate_until",
+        "primary_metric": "exact_match",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {
+        "exact_match": 0,
+        "exact_match_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "e29aa36187524be29222c4d53de34000",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "exact_match"
+      },
+      "status": "completed"
+    },
+    "bbq": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "oskarvanderwal/bbq",
+            "hf_subset": "All",
+            "sha": "ab00114b0fbf59c7c539ff9158f6ce717d13ab63"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:51.349777+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 58492,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "social_bias"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466,
+        "accuracy_amb": 0,
+        "accuracy_disamb": 0.6,
+        "amb_bias_score": -0.19999999999999996,
+        "amb_bias_score_Age": -0.19999999999999996,
+        "disamb_bias_score": -0.19999999999999996,
+        "disamb_bias_score_Age": -0.19999999999999996
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "23c6417832c74319b5ca1b0829dfaa98",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "bigbench_code_line_description_multiple_choice": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "hails/bigbench",
+            "hf_subset": "code_line_description_zero_shot",
+            "sha": "2915f06cecbbad3d7e28c096ad682ab277aee984"
+          }
+        ],
+        "dataset_split": "default",
+        "evaluation_date": "2026-11-09T17:00:11.451136+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 60,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "bigbench_multiple_choice_a"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:00:34+00:00",
+      "error": "",
+      "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "04aa98baba9d473b975106e4e656db13",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "bigbench_gre_reading_comprehension_multiple_choice": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "hails/bigbench",
+            "hf_subset": "gre_reading_comprehension_zero_shot",
+            "sha": "2915f06cecbbad3d7e28c096ad682ab277aee984"
+          }
+        ],
+        "dataset_split": "default",
+        "evaluation_date": "2026-11-09T16:55:09.388560+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 31,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "bigbench_multiple_choice_a"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519464
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "a0a1b8c26d3e4865b9d25643be4a9b72",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "bigbench_hhh_alignment_multiple_choice": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "hails/bigbench",
+            "hf_subset": "hhh_alignment_zero_shot",
+            "sha": "2915f06cecbbad3d7e28c096ad682ab277aee984"
+          }
+        ],
+        "dataset_split": "default",
+        "evaluation_date": "2026-11-09T17:01:29.450604+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 221,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "bigbench_multiple_choice_a"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:49+00:00",
+      "error": "",
+      "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519464
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "c07564a86dae4b3aa0a655e9afc3d6a2",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "blimp_anaphor_gender_agreement": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_animate_subject_trans": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_coordinate_structure_constraint_complex_left_branch": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_determiner_noun_agreement_2": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_determiner_noun_agreement_with_adj_2": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_determiner_noun_agreement_with_adjective_1": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_drop_argument": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_existential_there_object_raising": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:50:30+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "e683ec6e-a248-4cc1-9885-1c7a9997b147",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_existential_there_subject_raising": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_intransitive": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_irregular_plural_subject_verb_agreement_1": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_left_branch_island_simple_question": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_npi_present_2": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "blimp_passive_1": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:51:00+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/blimp@877fba0801ffb7cbd8c39c1ff314a46f053f6036/.huggingface.yaml'. Repository id must be 'namespace/name', got 'blimp'.",
+      "hub_job": "d9b5569d-6516-4101-a7dd-9d0112106fb4",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "ceval-valid_college_programming": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "ceval/ceval-exam",
+            "hf_subset": "college_programming",
+            "sha": "617524a00b307ff6f9933702f724131fe12ca7ce"
+          }
+        ],
+        "description": "\u4ee5\u4e0b\u662f\u4e2d\u56fd\u5173\u4e8e\u5927\u5b66\u7f16\u7a0b\u7684\u5355\u9879\u9009\u62e9\u9898\uff0c\u8bf7\u9009\u51fa\u5176\u4e2d\u7684\u6b63\u786e\u7b54\u6848\u3002\n\n",
+        "evaluation_date": "2026-11-09T17:00:14.653718+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 37,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 2,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.6
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:00:34+00:00",
+      "error": "",
+      "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+      "metrics": {
+        "acc": 0.6,
+        "acc_norm": 0.6,
+        "acc_norm_stderr": 0.1632993161855452,
+        "acc_stderr": 0.1632993161855452
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "99b2363991754a318a4f55f6d5e85027",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "cmmlu_college_mathematics": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:53:16+00:00",
+      "error": "Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "db5738d5-ea5d-42e1-bae5-a76b3c3b6fcf",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "cmmlu_high_school_mathematics": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "cmmlu_professional_medicine": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "failed"
+    },
+    "cmmlu_traditional_chinese_medicine": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "Evaluation failed: The repository for haonan-li/cmmlu contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/haonan-li/cmmlu.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "failed"
+    },
+    "code2text_javascript": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CM/codexglue_code2text_javascript",
+            "sha": "16fb665bbad2501b87469f02d000718883dcf9fd"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:43.681258+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 3291,
+        "output_type": "generate_until",
+        "primary_metric": "smoothed_bleu_4",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 2.3043081516115564
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "smoothed_bleu_4": 2.3043081516115564,
+        "smoothed_bleu_4_stderr": 0.5142396373403622
+      },
+      "mlflow": {
+        "overall_score": 2.3043081516115564,
+        "run_id": "856cc705d07a4211a3f2a06da1472065",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "smoothed_bleu_4"
+      },
+      "status": "completed"
+    },
+    "code2text_ruby": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CM/codexglue_code2text_ruby",
+            "sha": "e51835c2fbe959bb2e6a84c80a9003947e71974d"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:44.152408+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 1261,
+        "output_type": "generate_until",
+        "primary_metric": "smoothed_bleu_4",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 1.4226849339141774
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "smoothed_bleu_4": 1.4226849339141774,
+        "smoothed_bleu_4_stderr": 0.24018950670508288
+      },
+      "mlflow": {
+        "overall_score": 1.4226849339141774,
+        "run_id": "b3f7766ac2364abf9e44d8932b7bbe0e",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "smoothed_bleu_4"
+      },
+      "status": "completed"
+    },
+    "copa_ar": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "Hennara/copa_ar",
+            "sha": "845ecab73c285e1529a95676d1faebfdd726f3eb"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:31.404440+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 89,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.6
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.6,
+        "acc_norm": 0.5,
+        "acc_norm_stderr": 0.16666666666666666,
+        "acc_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "3fd7f4fa23b54e48b814a066ce3817b9",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "copal_id_colloquial": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "haryoaw/COPAL",
+            "hf_subset": "id",
+            "sha": "e5c834d171014b38be28010526fc888ebc500cf2"
+          }
+        ],
+        "dataset_split": "test_colloquial",
+        "evaluation_date": "2026-11-09T16:54:56.985460+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 559,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "copal_id"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {
+        "acc": 0.4,
+        "acc_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "3e622cc91fb2483287b37487b5f335e6",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "crows_pairs_english": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "jannalu/crows_pairs_multilingual",
+            "hf_subset": "english",
+            "sha": "3550adcf6ac84fc021c0cd99114acd35e1f8b88d"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:52.749824+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 1677,
+        "output_type": "multiple_choice",
+        "primary_metric": "pct_stereotype",
+        "random_seed": 42,
+        "tags": [
+          "crows_pairs"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.7
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "likelihood_diff": 2.156773729273118,
+        "likelihood_diff_stderr": 0.35556360606110626,
+        "pct_stereotype": 0.7,
+        "pct_stereotype_stderr": 0.15275252316519466
+      },
+      "mlflow": {
+        "overall_score": 0.7,
+        "run_id": "882c829819c94ff7b4dd35e940a31879",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": true,
+        "metric": "pct_stereotype"
+      },
+      "status": "completed"
+    },
+    "cruxeval_output": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:26:06+00:00",
+      "error": "Evaluation failed: Attempted to run task: cruxeval_output which is marked as unsafe. Set confirm_run_unsafe_code=True to run this task.",
+      "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 200,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "pass@1"
+      },
+      "status": "failed"
+    },
+    "ethics_cm": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "EleutherAI/hendrycks_ethics",
+            "hf_subset": "commonsense"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:54.550494+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 3885,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "hendrycks_ethics"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.6
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "acc": 0.6,
+        "acc_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "e4f7ba57a4f74b27a449dbd19f46f9e1",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "eus_reading": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "HiTZ/EusReading",
+            "hf_subset": "default",
+            "sha": "f28779dd104722ca95f83dbd7e75e423d8745510"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:55:12.188268+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 352,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519464
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "b33063c69d844f628392e3b2f2e75692",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_am_anatomy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "am",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:18.547660+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 135,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_am_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:58:33+00:00",
+      "error": "",
+      "hub_job": "5f02aa2a-dfaf-4dde-92d1-5b3416b8fcdc",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "775f609601c64c8d8eac78b41045a5da",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_am_clinical_knowledge": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "am",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:46.483464+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 265,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_am_other_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0,
+        "acc_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "f0fae328410d4b63ab95ee0a5efa3401",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_am_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "am",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:53:27.597407+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_am_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {
+        "acc": 0.2,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "b32eec46d0204de8b27298cb54bfc842",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_am_medical_genetics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "am",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:44.483381+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 100,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_am_other_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "2ddafb7977e14daab11d5f49b276c334",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_am_professional_medicine": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "am",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:45.083171+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 272,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_am_other_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "96919a1c16bf4f1f889843ab0e538674",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_ar_anatomy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "ar",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:49.684711+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 135,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_ar_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "81f885efc9504c9ea1e69278172f583a",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_ar_clinical_knowledge": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "ar",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:51.684362+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 265,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_ar_other_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0.4,
+        "acc_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "742c953cb4b34b30bbab1a0680103ce8",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_ar_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "ar",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:53:29.200520+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_ar_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "9c50d37d51f44dd2a8b1e543b348fb5d",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_ar_medical_genetics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "ar",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:55.082429+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 100,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_ar_other_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.6
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0.6,
+        "acc_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.6,
+        "run_id": "8dc1c05b08ee4f4787a29ec31ec92b35",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_ar_professional_medicine": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "ar",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:58:58.082074+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 272,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_ar_other_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0.2,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "9e6ce7a3fd80488d8bc0d3254e2a856b",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_bn_anatomy": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "bn",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:59:01.289823+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 135,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_bn_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:18+00:00",
+      "error": "",
+      "hub_job": "cd2e7080-3ac2-4182-b96c-47a853c20ab3",
+      "metrics": {
+        "acc": 0.2,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "cdeb060cf7f24be9a1dd91c0257214bd",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_bn_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "bn",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:53:34.198629+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_bn_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "ed7993cb700343ffa8525c21914dff31",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_cs_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "cs",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:53:35.797307+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_cs_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "018938c93de640e19437ce3a778cf2d7",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_de_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "de",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:53:38.997850+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_de_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {
+        "acc": 0,
+        "acc_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "acc22e6a61c24bc69a5130426e8f548d",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_el_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "el",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:53:41.996444+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_el_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "2b7c562f33ea4a359256b370fef2ba0d",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_en_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "en",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:53:44.396640+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_en_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.2
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:01+00:00",
+      "error": "",
+      "hub_job": "e60de663-a74b-4d67-98a2-c9a1c9a51bb1",
+      "metrics": {
+        "acc": 0.2,
+        "acc_stderr": 0.13333333333333333
+      },
+      "mlflow": {
+        "overall_score": 0.2,
+        "run_id": "7d8203065c4647849125c680f0754e86",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_es_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "es",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:11.081178+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_es_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "622856b0aa2a4dfb9012ea22b1f9d7dc",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_fa_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "fa",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:12.803456+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_fa_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "951906dc9ec047c8a605192a9eb4a2e1",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "global_mmlu_full_fil_high_school_mathematics": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "CohereForAI/Global-MMLU",
+            "hf_subset": "fil",
+            "sha": "0e619dbeb34206cd48705a1a0ea7fb21cae09993"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:54:13.463603+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 270,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "global_mmlu_full_fil_stem_tasks"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:54:47+00:00",
+      "error": "",
+      "hub_job": "d72a5266-5dc6-4327-b80b-16d6d1aa808b",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "5629683208bc4de497c66daaa4f6b929",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "hellaswag_ar": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "alexandrainst/m_hellaswag",
+            "hf_subset": "ar",
+            "sha": "9d31dc982bd6285e081e3e3136332a38b9c1d7b7"
+          }
+        ],
+        "evaluation_date": "2026-11-09T16:54:56.645180+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 9176,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "tags": [
+          "hellaswag_multilingual"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {
+        "acc": 0.4,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.16329931618554522
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "a35c769382884fdb8fa2109acdefae69",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "ifeval": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "google/IFEval",
+            "sha": "966cd89545d6b6acfd7638bc708b98261ca58e84"
+          }
+        ],
+        "dataset_split": "train",
+        "evaluation_date": "2026-11-09T16:25:43.342797+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 541,
+        "output_type": "generate_until",
+        "primary_metric": "inst_level_strict_acc",
+        "random_seed": 42,
+        "task_version": 4,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3333333333333333
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:26:06+00:00",
+      "error": "",
+      "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+      "metrics": {
+        "inst_level_loose_acc": 0.3888888888888889,
+        "inst_level_strict_acc": 0.3333333333333333,
+        "prompt_level_loose_acc": 0.1,
+        "prompt_level_loose_acc_stderr": 0.09999999999999999,
+        "prompt_level_strict_acc": 0.1,
+        "prompt_level_strict_acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.3333333333333333,
+        "run_id": "b7d5ec96a9ea4386ac47cb2afa87d794",
+        "status": "FINISHED"
+      },
+      "seconds": 200,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "inst_level_strict_acc"
+      },
+      "status": "completed"
+    },
+    "jsonschema_bench_easy": {
+      "additional_info": {
+        "alt_prompting": 0,
+        "alt_prompting_description": "2-Shot",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "epfl-dlab/JSONSchemaBench",
+            "hf_subset": "Github_easy",
+            "sha": "5bd0f4640badc6f3f02df796421d21cb0ca0b141"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Generate a JSON object that matches the following JSON schema. Return only valid JSON, without explanations or Markdown code fences.",
+        "evaluation_date": "2026-11-09T17:01:32.828421+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 2,
+        "num_samples_effective": 10,
+        "num_samples_original": 577,
+        "output_type": "generate_until",
+        "primary_metric": "schema_compliance",
+        "random_seed": 42,
+        "tags": [
+          "jsonschema_bench"
+        ],
+        "task_version": 0.2,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:49+00:00",
+      "error": "",
+      "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+      "metrics": {
+        "json_validity": 0,
+        "json_validity_stderr": 0,
+        "schema_compliance": 0,
+        "schema_compliance_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "06167baf282d4b1a8e14c061175a2bf5",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "schema_compliance"
+      },
+      "status": "completed"
+    },
+    "jsonschema_bench_hard": {
+      "additional_info": {
+        "alt_prompting": 0,
+        "alt_prompting_description": "2-Shot",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "epfl-dlab/JSONSchemaBench",
+            "hf_subset": "Github_hard",
+            "sha": "5bd0f4640badc6f3f02df796421d21cb0ca0b141"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Generate a JSON object that matches the following JSON schema. Return only valid JSON, without explanations or Markdown code fences.",
+        "evaluation_date": "2026-11-09T17:01:38.431003+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 2,
+        "num_samples_effective": 10,
+        "num_samples_original": 368,
+        "output_type": "generate_until",
+        "primary_metric": "schema_compliance",
+        "random_seed": 42,
+        "tags": [
+          "jsonschema_bench"
+        ],
+        "task_version": 0.2,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:49+00:00",
+      "error": "",
+      "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+      "metrics": {
+        "json_validity": 0,
+        "json_validity_stderr": 0,
+        "schema_compliance": 0,
+        "schema_compliance_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "8be2e0d8103c43e786b576202bef99c7",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "schema_compliance"
+      },
+      "status": "completed"
+    },
+    "jsonschema_bench_medium": {
+      "additional_info": {
+        "alt_prompting": 0,
+        "alt_prompting_description": "2-Shot",
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "epfl-dlab/JSONSchemaBench",
+            "hf_subset": "Github_medium",
+            "sha": "5bd0f4640badc6f3f02df796421d21cb0ca0b141"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Generate a JSON object that matches the following JSON schema. Return only valid JSON, without explanations or Markdown code fences.",
+        "evaluation_date": "2026-11-09T17:01:34.830159+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 2,
+        "num_samples_effective": 10,
+        "num_samples_original": 586,
+        "output_type": "generate_until",
+        "primary_metric": "schema_compliance",
+        "random_seed": 42,
+        "tags": [
+          "jsonschema_bench"
+        ],
+        "task_version": 0.2,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B"
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:49+00:00",
+      "error": "",
+      "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+      "metrics": {
+        "json_validity": 0,
+        "json_validity_stderr": 0,
+        "schema_compliance": 0,
+        "schema_compliance_stderr": 0
+      },
+      "mlflow": {
+        "overall_score": 0.0,
+        "run_id": "f8fbd927653048cea3cc6746029f3002",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "schema_compliance"
+      },
+      "status": "completed"
+    },
+    "lambada_openai": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "EleutherAI/lambada_openai",
+            "hf_subset": "default",
+            "sha": "900124bf3b8235c6daf21033af9948b3f07346c4"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:25:31.828476+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 5153,
+        "output_type": "loglikelihood",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "lambada"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:26:06+00:00",
+      "error": "",
+      "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+      "metrics": {
+        "acc": 0.5,
+        "acc_stderr": 0.16666666666666666,
+        "perplexity": 27.476792126570178,
+        "perplexity_stderr": 42.330043283421006
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "b1fc0012b2fe4386b5409fb527afd425",
+        "status": "FINISHED"
+      },
+      "seconds": 200,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "lambada_openai_mt_en": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "EleutherAI/lambada_openai",
+            "hf_subset": "en",
+            "sha": "900124bf3b8235c6daf21033af9948b3f07346c4"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:59:27.910426+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 5153,
+        "output_type": "loglikelihood",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "lambada_multilingual"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:48+00:00",
+      "error": "",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {
+        "acc": 0.5,
+        "acc_stderr": 0.16666666666666666,
+        "perplexity": 27.476792126570178,
+        "perplexity_stderr": 42.330043283421006
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "66e903f2d17b4b939b35f7ab1a819741",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "lambada_openai_mt_it": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "EleutherAI/lambada_openai",
+            "hf_subset": "it",
+            "sha": "900124bf3b8235c6daf21033af9948b3f07346c4"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:59:29.559672+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 5153,
+        "output_type": "loglikelihood",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "lambada_multilingual"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:49+00:00",
+      "error": "",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519464,
+        "perplexity": 224.9970697182912,
+        "perplexity_stderr": 1508.6419977471057
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "da0a3314230e45b6af1a1810500a6298",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "lambada_openai_mt_stablelm_es": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "EleutherAI/lambada_multilingual_stablelm",
+            "hf_subset": "es",
+            "sha": "803d885c2c8a08b7a6a79d3e91d17633c2c233c8"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:59:30.195440+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 5153,
+        "output_type": "loglikelihood",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "lambada_multilingual_stablelm"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.1
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:49+00:00",
+      "error": "",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {
+        "acc": 0.1,
+        "acc_stderr": 0.09999999999999999,
+        "perplexity": 2760.5876847293976,
+        "perplexity_stderr": 48170.2478018916
+      },
+      "mlflow": {
+        "overall_score": 0.1,
+        "run_id": "41dcf09b079e444ab47d4efb4be4e51c",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "lambada_openai_mt_stablelm_nl": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "EleutherAI/lambada_multilingual_stablelm",
+            "hf_subset": "nl",
+            "sha": "803d885c2c8a08b7a6a79d3e91d17633c2c233c8"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:59:33.361682+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 5153,
+        "output_type": "loglikelihood",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "lambada_multilingual_stablelm"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:59:49+00:00",
+      "error": "",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466,
+        "perplexity": 22164.34440386382,
+        "perplexity_stderr": 33687277.809792206
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "0fafba19e5584ac0ab6a106986cfb048",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "lambada_standard_cloze_yaml": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:59:49+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/lambada@5953bd97664b64b95754f299b2309ecfbfbe81b9/.huggingface.yaml'. Repository id must be 'namespace/name', got 'lambada'.",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "leaderboard_bbh_salient_translation_error_detection": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "SaylorTwift/bbh",
+            "hf_subset": "salient_translation_error_detection",
+            "sha": "b5306be6f827cfafbb545ff5a51f96916029b0fd"
+          }
+        ],
+        "dataset_split": "test",
+        "description": "Detect the type of error in an English translation of a German source sentence.",
+        "evaluation_date": "2026-11-09T16:52:09.342130+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 250,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc_norm",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:52:31+00:00",
+      "error": "",
+      "hub_job": "5e314b73-111d-4a40-b1eb-1e8cda0a04ef",
+      "metrics": {
+        "acc_norm": 0.3,
+        "acc_norm_stderr": 0.15275252316519466
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "123cbbc377004180a81f1d29323b62a9",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc_norm"
+      },
+      "status": "completed"
+    },
+    "leaderboard_ifeval": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "wis-k/instruction-following-eval",
+            "sha": "5a5661c2a35488308556cf4453dc074d1eba91a0"
+          }
+        ],
+        "dataset_split": "train",
+        "evaluation_date": "2026-11-09T17:00:47.350904+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 541,
+        "output_type": "generate_until",
+        "primary_metric": "inst_level_strict_acc",
+        "random_seed": 42,
+        "task_version": 3,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3333333333333333
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "inst_level_loose_acc": 0.3888888888888889,
+        "inst_level_strict_acc": 0.3333333333333333,
+        "prompt_level_loose_acc": 0.1,
+        "prompt_level_loose_acc_stderr": 0.09999999999999999,
+        "prompt_level_strict_acc": 0.1,
+        "prompt_level_strict_acc_stderr": 0.09999999999999999
+      },
+      "mlflow": {
+        "overall_score": 0.3333333333333333,
+        "run_id": "4ef2f5746718496382ced9646b65202b",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "inst_level_strict_acc"
+      },
+      "status": "completed"
+    },
+    "leaderboard_mmlu_pro": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "TIGER-Lab/MMLU-Pro",
+            "sha": "b189ec765aa7ed75c8acfea42df31fdae71f97be"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:49.152346+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 12032,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 0.1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.4
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "acc": 0.4,
+        "acc_stderr": 0.1632993161855452
+      },
+      "mlflow": {
+        "overall_score": 0.4,
+        "run_id": "fdcecdae03034f7a9a1472eac82e5403",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "metabench_truthfulqa_permute": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "HCAI/metabench",
+            "hf_subset": "TruthfulQA",
+            "sha": "62bf10e07abd0f38c1c07536c17552b8c8a8ab56"
+          }
+        ],
+        "dataset_split": "primary",
+        "evaluation_date": "2026-11-09T17:00:08.250261+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 154,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "metabench_truthfulqa_subset"
+        ],
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:00:34+00:00",
+      "error": "",
+      "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+      "metrics": {
+        "acc": 0.3,
+        "acc_stderr": 0.15275252316519466
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "1a509274ca2e4f80a85682378c35616e",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "paloma_wikitext_103": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:59:49+00:00",
+      "error": "Gated HuggingFace dataset error; authentication required. Set HF_TOKEN by adding an 'hf-token' key to your model auth secret (model.auth.secret_ref).",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": true,
+        "metric": "word_perplexity"
+      },
+      "status": "failed"
+    },
+    "pile_arxiv": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:26:06+00:00",
+      "error": "Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 200,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "pile_freelaw": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:59:49+00:00",
+      "error": "Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "pile_hackernews": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:59:49+00:00",
+      "error": "Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "76b485c9-738b-462f-8705-8f1bab84580b",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "pile_openwebtext2": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T17:00:34+00:00",
+      "error": "Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "pile_ubuntu-irc": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T17:00:34+00:00",
+      "error": "Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "pile_youtubesubtitles": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T17:00:34+00:00",
+      "error": "Evaluation failed: The repository for EleutherAI/pile contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/EleutherAI/pile.\nPlease pass the argument `trust_remote_code=True` to allow custom code to be run.",
+      "hub_job": "eea292d5-3b77-4c04-bb1d-2513f25c3e2a",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "qasper_freeform": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "allenai/qasper",
+            "sha": "06806e4608976fc2fac0a090ac425d5b2b29caf4"
+          }
+        ],
+        "evaluation_date": "2026-11-09T16:55:13.386004+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 431,
+        "output_type": "generate_until",
+        "primary_metric": "f1_abstractive",
+        "random_seed": 42,
+        "tags": [
+          "qasper"
+        ],
+        "task_version": 2,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.13686209418441447
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:55:32+00:00",
+      "error": "",
+      "hub_job": "1cb30054-db35-4c77-aabf-3f59a9d12263",
+      "metrics": {
+        "f1_abstractive": 0.13686209418441447,
+        "f1_abstractive_stderr": 0.032805939718601324
+      },
+      "mlflow": {
+        "overall_score": 0.13686209418441447,
+        "run_id": "c47fe6822ef64511b24353bc59da94bb",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "f1_abstractive"
+      },
+      "status": "completed"
+    },
+    "tinyTruthfulQA": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "tinyBenchmarks/tinyTruthfulQA",
+            "hf_subset": "multiple_choice",
+            "sha": "9018d889ab3ed7803da2d1e295c9e17fbc069791"
+          }
+        ],
+        "evaluation_date": "2026-11-09T17:23:31.904060+00:00",
+        "hf_offline": false,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 100,
+        "num_samples_original": 100,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 0,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.44245774913500713
+      },
+      "attempt": 2,
+      "date": "2026-11-09T17:23:52+00:00",
+      "error": "",
+      "hub_job": "0be57efc-8f9d-4540-821a-ea57df033420",
+      "log": "",
+      "metrics": {
+        "acc": 0.44245774913500713
+      },
+      "mlflow": {
+        "overall_score": 0.44245774913500713,
+        "run_id": "5f268d81cee141a2a75bb8d45fa87d08",
+        "status": "FINISHED"
+      },
+      "questions": null,
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "toxigen": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "skg/toxigen-data",
+            "hf_subset": "annotated",
+            "sha": "ea082a8973a287097b17973343576e0c8da8eb3b"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:00:56.350353+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 940,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.3
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:19+00:00",
+      "error": "",
+      "hub_job": "197c4d4b-966b-4829-ab8a-13715e4e549d",
+      "metrics": {
+        "acc": 0.3,
+        "acc_norm": 0.4,
+        "acc_norm_stderr": 0.16329931618554522,
+        "acc_stderr": 0.15275252316519464
+      },
+      "mlflow": {
+        "overall_score": 0.3,
+        "run_id": "5563ac51226942dbbf8e1faca0fbff55",
+        "status": "FINISHED"
+      },
+      "seconds": 45,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    },
+    "truthfulqa_mc1": {
+      "additional_info": {},
+      "attempt": 1,
+      "date": "2026-11-09T16:26:06+00:00",
+      "error": "Evaluation failed: Invalid HF URI 'hf://datasets/truthful_qa@741b8276f2d1982aa3d5b832d3ee81ed3b896490/.huggingface.yaml'. Repository id must be 'namespace/name', got 'truthful_qa'.",
+      "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+      "metrics": {},
+      "mlflow": {},
+      "seconds": 200,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "failed"
+    },
+    "wikitext": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "EleutherAI/wikitext_document_level",
+            "hf_subset": "wikitext-2-raw-v1",
+            "sha": "647234772b9554e208af6c826f23b99e3cac88c8"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T16:25:39.333395+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 62,
+        "output_type": "loglikelihood_rolling",
+        "primary_metric": "word_perplexity",
+        "random_seed": 42,
+        "task_version": 2,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 30.633539694961126
+      },
+      "attempt": 1,
+      "date": "2026-11-09T16:26:06+00:00",
+      "error": "",
+      "hub_job": "f03e4df5-91d7-4e1d-92c4-6b8788e348fa",
+      "metrics": {
+        "bits_per_byte": 0.9409201030949643,
+        "byte_perplexity": 1.9197522026531715,
+        "word_perplexity": 30.633539694961126
+      },
+      "mlflow": {
+        "overall_score": 30.633539694961126,
+        "run_id": "0695647922604164a1bbc257db6f4506",
+        "status": "FINISHED"
+      },
+      "seconds": 200,
+      "sent_score": {
+        "lower_is_better": true,
+        "metric": "word_perplexity"
+      },
+      "status": "completed"
+    },
+    "winogender": {
+      "additional_info": {
+        "apply_chat_template": false,
+        "batch_size": 1,
+        "dataset": [
+          {
+            "hf_repo": "oskarvanderwal/winogender",
+            "hf_subset": "all",
+            "sha": "d1cdb5b708800c151d09c5d8817290d3f6ced9f4"
+          }
+        ],
+        "dataset_split": "test",
+        "evaluation_date": "2026-11-09T17:01:29.174133+00:00",
+        "hf_offline": false,
+        "limit": 10,
+        "lmeval_version": "0.4.8",
+        "num_concurrent": 1,
+        "num_fewshot": 0,
+        "num_samples_effective": 10,
+        "num_samples_original": 720,
+        "output_type": "multiple_choice",
+        "primary_metric": "acc",
+        "random_seed": 42,
+        "tags": [
+          "social_bias",
+          "winogender"
+        ],
+        "task_version": 1,
+        "timeout_seconds": 300,
+        "tokenizer": "Qwen/Qwen3-0.6B",
+        "zero_shot": 0.5
+      },
+      "attempt": 1,
+      "date": "2026-11-09T17:01:49+00:00",
+      "error": "",
+      "hub_job": "835c8b97-a00e-42c7-85eb-b49822dc3116",
+      "metrics": {
+        "acc": 0.5,
+        "acc_stderr": 0.16666666666666666
+      },
+      "mlflow": {
+        "overall_score": 0.5,
+        "run_id": "86bf67600aaf4270a210ff654f39c29e",
+        "status": "FINISHED"
+      },
+      "seconds": 30,
+      "sent_score": {
+        "lower_is_better": false,
+        "metric": "acc"
+      },
+      "status": "completed"
+    }
+  },
+  "catalog": {
+    "commit": "9a18b91657dae635d9ed56a2075ec1b808eb6345",
+    "repo": "eval-hub/eval-hub"
+  },
+  "model": "Qwen/Qwen3-0.6B",
+  "provider_id": "amortized-lm-eval",
+  "questions": 10,
+  "schema": "amortized.evalhub.conformance/v1"
+}

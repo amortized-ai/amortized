@@ -19,6 +19,7 @@ from amortized.core.jobs import deserialize_handle
 from amortized.core.mlflow_client import MLflowClient
 from amortized.db.evalhub import EvalHubRepository
 from amortized.integrations.evalhub import client
+from amortized.integrations.evalhub.catalog import recipe_score
 from amortized.jobs.base import JobBuildError
 from amortized.jobs.eval import _ASSETS_DIR, _build_embedded_serving, _endpoint_spec
 
@@ -290,6 +291,88 @@ async def prepare_serving(
     return {"base_url": url, "model": models[0]["id"]}
 
 
+async def _hf_tokenizer(config: dict[str, Any], repo: Any) -> str:
+    """The served model's Hugging Face id; a tuned model uses its base model's."""
+    from amortized.integrations.evalhub.catalog import _HF_ID
+
+    name = str(config.get("model_name_or_path") or "").strip()
+    if not name and config.get("training_job_id"):
+        training = await repo.get_job(str(config["training_job_id"]))
+        name = str(((training or {}).get("config") or {}).get("model_name_or_path") or "")
+    if not _HF_ID.match(name.strip()):
+        raise JobBuildError(
+            f"lm-evaluation-harness needs the model's Hugging Face tokenizer, but {name!r}"
+            " is not a Hugging Face model id"
+        )
+    return name.strip()
+
+
+def _approved_recipe(definition: dict[str, Any], provider: dict[str, Any]) -> dict[str, Any]:
+    """The recipe stored at Confirm, if the registered adapter is still the approved one."""
+    from amortized.integrations.evalhub.catalog import image_digest, runtime_image
+
+    recipe = definition.get("recipe")
+    if not isinstance(recipe, dict) or not recipe.get("adapter_digest"):
+        raise JobBuildError(
+            "This benchmark job has no approved recipe; validate and confirm it again"
+        )
+    if image_digest(runtime_image(provider)) != recipe["adapter_digest"]:
+        raise JobBuildError(
+            "The registered benchmark adapter image changed after approval;"
+            " validate and confirm the benchmark again"
+        )
+    return recipe
+
+
+def benchmark_selection(recipe: dict[str, Any], definition: dict[str, Any]) -> dict[str, Any]:
+    """Hub's benchmark entry, built from the recipe approved on the card, never later edits."""
+    selected: dict[str, Any] = {
+        "id": recipe["benchmark_id"],
+        "provider_id": recipe["provider_id"],
+        "parameters": dict(recipe["parameters"]),
+    }
+    # The contract's score is the score everywhere: the card, Hub, the adapter
+    # (adapter_launcher.py), MLflow and Amortized's results. Without one, the launcher
+    # leaves overall_score empty rather than the adapter's first metric.
+    primary = recipe_score(recipe)
+    if primary:
+        selected["primary_score"] = primary
+    if definition.get("test_data_ref"):
+        selected["test_data_ref"] = definition["test_data_ref"]
+    return selected
+
+
+def needs_tokenizer(recipe: dict[str, Any]) -> bool:
+    """lm-eval loads the model's Hugging Face tokenizer to count tokens itself."""
+    profile = (recipe.get("compatibility") or {}).get("settings_profile")
+    return bool(profile == "lm-eval-completions-v1")
+
+
+def hub_request(
+    correlation: str,
+    job_id: str,
+    endpoint: dict[str, Any],
+    secret: str,
+    benchmarks: list[dict[str, Any]],
+    experiment: str = "",
+) -> dict[str, Any]:
+    """The Hub job submission; a user's job and the conformance run both build it here."""
+    return {
+        "name": correlation,
+        "tags": [correlation],
+        "model": {
+            "url": endpoint["base_url"],
+            "name": endpoint["model"],
+            "auth": {"secret_ref": secret},
+        },
+        "benchmarks": benchmarks,
+        "experiment": {
+            "name": experiment or config_mod.settings.evalhub_experiment,
+            "tags": [{"key": "amortized_job_id", "value": job_id}],
+        },
+    }
+
+
 async def prepare(
     job: dict[str, Any], store: EvalHubRepository, execution: dict[str, Any]
 ) -> dict[str, Any]:
@@ -299,29 +382,36 @@ async def prepare(
             "Hub integration requires Kubernetes for input/credential/model preparation"
         )
     config = job["config"]
+    definition = config.get("evaluation") or {}
+    benchmark = definition.get("kind") == "benchmark"
     inputs = execution.get("inputs") or {}
     if "catalog" not in inputs:
+        provider_id = definition["provider_id"] if benchmark else settings.evalhub_task_provider
         async with client.client(execution["hub_url"], execution["tenant"]) as sdk:
-            provider = await sdk.providers.get(settings.evalhub_task_provider)
+            provider = await sdk.providers.get(provider_id)
         inputs["catalog"] = provider.model_dump(mode="json", exclude_none=True)
         await store.update(job["id"], inputs=inputs)
-    if "data_ref" not in inputs:
-        # Recorded before the first upload, so cleanup can find a partial copy even if the
-        # setting changes, and a retry writes to the same bucket.
-        if not inputs.get("staging_bucket"):
-            inputs["staging_bucket"] = settings.evalhub_staging_bucket
+    if benchmark:
+        recipe = _approved_recipe(definition, inputs["catalog"])
+        data_ref, model_path = None, ""
+    else:
+        if "data_ref" not in inputs:
+            # Recorded before the first upload, so cleanup can find a partial copy even if
+            # the setting changes, and a retry writes to the same bucket.
+            if not inputs.get("staging_bucket"):
+                inputs["staging_bucket"] = settings.evalhub_staging_bucket
+                await store.update(job["id"], inputs=inputs)
+            data_ref, model_path, identity, data_run = await stage_inputs(
+                job, store.repo, inputs["staging_bucket"]
+            )
+            inputs.update(
+                data_ref=data_ref,
+                model_path=model_path,
+                dataset_identity=identity,
+                dataset_run_id=data_run,
+            )
             await store.update(job["id"], inputs=inputs)
-        data_ref, model_path, identity, data_run = await stage_inputs(
-            job, store.repo, inputs["staging_bucket"]
-        )
-        inputs.update(
-            data_ref=data_ref,
-            model_path=model_path,
-            dataset_identity=identity,
-            dataset_run_id=data_run,
-        )
-        await store.update(job["id"], inputs=inputs)
-    data_ref, model_path = inputs["data_ref"], inputs["model_path"]
+        data_ref, model_path = inputs["data_ref"], inputs["model_path"]
     if config.get("eval_mode") == "classification":
         endpoint = {"base_url": "http://unused.invalid", "model": model_path}
     elif config.get("endpoint"):
@@ -331,47 +421,41 @@ async def prepare(
     # Resolved once: a provider name gives both the real URL and that provider's key.
     model = _endpoint_spec({"endpoint": endpoint}, "endpoint")
     secret = await _credential_secret(job, store, model, config.get("judge"))
-    # Only accepted semantic configuration crosses the engine boundary.
-    keys = (
-        "rubric",
-        "max_samples",
-        "judge_max_samples",
-        "temperature",
-        "eval_mode",
-        "class_labels",
-        "text_column",
-        "label_column",
-        "anchors_per_class",
-        "top_k",
-        "tau",
-        "seed",
-        "evaluation",
-    )
-    parameters = {key: config[key] for key in keys if key in config}
-    parameters["dataset_identity"] = inputs["dataset_identity"]
-    parameters.update(await _classifier_parameters(config, store.repo))
-    if config.get("judge"):
-        parameters["judge_model"] = config["judge"]["model"]
-    selected = {
-        "id": "task",
-        "provider_id": settings.evalhub_task_provider,
-        "parameters": parameters,
-        "test_data_ref": data_ref,
-    }
-    return {
-        "name": execution["correlation"],
-        "tags": [execution["correlation"]],
-        "model": {
-            "url": model["base_url"],
-            "name": model["model"],
-            "auth": {"secret_ref": secret},
-        },
-        "benchmarks": [selected],
-        "experiment": {
-            "name": settings.evalhub_experiment,
-            "tags": [{"key": "amortized_job_id", "value": job["id"]}],
-        },
-    }
+    if benchmark:
+        selected = benchmark_selection(recipe, definition)
+        if needs_tokenizer(recipe):
+            # The served model name may be a tuned model's display name, so name the
+            # Hugging Face model explicitly.
+            selected["parameters"]["tokenizer"] = await _hf_tokenizer(config, store.repo)
+    else:
+        # Only accepted semantic configuration crosses the engine boundary.
+        keys = (
+            "rubric",
+            "max_samples",
+            "judge_max_samples",
+            "temperature",
+            "eval_mode",
+            "class_labels",
+            "text_column",
+            "label_column",
+            "anchors_per_class",
+            "top_k",
+            "tau",
+            "seed",
+            "evaluation",
+        )
+        parameters = {key: config[key] for key in keys if key in config}
+        parameters["dataset_identity"] = inputs["dataset_identity"]
+        parameters.update(await _classifier_parameters(config, store.repo))
+        if config.get("judge"):
+            parameters["judge_model"] = config["judge"]["model"]
+        selected = {
+            "id": "task",
+            "provider_id": settings.evalhub_task_provider,
+            "parameters": parameters,
+            "test_data_ref": data_ref,
+        }
+    return hub_request(execution["correlation"], job["id"], model, secret, [selected])
 
 
 async def _classifier_parameters(config: dict[str, Any], repo: Any) -> dict[str, Any]:

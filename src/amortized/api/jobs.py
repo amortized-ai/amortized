@@ -51,6 +51,7 @@ from amortized.db.connection import get_pool
 from amortized.db.repository import Repository
 from amortized.jobs.training import ALGO_ALIASES
 from amortized.models import (
+    BenchmarkView,
     ErrorResponse,
     EvalJobRequest,
     Job,
@@ -586,7 +587,8 @@ async def _validate_eval_data(
     data_run_id = config.get("eval_data_run_id", "")
     training_job_id = str(config.get("training_job_id", "") or "")
 
-    if not parent_job_id and not data_run_id:
+    is_benchmark = (config.get("evaluation") or {}).get("kind") == "benchmark"
+    if not parent_job_id and not data_run_id and not is_benchmark:
         errors.append(
             "eval jobs require either parent_job_id (a completed SDG or upload"
             " job holding the dataset) or eval_data_run_id (an MLflow run ID,"
@@ -610,15 +612,77 @@ async def _validate_eval_definition(config: dict[str, Any]) -> list[str]:
     from amortized.integrations.evalhub.client import validate_definition
 
     errors = await validate_definition(config)
-    if config.get("eval_mode") != "classification" and not [
-        c for c in config.get("rubric", []) if isinstance(c, dict) and c.get("name")
-    ]:
+    definition = config.get("evaluation") or {}
+    if config.get("eval_mode") == "classification" and definition.get("kind") == "benchmark":
+        errors.append(
+            "classifier and embedding models need a classification evaluation, not a benchmark"
+        )
+    if (
+        config.get("eval_mode") != "classification"
+        and definition.get("kind") != "benchmark"
+        and not [c for c in config.get("rubric", []) if isinstance(c, dict) and c.get("name")]
+    ):
         errors.append(
             "eval jobs require at least one rubric criterion (custom"
             " judge-scored metrics — the built-in structural metrics"
             " exact_match/format_validity were removed)"
         )
     return errors
+
+
+async def _pin_benchmark(
+    config: dict[str, Any], *, approved: bool
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Pin the exact recipe a benchmark job runs (no-op for task evaluations).
+
+    At validation it fills the resolved settings and the recipe fingerprint into the
+    card's config. At create (approved=True) it re-resolves the recipe, refuses a card
+    whose setup changed since validation, and stores the approved recipe, which the
+    worker later builds the Hub job from.
+    """
+    definition = config.get("evaluation")
+    if not isinstance(definition, dict) or definition.get("kind") != "benchmark":
+        return None, []
+    from amortized.integrations.evalhub.catalog import fingerprint
+    from amortized.integrations.evalhub.client import benchmark_recipe
+
+    definition.pop("recipe", None)  # server-owned; never trusted from a client
+    submitted = str(definition.pop("recipe_fingerprint", "") or "")
+    recipe, errors = await benchmark_recipe(config)
+    if errors or recipe is None:
+        return None, errors
+    current = fingerprint(recipe)
+    if approved and submitted != current:
+        return None, [
+            "The benchmark setup changed since validation (adapter image, datasets, tasks,"
+            " scoring or settings). Re-validate with validate_eval_job and confirm"
+            " the new card."
+        ]
+    definition["parameters"] = recipe["parameters"]
+    definition["recipe_fingerprint"] = current
+    if approved:
+        definition["recipe"] = recipe
+    return recipe, []
+
+
+def _benchmark_view(recipe: dict[str, Any] | None, config: dict[str, Any]) -> BenchmarkView | None:
+    """The confirmation card's benchmark facts, taken from the server's catalog entry."""
+    if recipe is None:
+        return None
+    from amortized.evaluation.spec import benchmark_limit
+    from amortized.integrations.evalhub.catalog import no_score_reason, recipe_score
+
+    entry = recipe.get("catalog_entry") or {}
+    parameters = recipe.get("parameters") or {}
+    return BenchmarkView(
+        id=str(recipe["benchmark_id"]),
+        name=str(entry.get("name") or recipe["benchmark_id"]),
+        metric=str((recipe_score(recipe) or {}).get("metric") or ""),
+        no_score=no_score_reason(recipe.get("compatibility")),
+        num_few_shot=parameters.get("num_few_shot"),
+        max_samples=benchmark_limit(parameters),
+        recipe_fingerprint=str((config.get("evaluation") or {}).get("recipe_fingerprint") or ""),
+    )
 
 
 # Tunable training hyperparameters that fall back to the trainer's own default when unset
@@ -856,6 +920,8 @@ async def _persist_metric_set(
     evaluate on" — the eval agent reads it in later sessions instead of
     re-designing metrics, keeping comparisons across models consistent.
     """
+    if (config.get("evaluation") or {}).get("kind") == "benchmark":
+        return
     dataset_run_id = str(config.get("eval_data_run_id") or "")
     if not dataset_run_id and parent_job_id:
         repo = Repository(db)
@@ -926,7 +992,7 @@ async def create_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     async def prechecks(repo: Repository) -> list[str]:
-        return await _eval_static_errors(config, parent_job_id, repo.conn)
+        return await _eval_admission_errors(config, parent_job_id, repo.conn)
 
     async def before_insert(repo: Repository) -> None:
         # Persist the metric set on the dataset's MLflow run so every later
@@ -958,6 +1024,17 @@ async def _eval_static_errors(
     errors.extend(_validate_eval_rubric_judge(config))
     errors.extend(_validate_eval_endpoints(config))
     errors.extend(await _validate_eval_definition(config))
+    return errors
+
+
+async def _eval_admission_errors(
+    config: dict[str, Any], parent_job_id: str, db: asyncpg.Connection
+) -> list[str]:
+    """create/retry prechecks: the shared checks, then the approved benchmark recipe is pinned
+    into ``config``. Safe to run twice, as job admission does after probing the models."""
+    errors = await _eval_static_errors(config, parent_job_id, db)
+    if not errors:
+        errors = (await _pin_benchmark(config, approved=True))[1]
     return errors
 
 
@@ -1052,7 +1129,7 @@ async def retry_job(
         if job_type == JobType.training.value:
             return await _validate_training_data(config, parent_job_id, repo.conn)
         if job_type == JobType.eval.value:
-            return await _eval_static_errors(config, parent_job_id, repo.conn)
+            return await _eval_admission_errors(config, parent_job_id, repo.conn)
         return []
 
     async def before_insert(repo: Repository) -> None:
@@ -1527,14 +1604,18 @@ async def validate_eval_job(
 
     async with get_pool().acquire() as conn:
         errors = await _eval_static_errors(config, parent_job_id, conn)
-        credential_error = inline_credential_error(config)
-        if credential_error:
-            errors.append(credential_error)
-        budget_error = gpu_budget_error(JobType.eval, config)
-        if budget_error:
-            errors.append(budget_error)
-        if errors:
-            raise HTTPException(status_code=422, detail=errors)
+    credential_error = inline_credential_error(config)
+    if credential_error:
+        errors.append(credential_error)
+    budget_error = gpu_budget_error(JobType.eval, config)
+    if budget_error:
+        errors.append(budget_error)
+    recipe = None
+    if not errors:
+        recipe, pin_errors = await _pin_benchmark(config, approved=False)
+        errors.extend(pin_errors)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
 
     # Before the decision warnings: an eval whose judge fails can't score, so there's nothing to
     # decide. No DB connection is held while it runs.
@@ -1585,6 +1666,7 @@ async def validate_eval_job(
         parent_job_id=parent_job_id,
         data_record_count=record_count,
         warnings=warnings,
+        benchmark=_benchmark_view(recipe, config),
         model_checks=_model_check_views(model_checks),
     )
 
@@ -2116,7 +2198,7 @@ async def get_eval_results(
         return {
             "job_id": job_id,
             "mlflow_run_id": row.get("mlflow_run_id", ""),
-            "results": present(execution) if execution else None,
+            "results": present(execution, row) if execution else None,
         }
 
     mlflow_run_id = row.get("mlflow_run_id", "")
