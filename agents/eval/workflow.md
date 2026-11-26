@@ -91,23 +91,25 @@ always `"eval"`.
 
 ## What an Eval Job Does
 
-There are two eval kinds, chosen by the model under evaluation (see Step 0.5): a
-**generative eval** (rubric/judge, described here) for LLMs and endpoints, and a
+An eval job evaluates **one model** using one user-approved recipe. Call
+`list_evaluation_providers` to discover whether the Eval Hub engine is
+available. With `enabled: false` the job runs natively and `evaluation` stays
+unset. Never call Hub submission APIs directly.
+
+The model under evaluation decides the kind of eval (Step 0.5): a
 **classification eval** for classifier-head / embedding-router models trained on the
-platform, which scores predicted labels directly (accuracy / macro-F1 / per-class F1 /
-confusion, plus calibrated ECE for a head classifier) with no serving, endpoint, or
-judge. The rest of this section describes the generative eval.
+platform, or a **generative eval** (a task dataset) for everything else:
 
-A generative eval job takes an **eval dataset** and **one** OpenAI-compatible
-model endpoint, and measures how well that model performs the task by
-scoring its answers against the reference answers:
+- **Task dataset:** generate each answer once, then the rubric judge scores it
+  on the criteria the user approved.
+- **Classifier model** (classification eval): scores predicted labels directly
+  (accuracy / macro-F1 / per-class F1 / confusion, plus calibrated ECE for a head
+  classifier), with no serving, endpoint, or judge.
 
-- The model generates an answer for every eval prompt (temperature 0)
-- An **LLM judge** scores each output against the reference on custom
-  **rubric criteria**, each on a 0-1 scale (absolute, not a
-  comparison), averaged over the dataset. The criteria are NOT fixed —
-  the user decides what to measure, and you design judge criteria for
-  it (see Step 3). Every eval needs at least one criterion.
+All requirement gathering, warning decisions, validation and confirmation
+remain here. Only after the user clicks Confirm does the accepted job run
+(through Eval Hub when `list_evaluation_providers` returned `enabled: true`,
+except a classifier head trained with use_peft, which runs natively on a GPU).
 
 One eval job evaluates one model. To compare models (e.g. tuned vs
 base), run a SEPARATE eval for each — ONE AT A TIME: finish one model's
@@ -203,8 +205,11 @@ set to evaluate (skip its portion question only if the user already gave one). A
 that, go to Step 4 (there are no metrics to design — skip Step 3). Note the
 `text`/`category` column names for Step 4.
 
-**Generative path:** the eval dataset needs a `messages` column. The trailing
-assistant message is used as the reference answer.
+**Generative path:** the default task dataset uses a `messages` column; the trailing
+assistant message is removed before target inference and used as the reference answer.
+When `list_evaluation_providers` returned `enabled: true`, an explicit task definition
+may map another input/reference column; confirm those mappings with the user. With
+`enabled: false` the dataset must use the `messages` column.
 
 **For a tuned model, FIRST offer reusing an existing eval set — do not
 jump to generating a fresh one.** Scoring a model on a set another model
@@ -411,6 +416,10 @@ calibrated ECE for a head classifier) are computed directly against the labels. 
 not design criteria, do not pick a judge, do not call anything here. Go straight to
 Step 4.
 
+**Choose the scoring mechanism before the rubric branch below.** A
+classification eval skips this step (above). Every other task dataset is scored
+by the rubric judge, so the rubric branch below applies.
+
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
 field (`{rubric: [{name, description}]}`) when any
@@ -504,12 +513,16 @@ Call `validate_eval_job` with the assembled config. Pass it as a SINGLE
 string (every field — rubric, judge, endpoints, eval_mode, parent_job_id —
 inside that one string): a large multi-argument call (especially a rubric with
 multi-line criteria) can be corrupted in transit, one `config_json` string
-round-trips reliably. A **422** is one of three
+round-trips reliably. A **422** is one of four
 things: a **config error** (e.g. a missing judge) — read it, fix the config, and
 re-validate; a **decision-warning** (leakage / rubric drift / recipe mismatch,
 see below) — do NOT silently 'fix' it, relay it to the user and only re-validate
-with the `acknowledge_warnings` token from the 422 if they accept; or a **failed
-model check** (code `model_check_failed`) — see below. Never present a text summary of a
+with the `acknowledge_warnings` token from the 422 if they accept; a **failed
+model check** (code `model_check_failed`) — see below; or a **server
+limit** (it says "This server isn't set up to run …" and "This can't be fixed in the
+evaluation request") — do NOT change the config or re-validate; tell the user in
+plain words that this server isn't set up for that evaluation and an administrator
+must change it, then stop. Never present a text summary of a
 config that failed validation.
 
 **Failed model check (`model_check_failed`).** The platform sent a test request to
@@ -557,6 +570,11 @@ gpt-oss · judge samples: all (default)`
 After the user clicks Confirm on the platform card, the job is
 submitted and you'll be notified when it completes. Never claim the job
 was submitted — check the job's existence first if in doubt.
+
+Use Amortized job IDs for monitoring, logs, results and Cancel. A cancellation request remains pending
+until the execution engine reports its outcome; a timeout or stale observation
+is not evidence that the evaluation failed. Preserve raw metric units/direction,
+invalid-output counts and any partial errors when reporting results.
 
 ### Step 5 — Report results <!--signal:report owed:present_options-->
 

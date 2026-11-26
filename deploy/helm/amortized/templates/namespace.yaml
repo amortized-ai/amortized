@@ -5,6 +5,9 @@ metadata:
   name: {{ .Values.namespace }}
   labels:
     {{- include "amortized.labels" . | nindent 4 }}
+    {{- if and .Values.evalhub.url (eq .Values.jobsNamespace .Values.namespace) }}
+    evalhub.trustyai.opendatahub.io/tenant: "true"
+    {{- end }}
 {{- if ne .Values.jobsNamespace .Values.namespace }}
 ---
 apiVersion: v1
@@ -13,5 +16,8 @@ metadata:
   name: {{ .Values.jobsNamespace }}
   labels:
     {{- include "amortized.labels" . | nindent 4 }}
+    {{- if .Values.evalhub.url }}
+    evalhub.trustyai.opendatahub.io/tenant: "true"
+    {{- end }}
 {{- end }}
 {{- end }}

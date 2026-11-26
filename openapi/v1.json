@@ -1696,6 +1696,30 @@
         }
       }
     },
+    "/api/v1/evaluations/providers": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "List Evaluation Providers",
+        "description": "Read enabled task scoring before assembling an eval.",
+        "operationId": "list_evaluation_providers",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Evaluation Providers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/evaluations": {
       "get": {
         "tags": [
@@ -3692,6 +3716,16 @@
             "title": "Config Json",
             "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
           },
+          "evaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskEvaluation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rubric": {
             "items": {
               "$ref": "#/components/schemas/EvalRubricCriterion"
@@ -4364,6 +4398,37 @@
           "retry_of": {
             "type": "string",
             "title": "Retry Of",
+            "default": ""
+          },
+          "execution_owner": {
+            "type": "string",
+            "title": "Execution Owner",
+            "default": "native"
+          },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested",
+            "default": false
+          },
+          "execution_sync_error": {
+            "type": "string",
+            "title": "Execution Sync Error",
+            "default": ""
+          },
+          "execution_observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Observed At"
+          },
+          "execution_phase": {
+            "type": "string",
+            "title": "Execution Phase",
             "default": ""
           },
           "model_checks": {
@@ -6683,6 +6748,37 @@
         ],
         "title": "SubcategorySamplerParams",
         "description": "Parameters for subcategory sampling conditioned on a parent category column.\n\nSamples subcategory values based on the value of a parent category column. Each parent\ncategory value maps to its own list of possible subcategory values, enabling hierarchical\nor conditional sampling patterns.\n\nAttributes:\n    category (required): Name of the parent category column that this subcategory depends on.\n        The parent column must be generated before this subcategory column.\n    values (required): Mapping from each parent category value to a list of possible subcategory values.\n        Each key must correspond to a value that appears in the parent category column."
+      },
+      "TaskEvaluation": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "task",
+            "title": "Kind",
+            "default": "task"
+          },
+          "version": {
+            "type": "string",
+            "const": "1",
+            "title": "Version",
+            "default": "1"
+          },
+          "input_column": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Input Column",
+            "default": "messages"
+          },
+          "reference_column": {
+            "type": "string",
+            "title": "Reference Column",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskEvaluation",
+        "description": "A task dataset scored by the rubric judge; only the column mapping lives here."
       },
       "TimeDeltaSamplerParams": {
         "properties": {

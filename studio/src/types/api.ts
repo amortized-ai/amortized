@@ -35,6 +35,11 @@ export interface Job {
   created_at: string
   started_at: string | null
   completed_at: string | null
+  execution_owner?: "native" | "evalhub"
+  cancel_requested?: boolean
+  execution_sync_error?: string
+  execution_observed_at?: string | null
+  execution_phase?: string
   // Model-liveness check recorded at creation; `unverified` entries are warnings.
   model_checks?: ModelCheckResult[]
 }

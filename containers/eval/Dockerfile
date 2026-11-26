@@ -53,7 +53,11 @@ RUN cu13=/usr/local/lib/python3.12/site-packages/nvidia/cu13 \
     && ln -s lib "$cu13/lib64" \
     && ln -s libcudart.so.13 "$cu13/lib/libcudart.so"
 
-COPY run_eval.py /app/run_eval.py
+COPY containers/eval/run_eval.py /app/run_eval.py
+COPY src/amortized/__init__.py /app/amortized/__init__.py
+COPY src/amortized/evaluation /app/amortized/evaluation
+RUN pip install --no-cache-dir "pydantic>=2.7.0" "jsonschema>=4.20.0"
+ENV PYTHONPATH=/app
 
 # Mirror the sdg/training images: no fixed USER, so the platform picks the
 # uid — OpenShift's SCC assigns one from the namespace range; plain k8s/kind

@@ -57,6 +57,27 @@ class Settings(BaseSettings):
         "endpoint eval) are never gated. Set to match the namespace GPU ResourceQuota "
         "(the per-user GPU_PER_USER on RHOAI); the default of 1 never over-subscribes.",
     )
+    evalhub_url: str = Field(
+        "", description="Eval Hub service origin. Empty during native migration."
+    )
+    evalhub_accept_new_jobs: bool = Field(
+        True,
+        description="Send new evaluations to Eval Hub. False runs them natively while "
+        "evaluations already on Hub are still followed to completion.",
+    )
+    evalhub_tenant: str = Field(
+        "", description="Server-owned Hub tenant; must match the job namespace"
+    )
+    evalhub_token_file: str = ""
+    evalhub_ca_bundle: str = ""
+    evalhub_poll_interval: float = Field(3.0, ge=0.1)
+    evalhub_timeout: float = Field(30.0, gt=0)
+    evalhub_preparation_timeout: float = Field(1800.0, gt=0)
+    evalhub_uncertain_timeout: float = Field(900.0, gt=0)
+    evalhub_task_provider: str = "amortized"
+    evalhub_staging_bucket: str = ""
+    evalhub_s3_secret: str = "amortized-s3"
+    evalhub_experiment: str = "amortized/evaluation"
     model_check_url: str = Field(
         "",
         description="Base URL of the standalone model-liveness check service (opt-in). Empty "
@@ -143,12 +164,27 @@ class Settings(BaseSettings):
     def _require_https_for_bearer(self) -> "Settings":
         """Refuse to send a bearer token over cleartext HTTP (CWE-319)."""
         uri = self.mlflow_tracking_uri
+        if self.evalhub_tenant and self.evalhub_tenant != self.compute_namespace:
+            raise ValueError("Eval Hub tenant must match compute_namespace for owned resources")
+        if (
+            self.evalhub_url
+            and self.mlflow_tracking_token_file
+            and self.mlflow_workspace
+            and self.mlflow_workspace != self.compute_namespace
+        ):
+            raise ValueError("Hub execution requires the MLflow workspace to match its tenant")
         if self.mlflow_tracking_token_file and uri and not uri.startswith("https://"):
             raise ValueError(
                 "mlflow_tracking_token_file is set (MLflow bearer auth) but "
                 "mlflow_tracking_uri is not https:// — refusing to send the token in "
                 "cleartext. Use an https:// MLflow URI, or unset the token file."
             )
+        if (
+            self.evalhub_token_file
+            and self.evalhub_url
+            and not self.evalhub_url.startswith("https://")
+        ):
+            raise ValueError("evalhub_token_file requires an https:// evalhub_url")
         return self
 
     @model_validator(mode="after")

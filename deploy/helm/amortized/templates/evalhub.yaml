@@ -1,0 +1,77 @@
+{{- $provider := .Values.evalhub.taskProvider }}
+{{- if .Values.evalhub.operator.createInstance }}
+{{- $hubNamespace := required "evalhub.operator.namespace is required" .Values.evalhub.operator.namespace }}
+{{- if not $provider }}{{ fail "evalhub.taskProvider is required: the Hub registers the provider the server submits to" }}{{ end }}
+{{- /* A multi-tenant Hub serves the jobs namespace as a tenant, and the operator refuses to
+       run one inside a tenant namespace (InvalidPlacement). */}}
+{{- if or (eq $hubNamespace .Values.namespace) (eq $hubNamespace .Values.jobsNamespace) }}
+{{- fail "evalhub.operator.namespace must be a namespace of its own: the chart's Hub is multi-tenant, and the operator won't run a multi-tenant Hub in the tenant (jobs) namespace" }}
+{{- end }}
+---
+apiVersion: trustyai.opendatahub.io/v1
+kind: EvalHub
+metadata:
+  name: {{ .Values.evalhub.operator.name }}
+  namespace: {{ $hubNamespace }}
+  # Other releases may share this Hub: uninstalling this one leaves it in place.
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  tenancy: multi
+  replicas: 1
+  database:
+    type: postgresql
+    secret: {{ required "evalhub.operator.databaseSecret with db-url is required" .Values.evalhub.operator.databaseSecret }}
+  providers:
+    - {{ $provider }}
+  # collections is left to the CRD default. The operator adds its finalizer with a full
+  # update that drops an empty list, which brings the default back and takes the field from
+  # Helm, so `helm upgrade` would conflict on it. RHOAI ships the default collections;
+  # Amortized uses none.
+  env:
+    - name: MLFLOW_TRACKING_URI
+      value: {{ include "amortized.mlflowTrackingUri" . | quote }}
+    {{- if .Values.mlflow.enterprise.enabled }}
+    - name: MLFLOW_TOKEN_PATH
+      value: /var/run/secrets/kubernetes.io/serviceaccount/token
+    - name: MLFLOW_WORKSPACE
+      value: {{ .Values.jobsNamespace | quote }}
+    {{- end }}
+{{- end }}
+{{- if .Values.evalhub.operator.createProviders }}
+{{- $operatorNamespace := required "evalhub.operator.namespaceForProviders is required" .Values.evalhub.operator.namespaceForProviders }}
+{{- if not $provider }}{{ fail "evalhub.taskProvider is required: the Hub registers the provider the server submits to" }}{{ end }}
+{{- $taskImage := required "Pin evalhub.operator.taskAdapterImage to a built image digest" .Values.evalhub.operator.taskAdapterImage }}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $taskImage) }}
+{{- fail "evalhub.operator.taskAdapterImage must use an immutable digest" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $provider }}-evalhub-task-provider
+  namespace: {{ $operatorNamespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    trustyai.opendatahub.io/evalhub-provider-type: system
+    trustyai.opendatahub.io/evalhub-provider-name: {{ $provider }}
+data:
+  {{ $provider }}.yaml: |
+    id: {{ $provider }}
+    name: Amortized task evaluation v1
+    description: Versioned deterministic, rubric and anchor/query task scoring
+    runtime:
+      k8s:
+        image: {{ $taskImage | quote }}
+        image_pull_policy: if_not_present
+        entrypoint: [python, -m, amortized.evaluation.adapter]
+        cpu_request: 1000m
+        cpu_limit: 4000m
+        memory_request: 2Gi
+        memory_limit: 8Gi
+    benchmarks:
+      - id: task
+        name: User-approved task recipe
+        description: Dataset snapshot, scorer versions and optional approved-rubric judge
+{{- end }}

@@ -114,6 +114,42 @@ server:
   extraVolumeMounts: []
   hostAliases: []
 
+evalhub:
+  # Empty URL retains the native migration path for new jobs. Historical owners
+  # never change. Connect to the authenticated HTTPS service, not its internal port.
+  # Needs an https MLflow with workspaces and mlflow.enterprise.enabled=true (even if
+  # that MLflow has no login): Hub saves into the jobsNamespace workspace, and without
+  # it validation refuses every Hub evaluation. The bundled MLflow has no workspaces.
+  url: ""
+  # false sends new evaluations to the native engine while evaluations already on Hub are
+  # still followed to completion. To turn Hub off, set this first, wait until no Hub
+  # evaluation is running, then clear url (docs/evalhub.md).
+  acceptNewJobs: true
+  tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+  caConfigMap: ""
+  caKey: service-ca.crt
+  stagingBucket: ""
+  s3Secret: amortized-s3
+  pollInterval: 3
+  preparationTimeout: 1800
+  taskProvider: amortized
+  experiment: amortized/evaluation
+  # Installed operator owns the Go server, TLS/auth proxy, and runtime helpers.
+  # These optional resources register a dedicated instance and pinned providers.
+  operator:
+    createInstance: false
+    # The Hub instance's name, also when createInstance is false: the chart's user Role
+    # grants access to this Hub only.
+    name: evalhub
+    # The Hub's own namespace, not namespace or jobsNamespace: the chart's Hub is
+    # multi-tenant and serves the jobs namespace as a tenant.
+    namespace: ""
+    databaseSecret: "" # Secret with db-url in instance namespace; separate Hub DB
+    createProviders: false
+    namespaceForProviders: "" # installed TrustyAI operator namespace
+    taskAdapterImage: "" # required immutable ghcr.io/amortized-ai/evalhub-adapter@sha256:...
+    jobServiceAccount: "" # actual operator-created adapter/sidecar SA for MLflow
+
 studio:
   # Deploy the bundled Studio (Deployment + Service). Set false when a front-end
   # (e.g. the RHOAI studio-gateway) serves Studio itself and only needs the server.
@@ -250,7 +286,8 @@ mlflow:
   # bearer token over a cleartext URI.
   enterprise:
     enabled: false
-    # X-MLFLOW-WORKSPACE header. Empty => the application namespace (.Values.namespace).
+    # X-MLFLOW-WORKSPACE header. Empty => jobsNamespace when Eval Hub is on (evalhub.url set;
+    # Hub logs into its job namespace and anything else is rejected), else .Values.namespace.
     workspace: ""
     # Bearer-token file (a Kubernetes SA token). The default projected SA token is auto-mounted
     # and rotated in place; the client re-reads it per request.
@@ -270,6 +307,7 @@ mlflow:
 # the app's S3 is unused (artifacts flow through MLflow), so these are OPTIONAL there.
 s3:
   bucket: amortized
+  region: us-east-1
   endpoint: ""      # e.g. https://s3.us-east-1.amazonaws.com
   accessKey: ""
   secretKey: ""
